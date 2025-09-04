@@ -57,7 +57,6 @@ class CreatorAgent():
     def __init__(self):
         # Get API key from environment variable
         self.llm_name = "gpt-4o"
-        self.llm = # TODO: Create LANG CHAIN INSTANCE
         self.llm = AzureChatOpenAI(
             model="gpt-4o",
             azure_endpoint="# TODO: SET AZURE ENDPOINT",

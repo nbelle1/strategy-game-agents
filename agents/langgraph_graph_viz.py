@@ -1,0 +1,4 @@
+from agents.agentEvolver.creator_agent import CreatorAgent as AgentEvolverCreatorAgent
+
+agentEvolverCreatorAgent = AgentEvolverCreatorAgent()
+agentEvolver_langchain_graph = agentEvolverCreatorAgent.react_graph
