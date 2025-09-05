@@ -10,13 +10,14 @@ from catanatron import Game, RandomPlayer, Color
 
 from agents.promptEvolver.creator_agent import CreatorAgent as promptEvolver
 from agents.agentEvolver.creator_agent import CreatorAgent as agentEvolver
+from agents.agentEvolver_v2.creator_agent import CreatorAgent as agentEvolverV2
 from agents.llmAgentEvolver.creator_agent import CreatorAgent as llmAgentEvolver
 
 from minimax import AlphaBetaPlayer
 from catanatron_server.utils import open_link
 
 # Set this variable to select the evolver: "prompt", "agent", or "llm"
-EVOLVER_TYPE = "agentEvolver"
+EVOLVER_TYPE = "agentEvolver2"
 
 def main():
     # Choose evolver based on EVOLVER_TYPE
@@ -24,6 +25,8 @@ def main():
         evolver = promptEvolver()
     elif EVOLVER_TYPE == "agentEvolver":
         evolver = agentEvolver()
+    elif EVOLVER_TYPE == "agentEvolver2":
+        evolver = agentEvolverV2()
     elif EVOLVER_TYPE == "llmAgentEvolver":
         evolver = llmAgentEvolver()
     else:

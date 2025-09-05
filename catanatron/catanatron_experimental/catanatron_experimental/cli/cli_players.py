@@ -31,6 +31,7 @@ from agents.baseAgent.baseAgentPlayer import BaseAgentPlayer
 from agents.promptEvolver.promptEvolverPlayer import PromptEvolverPlayer
 from agents.agentEvolver.foo_player import FooPlayer as AgentEvolverFooPlayer
 from agents.llmAgentEvolver.foo_player import FooPlayer as LLMAgentEvolverFooPlayer
+from agents.agentEvolver_v2.foo_player import FooPlayer as AgentEvolverFooPlayerV2
 
 # from agents.fromScratchLLM_player_v2.runs.creator_20250508_112135_hitl.foo_player import FooPlayer as FooLLMPlayerV2_1
 # from catanatron_experimental.machine_learning.players.online_mcts_dqn import (
@@ -126,6 +127,12 @@ CLI_PLAYERS = [
         "AgentEvolverFooPlayer",
         "Multi-agent system with agent evolvers that improve the player code of the Player AE",
         AgentEvolverFooPlayer,
+    ),
+    CliPlayer(
+        "AE2",
+        "AgentEvolverFooPlayerV2",
+        "Multi-agent system with agent evolvers that improve the player code of the Player AE2",
+        AgentEvolverFooPlayerV2,
     ),
     CliPlayer(
         "LAE",

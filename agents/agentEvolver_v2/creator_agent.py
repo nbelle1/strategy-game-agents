@@ -16,6 +16,7 @@ import subprocess, shlex
 
 
 from langchain_openai import AzureChatOpenAI
+from langchain_openai import ChatOpenAI
 from langchain_mistralai import ChatMistralAI
 from langgraph.graph import MessagesState, START, END, StateGraph
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, AnyMessage, ToolMessage, BaseMessage
@@ -30,11 +31,6 @@ from langgraph.errors import GraphRecursionError
 
 
 from typing_extensions import TypedDict
-from typing_extensions import TypedDict
-
-# import warnings
-# from langchain.warnings import LangChainDeprecationWarning   # same class they raise
-# warnings.filterwarnings("ignore", category=LangChainDeprecationWarning)
 
 
 
@@ -44,8 +40,10 @@ FOO_TARGET_FILENAME = "foo_player.py"
 FOO_TARGET_FILE = Path(__file__).parent / FOO_TARGET_FILENAME    # absolute path
 FOO_MAX_BYTES   = 64_000                                     # context-friendly cap
 # Set winning points to 5 for quicker game
-FOO_RUN_COMMAND = "catanatron-play --players=AB,AE  --num=10 --config-map=MINI  --config-vps-to-win=10"
+FOO_RUN_COMMAND = "catanatron-play --players=AB,AE2  --num=10 --config-map=MINI  --config-vps-to-win=10"
 RUN_TEST_FOO_HAPPENED = False # Used to keep track of whether the testfoo tool has been called
+LLM_BACKEND = "openai"  # "openai", "mistral", or "claude"
+LANGCHAIN_TRACING_VAR = "true"
 # -------------------------------------------------------------------------------------
 
 class CreatorAgent():
@@ -55,38 +53,39 @@ class CreatorAgent():
     current_evolution = 0
 
     def __init__(self):
-        # Get API key from environment variable
-        # self.llm_name = "gpt-4o"
-        # self.llm = AzureChatOpenAI(
-        #     model="gpt-4o",
-        #     azure_endpoint="# TODO: SET AZURE ENDPOINT",
-        #     api_version = "2024-12-01-preview"
-        # )
+                # Get API key from environment variable
+        if LLM_BACKEND == "openai":
+            self.llm_name = "gpt-5-mini"
+            self.llm = ChatOpenAI(
+                model="gpt-5-mini",
+                max_retries=10,
+            )
+        elif LLM_BACKEND == "mistral":
+            self.llm_name = "mistral-large-latest"
+            rate_limiter = InMemoryRateLimiter(
+                requests_per_second=1,    # Adjust based on your API tier
+                check_every_n_seconds=0.1,
+            )
+            self.llm = ChatMistralAI(
+                model="mistral-large-latest",
+                temperature=0,
+                max_retries=10,
+                rate_limiter=rate_limiter,
+            )
+        elif LLM_BACKEND == "claude":
+            self.llm_name = "claude-3.7"
+            self.llm = ChatBedrockConverse(
+                aws_access_key_id = os.environ["AWS_ACESS_KEY"],
+                aws_secret_access_key = os.environ["AWS_SECRET_KEY"],
+                region_name = "us-east-2",
+                provider = "anthropic",
+                model_id="# TODO: ADD MODEL ID"
+            )
+        else:
+            raise ValueError(f"Unknown LLM_BACKEND: {LLM_BACKEND}")
 
-        # config = Config(read_timeout=1000)
-        # bedrock_client = client(service_name='bedrock-runtime', region_name='us-east-2', config=config)
-        # self.llm_name = "claude-3.7"
-        # self.llm = ChatBedrockConverse(
-        #     aws_access_key_id = os.environ["AWS_ACESS_KEY"],
-        #     aws_secret_access_key = os.environ["AWS_SECRET_KEY"],
-        #     region_name = "us-east-2",
-        #     provider = "anthropic",
-        #     model_id="# TODO: ADD MODEL ID"
-        # )
-        # os.environ["LANGCHAIN_TRACING_V2"] = "false"
-
-
-        self.llm_name = "mistral-large-latest"
-        rate_limiter = InMemoryRateLimiter(
-            requests_per_second=1,    # Adjust based on your API tier
-            check_every_n_seconds=0.1,
-        )
-        self.llm = ChatMistralAI(
-            model="mistral-large-latest",
-            temperature=0,
-            max_retries=10,
-            rate_limiter=rate_limiter,
-        )
+        # Optionally set tracing
+        os.environ["LANGCHAIN_TRACING"] = LANGCHAIN_TRACING_VAR
 
         # Create run directory if it doesn't exist
         if CreatorAgent.run_dir is None:
@@ -145,62 +144,13 @@ class CreatorAgent():
         
         AGENT_KEYS = [ANALYZER_NAME, STRATEGIZER_NAME, RESEARCHER_NAME, CODER_NAME]
 
-
-        def summarize_messages(messages: list[AnyMessage]) -> str:
-
-            print("Summarizing messages")
-            sys_msg = SystemMessage(content=
-                f"""
-You are a summarizer agent. Your job is to summarize the messages above. 
-Make sure to keep track of what was learned with the tool calls. 
-Keep the summary as short and breif as possible
-Start your summary with "TOOL SUMMARY:" and end with "END TOOL SUMMARY"
-                """
-            )
-
-            summary_message = (HumanMessage(content="The messages above are what is needed to be summarized"))
-  
-            all_msgs = messages + [summary_message]
-
-            summary = self.llm.invoke(all_msgs).content
-            #summary = tool_calling_state_graph(sys_msg, all_msgs, [])
-
-            print(summary)
-            return summary
-
-        def _is_non_empty(msg: BaseMessage) -> bool:
-            """
-            Return True if the message should stay in history.
-            Handles str, list, None, and messages with no 'content' attr.
-            """
-            if not hasattr(msg, "content"):           # tool_result or custom types
-                return True
-
-            content = msg.content
-            if content is None:                       # explicit null
-                return False
-
-            if isinstance(content, str):
-                return bool(content.strip())          # keep non‑blank strings
-
-            if isinstance(content, (list, tuple)):    # content blocks
-                return len(content) > 0               # keep if any block exists
-
-            # Fallback: keep anything we don't explicitly reject
-            return True
-
         def tool_calling_state_graph(sys_msg: SystemMessage, msgs: list[AnyMessage], tools):
-
-            # Filter out empty messages (Removed because removes tool messages with empty content)
-            #msgs = [m for m in msgs if _is_non_empty(m)]
-
             # Bind Tools to the LLM
             #llm_with_tools = self.llm.bind_tools(tools, parallel_tool_calls=False)
             llm_with_tools = self.llm.bind_tools(tools)
 
             def assistant(sub_state: MessagesState):
                 return {"messages": [llm_with_tools.invoke([sys_msg] + sub_state["messages"])]}
-            
 
             # Graph
             builder = StateGraph(MessagesState)
@@ -236,57 +186,6 @@ Start your summary with "TOOL SUMMARY:" and end with "END TOOL SUMMARY"
                     log_file.write(m.pretty_repr())
 
             return last_event
-        
-            #messages = react_graph.invoke({"messages": msgs})
-            #config = {"recursion_limit": MAX_MESSAGES_TOOL_CALLING*2}
-
-            # last_event = None
-            # try:
-            #     for event in react_graph.stream({"messages": msgs}, config=config, stream_mode="values"):
-            #         msg = event['messages'][-1]
-            #         msg.pretty_print()
-            #         print("\n")
-            #         last_event = event
-            #     return last_event
-            # except GraphRecursionError as e:
-            #     print(f"Recursion limit reached {MAX_MESSAGES_TOOL_CALLING}: {e}")
-
-            
-            # # If End Early, Must Still Get Output
-            # last_message = last_event["messages"][-1]
-
-            # # If is a last AI Message and requests tools calls, delete it, if does not request tool calls, return it
-            # if isinstance(last_message, AIMessage):
-            #     if not last_message.tool_calls:
-            #         return last_event
-            #     else:
-            #         # If the last message is an AI message with a tool call, remove it and add another AI message
-            #         last_event["messages"] = last_event["messages"][:-1]
-            #         last_event["messages"].append(AIMessage(content="OOPS! I made a mistake, I used too many tool calls"))
-
-            # # If last is a tool call message, add AI message for mistake        
-            # elif isinstance(last_message, ToolMessage):
-            #     last_event["messages"].append(AIMessage(content="OOPS! I made a mistake, I used too many tool calls"))
-
-            # # Add Human Message with instructionrs
-            # last_event["messages"].append(HumanMessage(content= """
-            #     YOU CAN NO LONGER USE TOOLS! YOU MUST USE WHAT KNOWLEDGE YOU HAVE TO ANSWER THE SYSTEM PROMPT"""
-            # ))
-
-            # # Combine the system message with the existing messages
-            # input_msg = [sys_msg] + last_event["messages"]
-
-            # # Invoke the LLM with the adjusted message sequence
-            # assistant_response = llm_with_tools.invoke(input_msg)
-
-            # # Append the assistant's response to the message history
-            # last_event["messages"].append(assistant_response)
-
-            
-            # # for m in messages['messages']:
-            # #     m.pretty_print()
-
-            # return last_event
 
         def init_node(state: CreatorGraphState):
             """
@@ -1260,244 +1159,3 @@ def _get_evolution_entry(num: int) -> Tuple[Dict[str, Any], str]:
         return None, f"{key} not found in performance history."
 
     return perf[key], ""
-
-# def view_last_game_llm_query(query_number: int = -1) -> str:
-#     """
-#     View the game results from a specific run.
-    
-#     Args:
-#         query_number: The index of the file to view (0-based). 
-#                      If -1 (default), returns the most recent file.
-    
-#     Returns:
-#         The content of the requested game results file or an error message.
-#     """
-
-#     if RUN_TEST_FOO_HAPPENED == False:
-#         return "No game run has been executed yet."
-    
-#     # Path to the runs directory
-#     runs_dir = Path(__file__).parent / "runs"
-    
-#     # Find all folders that start with game_run
-#     game_run_folders = [f for f in runs_dir.glob("game_run*") if f.is_dir()]
-    
-#     if not game_run_folders:
-#         return "No game run folders found."
-    
-#     # Sort folders by name (which includes datetime) to get the most recent one
-#     latest_run_folder = sorted(game_run_folders)[-1]
-    
-#     # Get all files in the folder and sort them
-#     result_files = sorted(latest_run_folder.glob("*"))
-    
-#     if not result_files:
-#         return f"No result files found in {latest_run_folder.name}."
-    
-#     # Determine which file to read
-#     file_index = query_number if query_number >= 0 else len(result_files) - 1
-    
-#     # Check if index is valid
-#     if file_index >= len(result_files):
-#         return f"Invalid file index. There are only {len(result_files)} files (0-{len(result_files)-1})."
-    
-#     target_file = result_files[file_index]
-    
-#     # Read and return the content of the file
-#     try:
-#         with open(target_file, "r") as file:
-#             return f"Content of {target_file.name}:\n\n{file.read()}"
-#     except Exception as e:
-#         return f"Error reading file {target_file.name}: {str(e)}"
-    
-# # def view_last_game_results(_: str = "") -> str:
-#     """
-#     View the game results from a specific run.
-    
-#     Returns:
-#         The content of the requested game results file or an error message.
-#     """
-
-#     if RUN_TEST_FOO_HAPPENED == False:
-#         return "No game run has been executed yet."
-    
-#     # Path to the runs directory
-#     runs_dir = Path(__file__).parent / "runs"
-    
-#     # Find all folders that start with game_run
-#     game_run_folders = [f for f in runs_dir.glob("game_run*") if f.is_dir()]
-    
-#     if not game_run_folders:
-#         return "No game run folders found."
-    
-#     # Sort folders by name (which includes datetime) to get the most recent one
-#     latest_run_folder = sorted(game_run_folders)[-1]
-
-#     # Read a file with the stdout and stderr called catanatron_output.txt
-#     output_file_path = latest_run_folder / "catanatron_output.txt"
-    
-#     # Read and return the content of the file
-#     try:
-#         with open(output_file_path, "w") as file:
-#             return f"Content of {output_file_path.name}:\n\n{file.read()}"
-#     except Exception as e:
-#         return f"Error reading file {output_file_path.name}: {str(e)}"
-    
-
-
-
-
-
-
-
-
-         
-#     # def create_langchain_react_graph(self):
-#     #     """Create a react graph for the LLM to use."""
-        
-#     #     tools = [
-#     #         list_local_files,
-#     #         read_local_file,
-#     #         read_foo,
-#     #         write_foo,
-#     #         run_testfoo,
-#     #         web_search_tool_call,
-#     #         view_last_game_llm_query,
-#     #         view_last_game_results
-#     #     ]
-
-#     #     llm_with_tools = self.llm.bind_tools(tools)
-        
-#     #     def assistant(state: MessagesState):
-#     #         return {"messages": [llm_with_tools.invoke(state["messages"])]}
-        
-#     #     def trim_messages(state: MessagesState):
-#     #         # Delete all but the specified most recent messages
-#     #         delete_messages = [RemoveMessage(id=m.id) for m in state["messages"][:-self.num_memory_messages]]
-#     #         return {"messages": delete_messages}
-
-
-#     #     builder = StateGraph(MessagesState)
-
-#     #     # Define nodes: these do the work
-#     #     builder.add_node("trim_messages", trim_messages)
-#     #     builder.add_node("assistant", assistant)
-#     #     builder.add_node("tools", ToolNode(tools))
-
-#     #     # Define edges: these determine how the control flow moves
-#     #     builder.add_edge(START, "assistant")
-#     #     #builder.add_edge("trim_messages", "assistant")
-#     #     builder.add_conditional_edges(
-#     #         "assistant",
-#     #         # If the latest message (result) from assistant is a tool call -> tools_condition routes to tools
-#     #         # If the latest message (result) from assistant is a not a tool call -> tools_condition routes to END
-#     #         tools_condition,
-#     #     )
-#     #     builder.add_edge("tools", "trim_messages")
-#     #     builder.add_edge("trim_messages", "assistant")
-        
-#     #     return builder.compile(checkpointer=MemorySaver())
-
-
-# def run_testfoo(short_game: bool = False) -> str:
-#     """
-#     Run one Catanatron match (R vs Agent File) and return raw CLI output.
-#     Input: short_game (bool): If True, run a short game with a 30 second timeout.
-#     """    
-#     MAX_CHARS = 20_000                      
-
-#     try:
-#         if short_game:
-#             result = subprocess.run(
-#                 shlex.split(FOO_RUN_COMMAND),
-#                 capture_output=True,
-#                 text=True,
-#                 timeout=30,
-#                 check=False
-#             )
-#         else:
-#             result = subprocess.run(
-#                 shlex.split(FOO_RUN_COMMAND),
-#                 capture_output=True,
-#                 text=True,
-#                 timeout=14400,
-#                 check=False
-#             )
-#         stdout_limited  = result.stdout[-MAX_CHARS:]
-#         stderr_limited  = result.stderr[-MAX_CHARS:]
-#         game_results = (stdout_limited + stderr_limited).strip()
-#     except subprocess.TimeoutExpired as e:
-#         # Handle timeout case
-#         stdout_output = e.stdout or ""
-#         stderr_output = e.stderr or ""
-#         if stdout_output and not isinstance(stdout_output, str):
-#             stdout_output = stdout_output.decode('utf-8', errors='ignore')
-#         if stderr_output and not isinstance(stderr_output, str):
-#             stderr_output = stderr_output.decode('utf-8', errors='ignore')
-#         stdout_limited  = stdout_output[-MAX_CHARS:]
-#         stderr_limited  = stderr_output[-MAX_CHARS:]
-#         game_results = "Game Ended From Timeout (As Expected).\n\n" + (stdout_limited + stderr_limited).strip()
-    
-#     # Extract the score from the game results
-
-#     # Create a folder in the Creator.run_dir with EvolveCounter#_FooScore#
-
-#     # Inside the folder, 
-#     #   place the game_results.txt file with the game results
-#     #   copy the FOO_TARGET_FILE as foo_player.py
-
-#         # Extract the score from the game results
-#     def extract_game_stats(results: str):
-#         """
-#         Extract average VP for the FOO player from game results.
-#         Returns the avg_vp as a float.
-#         If stats can't be found, returns 0.0
-#         """
-#         import re
-        
-#         # Look for the FOO_PLAYER_STATS format we're printing in play.py
-#         stats_pattern = r"===== FOO_PLAYER_STATS: wins=\d+, avg_vp=(\d+\.\d+) ====="
-#         stats_match = re.search(stats_pattern, results)
-        
-#         if stats_match:
-#             return float(stats_match.group(1))
-        
-#         # Fallback to looking for stats in the regular table output
-#         foo_pattern = r"FooPlayer:BLUE\s*[│|]\s*\d+\s*[│|]\s*(\d+\.\d+)"
-#         foo_match = re.search(foo_pattern, results, re.DOTALL)
-        
-#         if foo_match:
-#             return float(foo_match.group(1))
-                
-#         return 0.0  # Default if no pattern matched
-#     # Extract game stats
-#     foo_avg_vp = extract_game_stats(game_results)
-
-#     # Create a folder in the Creator.run_dir with EvolveCounter#_FooScore#
-#     run_folder_name = f"EvolveN{CreatorAgent.evolve_counter}_AvgVP{foo_avg_vp:.1f}"
-#     run_folder_path = Path(CreatorAgent.run_dir) / run_folder_name
-#     run_folder_path.mkdir(exist_ok=True)
-
-#     # Inside the folder, 
-#     # place the game_results.txt file with the game results
-#     game_results_path = run_folder_path / "game_results.txt"
-#     with open(game_results_path, "w") as f:
-#         f.write(game_results)
-
-#     # copy the FOO_TARGET_FILE as foo_player.py
-#     shutil.copy2(
-#         FOO_TARGET_FILE.resolve(),
-#         run_folder_path / FOO_TARGET_FILENAME
-#     )
-    
-#     # Increment the evolve counter
-#     CreatorAgent.evolve_counter += 1
-
-#     # Add a file with the stdout and stderr called catanatron_output.txt
-#     # output_file_path = latest_run_folder / "catanatron_output.txt"
-#     # with open(output_file_path, "w") as output_file:
-#     #     output_file.write(game_results)
-        
-#     #print(game_results)
-#         # limit the output to a certain number of characters
-#     return game_results
