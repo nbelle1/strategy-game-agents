@@ -6,7 +6,6 @@ minimax_dir = os.path.join(os.path.dirname(__file__), "catanatron/catanatron_exp
 sys.path.append(minimax_dir)
 
 
-from agents.base_llm import OpenAILLM, MistralLLM, AzureOpenAILLM, AnthropicLLM
 from catanatron import Game, RandomPlayer, Color
 
 from agents.promptEvolver.creator_agent import CreatorAgent as promptEvolver
@@ -16,13 +15,19 @@ from agents.llmAgentEvolver.creator_agent import CreatorAgent as llmAgentEvolver
 from minimax import AlphaBetaPlayer
 from catanatron_server.utils import open_link
 
+# Set this variable to select the evolver: "prompt", "agent", or "llm"
+EVOLVER_TYPE = "agentEvolver"
+
 def main():
-
-    #Choose Your Desired Evolver (Comment out the others)
-
-    #evolver = promptEvolver()
-    #evolver = agentEvolver()
-    evolver = llmAgentEvolver()
+    # Choose evolver based on EVOLVER_TYPE
+    if EVOLVER_TYPE == "promptEvolver":
+        evolver = promptEvolver()
+    elif EVOLVER_TYPE == "agentEvolver":
+        evolver = agentEvolver()
+    elif EVOLVER_TYPE == "llmAgentEvolver":
+        evolver = llmAgentEvolver()
+    else:
+        raise ValueError(f"Unknown EVOLVER_TYPE: {EVOLVER_TYPE}")
 
     # Run The Evolver
     evolver.run_react_graph()
