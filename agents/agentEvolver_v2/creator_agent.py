@@ -37,6 +37,26 @@ LLM_BACKEND = "mistral"  # "openai", "mistral", or "claude"
 LLM_MODEL = "mistral-large-latest"
 #LLM_MODEL = "devstral-medium-latest"
 
+# Coder LLM
+CODER_LLM_BACKEND = "mistral"
+CODER_LLM_MODEL = "mistral-large-latest"
+
+# Analyzer LLM
+ANALYZER_LLM_BACKEND = "mistral"
+ANALYZER_LLM_MODEL = "mistral-large-latest"
+
+# Researcher LLM
+RESEARCHER_LLM_BACKEND = "mistral"
+RESEARCHER_LLM_MODEL = "mistral-large-latest"
+
+# Strategizer LLM
+STRATEGIZER_LLM_BACKEND = "mistral"
+STRATEGIZER_LLM_MODEL = "mistral-large-latest"
+
+# Meta LLM
+META_LLM_BACKEND = "mistral"
+META_LLM_MODEL = "mistral-large-latest"
+
 FOO_MAX_BYTES   = 64_000      # context-friendly cap
 CREATOR_LANGRAPH_RECURSION_LIMIT = 200  # max depth of graph recursion
 CREATOR_NUM_EVOLUTIONS = 20
@@ -70,28 +90,25 @@ class CreatorAgent():
     run_dir = None
     current_evolution = 0
 
-    def __init__(self):
-                # Get API key from environment variable
-
-        self.llm_name = LLM_MODEL
-        if LLM_BACKEND == "openai":
-            self.llm = ChatOpenAI(
-                model=self.llm_name,
+    def _create_llm(self, backend, model):
+        if backend == "openai":
+            return ChatOpenAI(
+                model=model,
                 max_retries=10,
             )
-        elif LLM_BACKEND == "mistral":
+        elif backend == "mistral":
             rate_limiter = InMemoryRateLimiter(
                 requests_per_second=1,    # Adjust based on your API tier
                 check_every_n_seconds=0.1,
             )
-            self.llm = ChatMistralAI(
-                model=self.llm_name,
+            return ChatMistralAI(
+                model=model,
                 temperature=0,
                 max_retries=10,
                 rate_limiter=rate_limiter,
             )
-        elif LLM_BACKEND == "claude":
-            self.llm = ChatBedrockConverse(
+        elif backend == "claude":
+            return ChatBedrockConverse(
                 aws_access_key_id = os.environ["AWS_ACESS_KEY"],
                 aws_secret_access_key = os.environ["AWS_SECRET_KEY"],
                 region_name = "us-east-2",
@@ -99,7 +116,18 @@ class CreatorAgent():
                 model_id="# TODO: ADD MODEL ID"
             )
         else:
-            raise ValueError(f"Unknown LLM_BACKEND: {LLM_BACKEND}")
+            raise ValueError(f"Unknown LLM_BACKEND: {backend}")
+
+    def __init__(self):
+        # Get API key from environment variable
+
+        self.llm_name = LLM_MODEL
+        self.llm = self._create_llm(LLM_BACKEND, LLM_MODEL)
+        self.coder_llm = self._create_llm(CODER_LLM_BACKEND, CODER_LLM_MODEL)
+        self.analyzer_llm = self._create_llm(ANALYZER_LLM_BACKEND, ANALYZER_LLM_MODEL)
+        self.researcher_llm = self._create_llm(RESEARCHER_LLM_BACKEND, RESEARCHER_LLM_MODEL)
+        self.strategizer_llm = self._create_llm(STRATEGIZER_LLM_BACKEND, STRATEGIZER_LLM_MODEL)
+        self.meta_llm = self._create_llm(META_LLM_BACKEND, META_LLM_MODEL)
 
         # Optionally set tracing
         os.environ["LANGCHAIN_TRACING"] = LANGCHAIN_TRACING_VAR
@@ -143,10 +171,10 @@ class CreatorAgent():
             game_results: HumanMessage # Last results of running the game
             tool_calling_messages: list[AnyMessage] # Messages from the tool calling state graph
 
-        def tool_calling_state_graph(sys_msg: SystemMessage, msgs: list[AnyMessage], tools):
+        def tool_calling_state_graph(llm, sys_msg: SystemMessage, msgs: list[AnyMessage], tools):
             # Bind Tools to the LLM
-            #llm_with_tools = self.llm.bind_tools(tools, parallel_tool_calls=False)
-            llm_with_tools = self.llm.bind_tools(tools)
+            #llm_with_tools = llm.bind_tools(tools, parallel_tool_calls=False)
+            llm_with_tools = llm.bind_tools(tools)
 
             def assistant(sub_state: MessagesState):
                 return {"messages": [llm_with_tools.invoke([sys_msg] + sub_state["messages"])]}
@@ -320,7 +348,7 @@ You have access to three main tools:
             
             msgs = state["meta_messages"][-MAX_MESSAGES_IN_AGENT:]
             tools = [think_tool]
-            output = tool_calling_state_graph(sys_msg, msgs, tools)
+            output = tool_calling_state_graph(self.meta_llm, sys_msg, msgs, tools)
 
             #new_meta_message = HumanMessage(content=f"Temporary Meta Message ")
             
@@ -404,7 +432,7 @@ Respond with No Commentary, just the Analysis.
             # Call the LLM with the provided tools
             #base_len = len(state["analyzer_messages"][-MAX_MESSAGES_IN_AGENT:])
             msgs = state["analyzer_messages"][-MAX_MESSAGES_IN_AGENT:] + [performance_msg, game_output_msg, game_results_msg, current_foo_msg, state["recent_meta_message"]]
-            output = tool_calling_state_graph(sys_msg, msgs, tools)
+            output = tool_calling_state_graph(self.analyzer_llm, sys_msg, msgs, tools)
             
             # Add to Meta Messages
             response = HumanMessage(content=output["messages"][-1].content)
@@ -510,7 +538,7 @@ Respond with No Commentary, just the Strategy.
             current_foo_msg = HumanMessage(content=f"This is the current foo_player.py file\n\n{read_foo()}")
 
             msgs = state["strategizer_messages"][-MAX_MESSAGES_IN_AGENT:] + [performance_msg, current_foo_msg, state["recent_meta_message"]]
-            output = tool_calling_state_graph(sys_msg, msgs, tools)
+            output = tool_calling_state_graph(self.strategizer_llm, sys_msg, msgs, tools)
             
             # Add to Meta Messages
             response = HumanMessage(content=output["messages"][-1].content)
@@ -591,7 +619,7 @@ Respond with No Commentary, just the Research.
             # Call the LLM with the provided tools (Add 1 because no need to summarize catanatron files)
             #base_len = len(state["researcher_messages"][-MAX_MESSAGES_IN_AGENT:]) + 1
             msgs = state["researcher_messages"][-MAX_MESSAGES_IN_AGENT:] + [catanatron_files_msg, state["recent_meta_message"]]
-            output = tool_calling_state_graph(sys_msg, msgs, tools)
+            output = tool_calling_state_graph(self.researcher_llm, sys_msg, msgs, tools)
             
             # Add to Meta Messages
             response = HumanMessage(content=output["messages"][-1].content)
@@ -688,7 +716,7 @@ Make sure to start your report with 'CODER' and end with 'END CODER'.
             current_foo_msg = HumanMessage(content=f"This is the old foo_player.py file\nNow It is your turn to update it with the new recommendations from META\n\n{read_foo()}")
             #base_len = len(state["coder_messages"][-MAX_MESSAGES_IN_AGENT:])
             msgs = state["coder_messages"][-MAX_MESSAGES_IN_AGENT:] + meta_msgs + [current_foo_msg]
-            output = tool_calling_state_graph(sys_msg, msgs, tools)
+            output = tool_calling_state_graph(self.coder_llm, sys_msg, msgs, tools)
             
             # Add to Meta Messages
             response = HumanMessage(content=output["messages"][-1].content)
