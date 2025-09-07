@@ -1,14 +1,8 @@
-import time
 import os
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
-import base_llm
-from base_llm import OpenAILLM, AzureOpenAILLM, MistralLLM, BaseLLM, MistralLLM, AzureOpenAILLM
 from typing import List, Dict, Tuple, Any, Optional
 import json
-import random
-from enum import Enum
-from io import StringIO
 from datetime import datetime
 import shutil
 from pathlib import Path
@@ -28,24 +22,48 @@ from langchain_community.tools.tavily_search import TavilySearchResults
 from langchain_core.rate_limiters import InMemoryRateLimiter
 from langchain_aws import ChatBedrockConverse
 from langgraph.errors import GraphRecursionError
-
-
 from typing_extensions import TypedDict
 
 
 
-# -------- tool call configuration ----------------------------------------------------
+
+###################################################################################################
+#  CONFIG / CONSTANTS / VARIABLES
+###################################################################################################
+# CONFIG
+LANGCHAIN_TRACING_VAR = "true"
+
+LLM_BACKEND = "mistral"  # "openai", "mistral", or "claude"
+LLM_MODEL = "mistral-large-latest"
+#LLM_MODEL = "devstral-medium-latest"
+
+FOO_MAX_BYTES   = 64_000      # context-friendly cap
+CREATOR_LANGRAPH_RECURSION_LIMIT = 200  # max depth of graph recursion
+CREATOR_NUM_EVOLUTIONS = 20
+
+MAX_MESSAGES_TOOL_CALLING = 4
+MAX_META_MESSAGES_GIVEN_TO_CODER = 6
+MAX_MESSAGES_IN_AGENT = 20
+
+# CONSTANTS
 LOCAL_CATANATRON_BASE_DIR = (Path(__file__).parent.parent.parent / "catanatron").resolve()
 FOO_TARGET_FILENAME = "foo_player.py"
 FOO_TARGET_FILE = Path(__file__).parent / FOO_TARGET_FILENAME    # absolute path
-FOO_MAX_BYTES   = 64_000                                     # context-friendly cap
-# Set winning points to 5 for quicker game
 FOO_RUN_COMMAND = "catanatron-play --players=AB,AE2  --num=10 --config-map=MINI  --config-vps-to-win=10"
-RUN_TEST_FOO_HAPPENED = False # Used to keep track of whether the testfoo tool has been called
-LLM_BACKEND = "openai"  # "openai", "mistral", or "claude"
-LANGCHAIN_TRACING_VAR = "true"
-# -------------------------------------------------------------------------------------
 
+MULTI_AGENT_PROMPT = f"""You are apart of a multi-agent system that is working to evolve the code in {FOO_TARGET_FILENAME} to become the best player in the Catanatron Minigame.\n\tYour specific role is the:"""
+ANALYZER_NAME = "ANALYZER"
+STRATEGIZER_NAME = "STRATEGIZER"
+RESEARCHER_NAME = "RESEARCHER"
+CODER_NAME = "CODER"
+AGENT_KEYS = [ANALYZER_NAME, STRATEGIZER_NAME, RESEARCHER_NAME, CODER_NAME]
+
+# VARIABLES
+
+
+###################################################################################################
+#  LANGGRAPH
+###################################################################################################
 class CreatorAgent():
     """LLM-powered player that uses Claude API to make Catan game decisions."""
     # Class properties
@@ -54,26 +72,25 @@ class CreatorAgent():
 
     def __init__(self):
                 # Get API key from environment variable
+
+        self.llm_name = LLM_MODEL
         if LLM_BACKEND == "openai":
-            self.llm_name = "gpt-5-mini"
             self.llm = ChatOpenAI(
-                model="gpt-5-mini",
+                model=self.llm_name,
                 max_retries=10,
             )
         elif LLM_BACKEND == "mistral":
-            self.llm_name = "mistral-large-latest"
             rate_limiter = InMemoryRateLimiter(
                 requests_per_second=1,    # Adjust based on your API tier
                 check_every_n_seconds=0.1,
             )
             self.llm = ChatMistralAI(
-                model="mistral-large-latest",
+                model=self.llm_name,
                 temperature=0,
                 max_retries=10,
                 rate_limiter=rate_limiter,
             )
         elif LLM_BACKEND == "claude":
-            self.llm_name = "claude-3.7"
             self.llm = ChatBedrockConverse(
                 aws_access_key_id = os.environ["AWS_ACESS_KEY"],
                 aws_secret_access_key = os.environ["AWS_SECRET_KEY"],
@@ -103,7 +120,7 @@ class CreatorAgent():
         )
 
         self.config = {
-            "recursion_limit": 200, # set recursion limit for graph
+            "recursion_limit": CREATOR_LANGRAPH_RECURSION_LIMIT, # set recursion limit for graph
             # "configurable": {
             #     "thread_id": "1"
             # }
@@ -125,24 +142,6 @@ class CreatorAgent():
             recent_helper_response: HumanMessage # Recent Message from the helper node (used for debugging)
             game_results: HumanMessage # Last results of running the game
             tool_calling_messages: list[AnyMessage] # Messages from the tool calling state graph
-            
-
-        multi_agent_prompt = f"""You are apart of a multi-agent system that is working to evolve the code in {FOO_TARGET_FILENAME} to become the best player in the Catanatron Minigame.\n\tYour specific role is the:"""
-        
-        NUM_EVOLUTIONS = 20
-
-
-        MAX_MESSAGES_TOOL_CALLING = 4
-        NUM_META_MESSAGES_GIVEN_TO_CODER = 6
-        MAX_MESSAGES_IN_AGENT = 20
-
-
-        ANALYZER_NAME = "ANALYZER"
-        STRATEGIZER_NAME = "STRATEGIZER"
-        RESEARCHER_NAME = "RESEARCHER"
-        CODER_NAME = "CODER"
-        
-        AGENT_KEYS = [ANALYZER_NAME, STRATEGIZER_NAME, RESEARCHER_NAME, CODER_NAME]
 
         def tool_calling_state_graph(sys_msg: SystemMessage, msgs: list[AnyMessage], tools):
             # Bind Tools to the LLM
@@ -246,26 +245,36 @@ Start your response with "After Running The New {FOO_TARGET_FILENAME} Player, He
 
             sys_msg = SystemMessage(
                 content=f"""
-{multi_agent_prompt} META SUPERVISOR
+{MULTI_AGENT_PROMPT} META SUPERVISOR
 
 Task: You are the highest level of intelligence, and you must think critically about all your outputs.
 
-HIGH LEVEL GOAL: Learn how to create a Catanatron player in {FOO_TARGET_FILENAME} that can win games against the opponent
+META HIGH LEVEL GOAL: Learn how to create a Catanatron player in {FOO_TARGET_FILENAME} that can win games against the opponent
 
+<Performance History>
 Here is your Current Performance History for Evolving the {FOO_TARGET_FILENAME} player:
 {read_full_performance_history()}
+</Performance History>
 
+<Available Tools>
+You have access to three main tools:
+1. **think_tool**: For reflection and strategic planning during research
 
+**CRITICAL: Use think_tool to plan your approach if you feel like you need to think deeper. Do not call think_tool with any other tools in parallel.**
+</Available Tools>
+
+<Instructions>
 1st Step: Look at the previous messages and take note of your previous goals, and the newest information provided to you
     - Be sure to carefully consider what the analyzer is saying regarding the game output
+    - If needed, use think_tool to reflect on your current situation and plan your next steps
 
-2nd Step: Output your current MEDIUM LEVEL GOAL, and LOW LEVEL GOAL at the top of your message
+2nd Step: Output your current META MEDIUM LEVEL GOAL, and META LOW LEVEL GOAL at the top of your message
 
 3rd Step: Determine the sub-agent that you wish to consult, and prepare an OBJECTIVE message for them
     - If your performance history has not improved in the last three evolutions or stays at 0, consult the strategizer
+</Instructions>
 
-
-AGENTS:
+<AGENTS>
     {ANALYZER_NAME}: Analyer has access to the performance history, and the {FOO_TARGET_FILENAME}.py, game_output.txt, and game_results*.json for all the previous games/iterations
         Ex. - Can you give me the code for the best performing {FOO_TARGET_FILENAME} player?
         Ex. - Create a detailed report on all the game outputs
@@ -285,30 +294,32 @@ AGENTS:
 
     {CODER_NAME}: Coder will only write the {FOO_TARGET_FILENAME} file. Afterwards the game is automatically run and the results are returned
         - Make Sure to Give Very Explicit Instructions to the coder (including all required code snippets)
+        - Emphasize including print statements for debugging, and try/except blocks for error handling
         Ex. - Replace each 'action.type' call with the correct syntax of 'action.action_type'
         Ex. - Implement a a new function that will weight all the available actions. Follow this pseudocode .....
+</AGENTS>
 
-
-Guidelines:
+<Guidelines>
     - Make sure to be clear and concise in your message
     - Do not include vague messages to your agents, 
     - Always keep your GOALS in mind and try to achieve them
         - Medium Level Goal must have a clear objective for the the next **5** iterations of evolving
         - Low Level Goal must have a clear objective for the next iteration of evolving
     - Only include one agent key (the output is parsed to detemine which agent to send it to)
+</Guidelines>
 
-
-Output Format:
-    - MEDIUM LEVEL GOAL: <insert here>
-    - LOW LEVEL GOAL: <insert here>
-    - CHOSEN AGENT: {ANALYZER_NAME} / {STRATEGIZER_NAME} / {RESEARCHER_NAME} / {CODER_NAME} 
+<Output Format>
+    - META MEDIUM LEVEL GOAL: <insert here>
+    - META LOW LEVEL GOAL: <insert here>
+    - CHOSEN AGENT: {ANALYZER_NAME} / {STRATEGIZER_NAME} / {RESEARCHER_NAME} / {CODER_NAME} (choose one)
     - AGENT OBJECTIVE: <insert your objective message for the agent here>
+</Output Format>
 
                 """
             )
             
             msgs = state["meta_messages"][-MAX_MESSAGES_IN_AGENT:]
-            tools = []
+            tools = [think_tool]
             output = tool_calling_state_graph(sys_msg, msgs, tools)
 
             #new_meta_message = HumanMessage(content=f"Temporary Meta Message ")
@@ -326,9 +337,9 @@ Output Format:
             
             sys_msg = SystemMessage(
                 content=f"""
-                    {multi_agent_prompt} ANALYZER
+{MULTI_AGENT_PROMPT} ANALYZER
                     
-Your Inputs:
+<Your Inputs>
     - The previous messages between the Coordinator agent and you
     - The most up to date performance history, with the scores and game results of the {FOO_TARGET_FILENAME} player accross evolutions
     - The most recent foo_player.py file (note previous messages might be referring to an older version)
@@ -336,26 +347,25 @@ Your Inputs:
     - The most recent game_results json file which contains the breakdown of the {FOO_TARGET_FILENAME} player vs. the opponent
         - Note: The game_results json file will not be included if the game failed to run due to a syntax error
     - Your OBJECTIVE: The most recent message includes the task that you are responding to... starts with {ANALYZER_NAME}
+</Your Inputs>
 
-
-Your Role:
+<Your Role>
     - You are the Game ANALYZER Expert for Evolving the {FOO_TARGET_FILENAME} player
+    - As an expert, you can always use the think_tool to reflect and plan your next steps
     - As the analyzer, you are the forefront for the game output for the foo_player.py
     - You are aware of the nuances of the game output, and how to interpret the results
     - You are in charge of storing all the knowledge that you have learned
     - You can open any file from the performace history using the read_local_file tool
     - Ensure output from the game_output.txt matches the {FOO_TARGET_FILENAME} player
+</Your Role>
 
-
-Your Task: 
+<Your Task>
     1. Digest the your past inquiries, the performance history, the game output, the game results, and your OBJECTIVE
-
     2. Use any additional tools required to get the information you need
-
     3. Respond to your OBJECTIVE message following your guidelines
+</Your Task>
 
-
-Your Guidelines:
+<Your Guidelines>
     - Prepare an organized, clear, and concise report with your answer to the most recent message
     - Do not make up information. If you do not know the answer, say you do not know and where you looked
     - Cite the sources that you used in your report at the bottom (so you know where to find it in the future)
@@ -366,12 +376,16 @@ Your Guidelines:
             "Defaulting to Random Action" - could be problem with action selection
             "Choose action with score: 0" - could be problem with action scoring 
     - End your response with 'Let me know if you need anything else'
+</Your Guidelines>
 
-
-Your Tools:
+<Your Tools>
     - read_local_file: Read the content of a file that is in the catanatron files
         Input: String rel_path - path of the file to read from catanatron files or {FOO_TARGET_FILENAME}
         Output: String - content of the file                        
+    - think_tool: Reflect on your current situation and plan your next steps
+        Input: String reflection -Your detailed reflection on research progress, findings, gaps, and next steps
+        Output: String - Confirmation that reflection was recorded for decision-making
+</Your Tools>
 
 YOU ARE LIMITED TO {MAX_MESSAGES_TOOL_CALLING} TOOL CALLS
 Make sure to start your output with 'ANALYSIS:' and end with 'END ANALYSIS'.
@@ -379,7 +393,7 @@ Respond with No Commentary, just the Analysis.
                 """
             )
             
-            tools = [read_local_file]
+            tools = [read_local_file, think_tool]
 
             performance_msg = HumanMessage(content=f"This is the current performance history\n\n{read_full_performance_history()}")
             game_output_msg = HumanMessage(content=f"This is the current game_output.txt file\n\n{read_game_output_file()}")
@@ -388,7 +402,7 @@ Respond with No Commentary, just the Analysis.
 
 
             # Call the LLM with the provided tools
-            base_len = len(state["analyzer_messages"][-MAX_MESSAGES_IN_AGENT:])
+            #base_len = len(state["analyzer_messages"][-MAX_MESSAGES_IN_AGENT:])
             msgs = state["analyzer_messages"][-MAX_MESSAGES_IN_AGENT:] + [performance_msg, game_output_msg, game_results_msg, current_foo_msg, state["recent_meta_message"]]
             output = tool_calling_state_graph(sys_msg, msgs, tools)
             
@@ -415,37 +429,39 @@ Respond with No Commentary, just the Analysis.
 
             sys_msg = SystemMessage(
                 content=f"""
-{multi_agent_prompt} {STRATEGIZER_NAME}
+{MULTI_AGENT_PROMPT} {STRATEGIZER_NAME}
 
-Your Inputs:
+<Your Inputs>
     - The previous messages between the Coordinator agent and you
     - The most up to date performance history, with the scores and game results of the {FOO_TARGET_FILENAME} player accross evolutions.
         - If a score is 0 for a Evolution and json_game_results_path is None, it means that the game failed to run due to a syntax error
         - Sometimes you might need to look at the most recent running {FOO_TARGET_FILENAME} player to see if the game ran, which will be a nonzero score for Evolution
     - The most recent foo_player.py file (note previous messages might be referring to an older version)
     - Your OBJECTIVE: The most recent message includes the task that you are responding to... starts with {STRATEGIZER_NAME}
+</Your Inputs>
 
-Your Role:
-    - You are the Strategy Expert for Evolving the {FOO_TARGET_FILENAME} player: 
+<Your Role>
+    - You are the Strategy Expert for Evolving the {FOO_TARGET_FILENAME} player
+    - As an expert, you can always use the think_tool to reflect and plan your next steps
     - As the strategizer, you are the forefront for improvement the foo_player.py
     - You are **Creative**, and are always looking for new strategies to implement
     - If you feel like the current strategy is not working, feel free to include it in your response
     - You are in charge of storing all the different attempts at strategies, and the results of each strategy
+</Your Role>
 
-Your Task: 
+<Your Task>
     1. Digest the current performance history, the current foo_player.py, the past messages, and your OBJECTIVE
-
     2. Use any additional tools required to get the information you need
-
     3. Respond to your OBJECTIVE message following your guidelines
+</Your Task>
 
-
-Your Guidelines:
+<Your Guidelines>
     - Prepare an organized, clear, and concise report with your answer to the most recent message
     - Do not make up information. If you do not know the answer, say you do not know
     - Cite any sources that you use in your report at the bottom
+</Your Guidelines>
 
-Scenarios:
+<Scenarios>
     Within the first 5 Evolutions, if The performance history shows that the player consistentaly does not compile (score stays at 0) or cannot get a score better than default (score stays at 2), Repond With
         Try the following code snippet to get the player to compile and get simple results:
         for action in playable_actions:
@@ -458,9 +474,9 @@ Scenarios:
 
     If the performance history shows no signs of player improving over the last 3 successful evolutions (game ran successfully)
         Recommend that the player should try a new strategy to optimize the {FOO_TARGET_FILENAME} player (This means starting from scratch)
+</Scenarios>
     
-
-Your Tools:
+<Your Tools>
     - read_local_file: Read the content of a file that is in the performance history
         Input: String rel_path - path of the file to read
         Output: String - content of the file
@@ -472,7 +488,11 @@ Your Tools:
         Output: String - contents of the python file for the older player as a string
     - web_search_tool_call: Perform a web search using the Tavily API.
         Input: String query - the search query
-        Output: TavilySearchResults - the search results                         
+        Output: TavilySearchResults - the search results
+    - think_tool: Reflect on your current situation and plan your next steps
+        Input: String reflection - Your detailed reflection on strategy options, tradeoffs, and next steps
+        Output: String - Confirmation that reflection was recorded for decision-making
+</Your Tools>
 
 YOU ARE LIMITED TO {MAX_MESSAGES_TOOL_CALLING} TOOL CALLS
 Make sure to start your output with 'STRATEGY:' and end with 'END STRATEGY'.
@@ -481,10 +501,10 @@ Respond with No Commentary, just the Strategy.
                 """
             )
 
-            tools = [read_local_file, read_game_results_file, read_older_foo_file, web_search_tool_call]
+            tools = [read_local_file, read_game_results_file, read_older_foo_file, web_search_tool_call, think_tool]
             
             # Call the LLM with the provided tools
-            base_len = len(state["strategizer_messages"][-MAX_MESSAGES_IN_AGENT:])
+            #base_len = len(state["strategizer_messages"][-MAX_MESSAGES_IN_AGENT:])
 
             performance_msg = HumanMessage(content=f"This is the current performance history\n\n{read_full_performance_history()}")
             current_foo_msg = HumanMessage(content=f"This is the current foo_player.py file\n\n{read_foo()}")
@@ -515,42 +535,47 @@ Respond with No Commentary, just the Strategy.
 
             sys_msg = SystemMessage(
                 content=f"""                     
-{multi_agent_prompt} {RESEARCHER_NAME}
+{MULTI_AGENT_PROMPT} {RESEARCHER_NAME}
 
-Your Inputs:
+<Your Inputs>
     - The previous messages between the Coordinator agent and you
     - A list of all of the files in the catanatron directory that you have access to
     - Your OBJECTIVE: The most recent message includes the task that you are responding to... starts with {RESEARCHER_NAME}
+</Your Inputs>
 
-Your Role:
-    - You are the Research Expert for Evolving the {FOO_TARGET_FILENAME} player: 
+<Your Role>
+    - You are the Research Expert for Evolving the {FOO_TARGET_FILENAME} player
+    - As an expert, you can always use the think_tool to reflect and plan your next steps
     - As the researcher, you are the forefront for knowledge for the foo_player.py
     - You are aware of the nuances of the Catanatron game, and the Catanatron codebase
     - You are in charge of storing all the knowledge that you have learned
+</Your Role>
 
-Your Task: 
+<Your Task>
     1. Digest the catanatron directory, your past inquiries, and your current OBJEECTIVE
-
     2. Use any additional tools required to get the information you need
-
     3. Respond to your OBJECTIVE message following your guidelines
+</Your Task>
 
-
-Your Guidelines:
+<Your Guidelines>
     - Prepare an organized, clear, and concise report with your answer to the most recent message
     - For questions on syntax, ensure to provide relevant code that you found
     - Do not make up information. If you do not know the answer, say you do not know and where you looked
     - Cite the sources that you used in your report at the bottom, with a note on the information they included (so you know where to find it in the future)
         Ex. 1. catanatron_core/catanatron/models/enums.py - includes enums for Development Cards, NodeRef, EdgeRef, ActionPrompt, and ActionType
+</Your Guidelines>
 
-
-Your Tools:
+<Your Tools>
     - read_local_file: Read the content of a file that is in the catanatron files. (look at previous sources cited at the bottom of your messages for file information)
         Input: String rel_path - path of the file to read from catanatron files or {FOO_TARGET_FILENAME}
         Output: String - content of the file
     - web_search_tool_call: Perform a web search using the Tavily API.
         Input: String query - the search query
-        Output: TavilySearchResults - the search results                         
+        Output: TavilySearchResults - the search results
+    - think_tool: Reflect on your current situation and plan your next steps
+        Input: String reflection - Your detailed reflection on research progress, findings, gaps, and next steps
+        Output: String - Confirmation that reflection was recorded for decision-making
+</Your Tools>
 
 YOU ARE LIMITED TO {MAX_MESSAGES_TOOL_CALLING} TOOL CALLS
 Make sure to start your output with 'RESEARCH:' and end with 'END RESEARCH'.
@@ -560,11 +585,11 @@ Respond with No Commentary, just the Research.
                 """
             )
 
-            tools = [read_local_file, web_search_tool_call]
+            tools = [read_local_file, web_search_tool_call, think_tool]
             
             catanatron_files_msg = HumanMessage(content=f"This is the list of catanatron files\n\n{list_catanatron_files()}")
             # Call the LLM with the provided tools (Add 1 because no need to summarize catanatron files)
-            base_len = len(state["researcher_messages"][-MAX_MESSAGES_IN_AGENT:]) + 1
+            #base_len = len(state["researcher_messages"][-MAX_MESSAGES_IN_AGENT:]) + 1
             msgs = state["researcher_messages"][-MAX_MESSAGES_IN_AGENT:] + [catanatron_files_msg, state["recent_meta_message"]]
             output = tool_calling_state_graph(sys_msg, msgs, tools)
             
@@ -588,28 +613,29 @@ Respond with No Commentary, just the Research.
 
             sys_msg = SystemMessage(
                 content=f"""                    
-{multi_agent_prompt} {CODER_NAME}
+{MULTI_AGENT_PROMPT} {CODER_NAME}
 
-Your Inputs:
+<Your Inputs>
     - The previous messages between the Coordinator agent and you
-    - The most last {NUM_META_MESSAGES_GIVEN_TO_CODER} before the {FOO_TARGET_FILENAME} include the most recent META messages
+    - The most last {MAX_META_MESSAGES_GIVEN_TO_CODER} before the {FOO_TARGET_FILENAME} include the most recent META messages
     - Your OBJECTIVE: The most last META message that includes the task that you are responding to... starts with {CODER_NAME}
     - The most recent foo_player.py file (note previous messages might be referring to an older version)
+</Your Inputs>
 
-Your Role:
-    - You are the Coding Expert for Evolving the {FOO_TARGET_FILENAME} player: 
+<Your Role>
+    - You are the Coding Expert for Evolving the {FOO_TARGET_FILENAME} player
+    - As an expert, you can always use the think_tool to reflect and plan your next steps
     - As the coder, you are the forefront for implementation for the foo_player.py
     - You are in charge of storing all the coding nuances that you have learned
+</Your Role>
 
-Your Task: 
+<Your Task>
     1. Digest your past inquiries, the meta messages, your current OBJEECTIVE, and the current {FOO_TARGET_FILENAME}
-
     2. Call the write_foo tool call to write the new code to the {FOO_TARGET_FILENAME} file
-
     3. Create a report with the changes you made to the code
+</Your Task>
 
-
-Coding Guidelines:
+<Coding Guidelines>
     - Focus on making sure the code implementes the solution in the most correct way possible
     - Make Sure to not add backslashes to comments, ONLY OUTPUT VALID PYTHON CODE
         WRONG:        print(\\'Choosing First Action on Default\\')
@@ -619,10 +645,11 @@ Coding Guidelines:
     - DO NOT MAKE UP VARIABLES OR FUNCTIONS RELATING TO THE GAME
     - Note: You will have multiple of iterations to evolve, so make sure the syntax is correct
     - PRIORITIZE FIXING BUGS AND ERRORS THAT ARISE
-    - Make sure to follow **python 3.12** syntax!!
+    - Make sure to follow **python 3.11** syntax!!
     - Your code will go straight to the {FOO_TARGET_FILENAME} file, to be run in the game, so make sure to be aware of the syntax
+</Coding Guidelines>
 
-Report Guidelines:
+<Report Guidelines>
     - Return bullet points of the changes you made to the code
     - Make sure to report if you did any of the following
         - Created new functions
@@ -631,27 +658,32 @@ Report Guidelines:
         - Added print statements to debug the code
         - Want information on imports, or the game
     - Include any comments that can be included in next OBJECTIVE to help you write better code 
+</Report Guidelines>
 
-Your Tools:
+<Your Tools>
     - write_foo: Write the content of {FOO_TARGET_FILENAME}. 
         Input: String new_text - python code that will be written to {FOO_TARGET_FILENAME}
+    - think_tool: Reflect on your current situation and plan your next steps before writing or after errors
+        Input: String reflection - Your detailed reflection on implementation approach, risks, and next steps
+        Output: String - Confirmation that reflection was recorded for decision-making
+</Your Tools>
 
 Make sure to start your report with 'CODER' and end with 'END CODER'.   
 
                 """
             )
            
-            tools = [write_foo]
+            tools = [write_foo, think_tool]
             
             # # Give Coder The Last Number of Meta Messages
-            if len(state["meta_messages"]) > NUM_META_MESSAGES_GIVEN_TO_CODER:
-                meta_msgs = state["meta_messages"][-NUM_META_MESSAGES_GIVEN_TO_CODER:]
+            if len(state["meta_messages"]) > MAX_META_MESSAGES_GIVEN_TO_CODER:
+                meta_msgs = state["meta_messages"][-MAX_META_MESSAGES_GIVEN_TO_CODER:]
             else:
                 meta_msgs = state["meta_messages"]
 
             # Call the LLM with the provided tools
             current_foo_msg = HumanMessage(content=f"This is the old foo_player.py file\nNow It is your turn to update it with the new recommendations from META\n\n{read_foo()}")
-            base_len = len(state["coder_messages"][-MAX_MESSAGES_IN_AGENT:])
+            #base_len = len(state["coder_messages"][-MAX_MESSAGES_IN_AGENT:])
             msgs = state["coder_messages"][-MAX_MESSAGES_IN_AGENT:] + meta_msgs + [current_foo_msg]
             output = tool_calling_state_graph(sys_msg, msgs, tools)
             
@@ -680,7 +712,7 @@ Make sure to start your report with 'CODER' and end with 'END CODER'.
             """
             print("In Conditional Edge Meta")
         
-            if (CreatorAgent.current_evolution > NUM_EVOLUTIONS):
+            if (CreatorAgent.current_evolution > CREATOR_NUM_EVOLUTIONS):
                 lists = ["meta_messages", "analyzer_messages", "strategizer_messages", "researcher_messages", "coder_messages"]
                 for msg_list in lists:
                     log_path = os.path.join(CreatorAgent.run_dir, f"llm_log_{self.llm_name}_{msg_list}.txt")
@@ -809,6 +841,9 @@ Make sure to start your report with 'CODER' and end with 'END CODER'.
         return None
 
 
+###################################################################################################
+#  TOOL CALLS AND UTILS
+###################################################################################################
 def list_catanatron_files(_: str = "") -> str:
     """Return all files beneath BASE_DIR, one per line."""
     return "\n".join(
@@ -1086,7 +1121,7 @@ def read_full_performance_history(_: str = "") -> str:
         return json.dumps(performance_history, indent=2)
     
 def read_game_output_file(num: int = -1) -> str:
-    """Return the contents of the *.txt* game-log for the chosen Evolution."""
+    """Return the contents of the *.txt* game-log for the chosen num Evolution."""
     entry, err = _get_evolution_entry(num)
     if err:
         return err
@@ -1101,7 +1136,7 @@ def read_game_output_file(num: int = -1) -> str:
         return f"Error reading '{path}': {exc}"
     
 def read_game_results_file(num: int = -1) -> str:
-    """Return the contents of the *.json* game-results file for the chosen Evolution."""
+    """Return the contents of the *.json* game-results file for the chosen num Evolution."""
     entry, err = _get_evolution_entry(num)
     if err:
         return err
@@ -1118,6 +1153,7 @@ def read_game_results_file(num: int = -1) -> str:
 def read_older_foo_file(num: int = -1) -> str:
     """
     Return the contents of the *foo_player.py* file saved for the
+    chosen num evolution
     """
     entry, err = _get_evolution_entry(num)
     if err:
@@ -1132,6 +1168,32 @@ def read_older_foo_file(num: int = -1) -> str:
     except Exception as exc:          # pragma: no cover
         return f"Error reading '{path}': {exc}"
 
+# Think tool from langchain-ai:open_deep_research
+def think_tool(reflection: str) -> str:
+    """Tool for strategic reflection on research progress and decision-making.
+
+    Use this tool after each search to analyze results and plan next steps systematically.
+    This creates a deliberate pause in the research workflow for quality decision-making.
+
+    When to use:
+    - After receiving search results: What key information did I find?
+    - Before deciding next steps: Do I have enough to answer comprehensively?
+    - When assessing research gaps: What specific information am I still missing?
+    - Before concluding research: Can I provide a complete answer now?
+
+    Reflection should address:
+    1. Analysis of current findings - What concrete information have I gathered?
+    2. Gap assessment - What crucial information is still missing?
+    3. Quality evaluation - Do I have sufficient evidence/examples for a good answer?
+    4. Strategic decision - Should I continue searching or provide my answer?
+
+    Args:
+        reflection: Your detailed reflection on research progress, findings, gaps, and next steps
+
+    Returns:
+        Confirmation that reflection was recorded for decision-making
+    """
+    return f"Reflection recorded: {reflection}"
 # Helper to parse performance history
 def _get_evolution_entry(num: int) -> Tuple[Dict[str, Any], str]:
     """
