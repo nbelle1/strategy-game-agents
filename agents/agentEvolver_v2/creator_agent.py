@@ -50,8 +50,8 @@ STRATEGIZER_LLM_BACKEND = "mistral"
 STRATEGIZER_LLM_MODEL = "mistral-large-latest"
 
 # Meta LLM
-META_LLM_BACKEND = "mistral"
-META_LLM_MODEL = "mistral-large-latest"
+META_LLM_BACKEND = "openai"
+META_LLM_MODEL = "gpt-5-mini"
 
 FOO_MAX_BYTES   = 64_000      # context-friendly cap
 CREATOR_LANGRAPH_RECURSION_LIMIT = 200  # max depth of graph recursion
@@ -61,11 +61,14 @@ MAX_MESSAGES_TOOL_CALLING = 4
 MAX_META_MESSAGES_GIVEN_TO_CODER = 6
 MAX_MESSAGES_IN_AGENT = 20
 
+# Catanatron
+FOO_RUN_COMMAND = "catanatron-play --players=AB,AE2  --num=30 --config-map=MINI  --config-vps-to-win=10"
+
+
 # CONSTANTS
 LOCAL_CATANATRON_BASE_DIR = (Path(__file__).parent.parent.parent / "catanatron").resolve()
 FOO_TARGET_FILENAME = "foo_player.py"
 FOO_TARGET_FILE = Path(__file__).parent / FOO_TARGET_FILENAME    # absolute path
-FOO_RUN_COMMAND = "catanatron-play --players=AB,AE2  --num=30 --config-map=MINI  --config-vps-to-win=10"
 
 MULTI_AGENT_PROMPT = f"""You are apart of a multi-agent system that is working to evolve the code in {FOO_TARGET_FILENAME} to become the best player in the Catanatron Minigame.\n\tYour specific role is the:"""
 ANALYZER_NAME = "ANALYZER"
@@ -113,6 +116,28 @@ class CreatorAgent():
             )
         else:
             raise ValueError(f"Unknown LLM_BACKEND: {backend}")
+    
+    def log_config_settings(self):
+        config_path = os.path.join(CreatorAgent.run_dir, "config.txt")
+        with open(config_path, "w") as f:
+            f.write(f"LANGCHAIN_TRACING_VAR = {LANGCHAIN_TRACING_VAR}\n")
+            f.write(f"CODER_LLM_BACKEND = {CODER_LLM_BACKEND}\n")
+            f.write(f"CODER_LLM_MODEL = {CODER_LLM_MODEL}\n")
+            f.write(f"ANALYZER_LLM_BACKEND = {ANALYZER_LLM_BACKEND}\n")
+            f.write(f"ANALYZER_LLM_MODEL = {ANALYZER_LLM_MODEL}\n")
+            f.write(f"RESEARCHER_LLM_BACKEND = {RESEARCHER_LLM_BACKEND}\n")
+            f.write(f"RESEARCHER_LLM_MODEL = {RESEARCHER_LLM_MODEL}\n")
+            f.write(f"STRATEGIZER_LLM_BACKEND = {STRATEGIZER_LLM_BACKEND}\n")
+            f.write(f"STRATEGIZER_LLM_MODEL = {STRATEGIZER_LLM_MODEL}\n")
+            f.write(f"META_LLM_BACKEND = {META_LLM_BACKEND}\n")
+            f.write(f"META_LLM_MODEL = {META_LLM_MODEL}\n")
+            f.write(f"FOO_MAX_BYTES = {FOO_MAX_BYTES}\n")
+            f.write(f"CREATOR_LANGRAPH_RECURSION_LIMIT = {CREATOR_LANGRAPH_RECURSION_LIMIT}\n")
+            f.write(f"CREATOR_NUM_EVOLUTIONS = {CREATOR_NUM_EVOLUTIONS}\n")
+            f.write(f"MAX_MESSAGES_TOOL_CALLING = {MAX_MESSAGES_TOOL_CALLING}\n")
+            f.write(f"MAX_META_MESSAGES_GIVEN_TO_CODER = {MAX_META_MESSAGES_GIVEN_TO_CODER}\n")
+            f.write(f"MAX_MESSAGES_IN_AGENT = {MAX_MESSAGES_IN_AGENT}\n")
+            f.write(f"FOO_RUN_COMMAND = {FOO_RUN_COMMAND}\n")
 
     def __init__(self):
         # Get API key from environment variable
@@ -142,11 +167,10 @@ class CreatorAgent():
 
         self.config = {
             "recursion_limit": CREATOR_LANGRAPH_RECURSION_LIMIT, # set recursion limit for graph
-            # "configurable": {
-            #     "thread_id": "1"
-            # }
         }
-        
+
+        self.log_config_settings()
+
         self.react_graph = self.create_langchain_react_graph()
 
     def create_langchain_react_graph(self):
@@ -165,7 +189,7 @@ class CreatorAgent():
             game_results: HumanMessage # Last results of running the game
             tool_calling_messages: list[AnyMessage] # Messages from the tool calling state graph
 
-        def tool_calling_state_graph(llm, sys_msg: SystemMessage, msgs: list[AnyMessage], tools):
+        def tool_calling_state_graph(llm, agent_name, sys_msg: SystemMessage, msgs: list[AnyMessage], tools):
             # Bind Tools to the LLM
             #llm_with_tools = llm.bind_tools(tools, parallel_tool_calls=False)
             llm_with_tools = llm.bind_tools(tools)
@@ -200,11 +224,20 @@ class CreatorAgent():
                 print("\n")
                 last_event = event
 
-            # Save tools to log file
+            # Save tools to continuouslog file
             log_path = os.path.join(CreatorAgent.run_dir, f"llm_log_tools.txt")
             with open(log_path, "a") as log_file:
                 for m in last_event['messages']:
-                    log_file.write(m.pretty_repr())
+                    log_file.write(m.pretty_repr() + "\n")
+
+            # Create messages_tools directory if needed
+            os.makedirs(os.path.join(CreatorAgent.run_dir, "messages_tools"), exist_ok=True)
+
+            # Save tools to log file for individual agents
+            log_path = os.path.join(CreatorAgent.run_dir, "messages_tools", f"llm_log_{agent_name}_tools.txt")
+            with open(log_path, "a") as log_file:
+                for m in last_event['messages']:
+                    log_file.write(m.pretty_repr() + "\n")
 
             return last_event
 
@@ -289,8 +322,10 @@ You have access to the following tool:
 1st Step: Look at the previous messages and take note of your previous goals, and the newest information provided to you
     - Be sure to carefully consider what the analyzer is saying regarding the game output
     - If needed, use think_tool to reflect on your current situation and plan your next steps
+    - Note: The think_tool messages will only be visible to you for your current turn, so ensure to summarize your thoughts in META THOUGHTS
 
-2nd Step: Output your current META MEDIUM LEVEL GOAL, and META LOW LEVEL GOAL at the top of your message
+2nd Step: Output your current META THOUGHTS, and META GOAL at the top of your message
+    - If you used think_tool, include a brief summary of your thoughts from the tool call in META THOUGHTS
 
 3rd Step: Determine the sub-agent that you wish to consult, and prepare an OBJECTIVE message for them
     - If your performance history has not improved in the last three evolutions or stays at 0, consult the strategizer
@@ -309,7 +344,8 @@ You have access to the following tool:
         Ex. - What are 5 new strategy options that could give the current {FOO_TARGET_FILENAME} player a boost?
         Ex. - What are the previous strategies that I have attempted, and what are the results of each strategy?
 
-    {RESEARCHER_NAME}: Researcher has access to the game files, and can perform web searches to find information
+    {RESEARCHER_NAME}: Researcher has access to the catanatron game files/API, and can perform web searches to find information
+        - Use to look into code syntax errors or questions relating to the Catanatron API
         Ex. - Can you find for me the different ActionTypes, and what I need to import to include them?
         Ex. - Can you give me the strategy that the opponent player is using?
         Ex. - What are the state functions that I can call to get information about the game state?
@@ -324,15 +360,13 @@ You have access to the following tool:
 <Guidelines>
     - Make sure to be clear and concise in your message
     - Do not include vague messages to your agents, 
-    - Always keep your GOALS in mind and try to achieve them
-        - Medium Level Goal must have a clear objective for the the next **5** iterations of evolving
-        - Low Level Goal must have a clear objective for the next iteration of evolving
+    - Always keep your GOAL in mind and try to achieve them
     - Only include one agent key (the output is parsed to detemine which agent to send it to)
 </Guidelines>
 
 <Output Format>
-    - META MEDIUM LEVEL GOAL: <insert here>
-    - META LOW LEVEL GOAL: <insert here>
+    - META THOUGHTS: <insert here>
+    - META GOAL: <insert here>
     - CHOSEN AGENT: {ANALYZER_NAME} / {STRATEGIZER_NAME} / {RESEARCHER_NAME} / {CODER_NAME} (choose one)
     - AGENT OBJECTIVE: <insert your objective message for the agent here>
 </Output Format>
@@ -342,7 +376,7 @@ You have access to the following tool:
             
             msgs = state["meta_messages"][-MAX_MESSAGES_IN_AGENT:]
             tools = [think_tool]
-            output = tool_calling_state_graph(self.meta_llm, sys_msg, msgs, tools)
+            output = tool_calling_state_graph(self.meta_llm, "META",sys_msg, msgs, tools)
 
             #new_meta_message = HumanMessage(content=f"Temporary Meta Message ")
             
@@ -426,7 +460,7 @@ Respond with No Commentary, just the Analysis.
             # Call the LLM with the provided tools
             #base_len = len(state["analyzer_messages"][-MAX_MESSAGES_IN_AGENT:])
             msgs = state["analyzer_messages"][-MAX_MESSAGES_IN_AGENT:] + [performance_msg, game_output_msg, game_results_msg, current_foo_msg, state["recent_meta_message"]]
-            output = tool_calling_state_graph(self.analyzer_llm, sys_msg, msgs, tools)
+            output = tool_calling_state_graph(self.analyzer_llm, ANALYZER_NAME, sys_msg, msgs, tools)
             
             # Add to Meta Messages
             response = HumanMessage(content=output["messages"][-1].content)
@@ -532,8 +566,8 @@ Respond with No Commentary, just the Strategy.
             current_foo_msg = HumanMessage(content=f"This is the current foo_player.py file\n\n{read_foo()}")
 
             msgs = state["strategizer_messages"][-MAX_MESSAGES_IN_AGENT:] + [performance_msg, current_foo_msg, state["recent_meta_message"]]
-            output = tool_calling_state_graph(self.strategizer_llm, sys_msg, msgs, tools)
-            
+            output = tool_calling_state_graph(self.strategizer_llm, STRATEGIZER_NAME, sys_msg, msgs, tools)
+
             # Add to Meta Messages
             response = HumanMessage(content=output["messages"][-1].content)
             meta_messages = state["meta_messages"] + [response]
@@ -613,8 +647,8 @@ Respond with No Commentary, just the Research.
             # Call the LLM with the provided tools (Add 1 because no need to summarize catanatron files)
             #base_len = len(state["researcher_messages"][-MAX_MESSAGES_IN_AGENT:]) + 1
             msgs = state["researcher_messages"][-MAX_MESSAGES_IN_AGENT:] + [catanatron_files_msg, state["recent_meta_message"]]
-            output = tool_calling_state_graph(self.researcher_llm, sys_msg, msgs, tools)
-            
+            output = tool_calling_state_graph(self.researcher_llm, "RESEARCHER", sys_msg, msgs, tools)
+
             # Add to Meta Messages
             response = HumanMessage(content=output["messages"][-1].content)
             meta_messages = state["meta_messages"] + [response]
@@ -710,8 +744,8 @@ Make sure to start your report with '{CODER_NAME}' and end with 'END {CODER_NAME
             current_foo_msg = HumanMessage(content=f"This is the old foo_player.py file\nNow It is your turn to update it with the new recommendations from META\n\n{read_foo()}")
             #base_len = len(state["coder_messages"][-MAX_MESSAGES_IN_AGENT:])
             msgs = state["coder_messages"][-MAX_MESSAGES_IN_AGENT:] + meta_msgs + [current_foo_msg]
-            output = tool_calling_state_graph(self.coder_llm, sys_msg, msgs, tools)
-            
+            output = tool_calling_state_graph(self.coder_llm, "CODER", sys_msg, msgs, tools)
+
             # Add to Meta Messages
             response = HumanMessage(content=output["messages"][-1].content)
             meta_messages = state["meta_messages"] + [response]
@@ -737,15 +771,20 @@ Make sure to start your report with '{CODER_NAME}' and end with 'END {CODER_NAME
             """
             print("In Conditional Edge Meta")
         
+            # Create current_messages directory if needed
+            os.makedirs(os.path.join(CreatorAgent.run_dir, "messages_current"), exist_ok=True)
+
+            # Save all messages to log files
+            lists = ["meta_messages", "analyzer_messages", "strategizer_messages", "researcher_messages", "coder_messages"]
+            for msg_list in lists:
+                log_path = os.path.join(CreatorAgent.run_dir, "messages_current", f"llm_log_{msg_list}.txt")
+                with open(log_path, "w") as log_file:
+                    for m in state[msg_list]:
+                        log_file.write(m.pretty_repr() + "\n")
+
+            # End evolution if we exceed max evolutions
             if (CreatorAgent.current_evolution > CREATOR_NUM_EVOLUTIONS):
-                lists = ["meta_messages", "analyzer_messages", "strategizer_messages", "researcher_messages", "coder_messages"]
-                for msg_list in lists:
-                    log_path = os.path.join(CreatorAgent.run_dir, f"llm_log_{msg_list}.txt")
-                    with open(log_path, "a") as log_file:
-                        for m in state[msg_list]:
-                            log_file.write(m.pretty_repr())
-
-
+                print(f"Reached Max Evolutions of {CREATOR_NUM_EVOLUTIONS}, going to END")
                 return END
 
             meta_message = state["meta_messages"][-1].content
@@ -827,26 +866,7 @@ Make sure to start your report with '{CODER_NAME}' and end with 'END {CODER_NAME
                         if key in update:
                             msg = update[key]
                             #msg.pretty_print()
-                            append_log_file(msg.pretty_repr())
-
-                    # if "tool_calling_messages" in update:
-                    #     count = 0
-                    #     for msg in update["tool_calling_messages"]:
-                    #         #print(msg)
-                    #         #msg.pretty_print()
-                    #         if isinstance(msg, ToolMessage):
-                    #             print("Tool Message: ", msg.name)
-                    #         count += 1
-                    #         log_file.write((msg).pretty_repr())
-                    #     print(f"Number of Tool Calling Messages: {count}")
-                    
-                    # if "evolve_counter" in update:
-                    #     print("ENVOLVE COUNTER: ", update["evolve_counter"])
-                    #     log_file.write(f"Evolve Counter: {update['evolve_counter']}\n")
-                    # if "validator_counter" in update:
-                    #     print("VALIDATOR COUNTER: ", update["validator_counter"])
-                    #     log_file.write(f"Validator Counter: {update['validator_counter']}\n")
-
+                            append_log_file(msg.pretty_repr() + "\n")
 
             print("✅  graph finished")
 
@@ -927,14 +947,6 @@ def write_foo(new_text: str) -> str:
     if len(new_text.encode()) > FOO_MAX_BYTES:
         raise ValueError("Refusing to write >64 kB")
     FOO_TARGET_FILE.write_text(new_text, encoding="utf-8")                 # pathlib write_text :contentReference[oaicite:3]{index=3}
-    
-    # # Copy Result File to the new directory
-    # dt = datetime.now().strftime("%Y%m%d_%H%M%S_")
-
-    # shutil.copy2(                           
-    #     (FOO_TARGET_FILE).resolve(),
-    #     (Path(CreatorAgent.run_dir) / (dt + FOO_TARGET_FILENAME))
-    # )
 
     return f"{FOO_TARGET_FILENAME} updated successfully"
 
