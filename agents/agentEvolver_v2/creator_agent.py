@@ -31,15 +31,11 @@ from typing_extensions import TypedDict
 #  CONFIG / CONSTANTS / VARIABLES
 ###################################################################################################
 # CONFIG
-LANGCHAIN_TRACING_VAR = "true"
-
-LLM_BACKEND = "mistral"  # "openai", "mistral", or "claude"
-LLM_MODEL = "mistral-large-latest"
-#LLM_MODEL = "devstral-medium-latest"
+LANGCHAIN_TRACING_VAR = "false"
 
 # Coder LLM
 CODER_LLM_BACKEND = "mistral"
-CODER_LLM_MODEL = "mistral-large-latest"
+CODER_LLM_MODEL = "codestral-latest"
 
 # Analyzer LLM
 ANALYZER_LLM_BACKEND = "mistral"
@@ -47,7 +43,7 @@ ANALYZER_LLM_MODEL = "mistral-large-latest"
 
 # Researcher LLM
 RESEARCHER_LLM_BACKEND = "mistral"
-RESEARCHER_LLM_MODEL = "mistral-large-latest"
+RESEARCHER_LLM_MODEL = "devstral-medium-latest"
 
 # Strategizer LLM
 STRATEGIZER_LLM_BACKEND = "mistral"
@@ -69,7 +65,7 @@ MAX_MESSAGES_IN_AGENT = 20
 LOCAL_CATANATRON_BASE_DIR = (Path(__file__).parent.parent.parent / "catanatron").resolve()
 FOO_TARGET_FILENAME = "foo_player.py"
 FOO_TARGET_FILE = Path(__file__).parent / FOO_TARGET_FILENAME    # absolute path
-FOO_RUN_COMMAND = "catanatron-play --players=AB,AE2  --num=10 --config-map=MINI  --config-vps-to-win=10"
+FOO_RUN_COMMAND = "catanatron-play --players=AB,AE2  --num=30 --config-map=MINI  --config-vps-to-win=10"
 
 MULTI_AGENT_PROMPT = f"""You are apart of a multi-agent system that is working to evolve the code in {FOO_TARGET_FILENAME} to become the best player in the Catanatron Minigame.\n\tYour specific role is the:"""
 ANALYZER_NAME = "ANALYZER"
@@ -120,9 +116,6 @@ class CreatorAgent():
 
     def __init__(self):
         # Get API key from environment variable
-
-        self.llm_name = LLM_MODEL
-        self.llm = self._create_llm(LLM_BACKEND, LLM_MODEL)
         self.coder_llm = self._create_llm(CODER_LLM_BACKEND, CODER_LLM_MODEL)
         self.analyzer_llm = self._create_llm(ANALYZER_LLM_BACKEND, ANALYZER_LLM_MODEL)
         self.researcher_llm = self._create_llm(RESEARCHER_LLM_BACKEND, RESEARCHER_LLM_MODEL)
@@ -153,6 +146,7 @@ class CreatorAgent():
             #     "thread_id": "1"
             # }
         }
+        
         self.react_graph = self.create_langchain_react_graph()
 
     def create_langchain_react_graph(self):
@@ -207,7 +201,7 @@ class CreatorAgent():
                 last_event = event
 
             # Save tools to log file
-            log_path = os.path.join(CreatorAgent.run_dir, f"llm_log_{self.llm_name}_tools.txt")
+            log_path = os.path.join(CreatorAgent.run_dir, f"llm_log_tools.txt")
             with open(log_path, "a") as log_file:
                 for m in last_event['messages']:
                     log_file.write(m.pretty_repr())
@@ -285,8 +279,8 @@ Here is your Current Performance History for Evolving the {FOO_TARGET_FILENAME} 
 </Performance History>
 
 <Available Tools>
-You have access to three main tools:
-1. **think_tool**: For reflection and strategic planning during research
+You have access to the following tool:
+1. **think_tool**: For reflection and strategic planning during research. Note that your thoughts will not be saved in your message history.
 
 **CRITICAL: Use think_tool to plan your approach if you feel like you need to think deeper. Do not call think_tool with any other tools in parallel.**
 </Available Tools>
@@ -416,7 +410,7 @@ You have access to three main tools:
 </Your Tools>
 
 YOU ARE LIMITED TO {MAX_MESSAGES_TOOL_CALLING} TOOL CALLS
-Make sure to start your output with 'ANALYSIS:' and end with 'END ANALYSIS'.
+Make sure to start your output with '{ANALYZER_NAME}' and end with 'END {ANALYZER_NAME}'.
 Respond with No Commentary, just the Analysis.
                 """
             )
@@ -523,7 +517,7 @@ Respond with No Commentary, just the Analysis.
 </Your Tools>
 
 YOU ARE LIMITED TO {MAX_MESSAGES_TOOL_CALLING} TOOL CALLS
-Make sure to start your output with 'STRATEGY:' and end with 'END STRATEGY'.
+Make sure to start your output with '{STRATEGIZER_NAME}' and end with 'END {STRATEGIZER_NAME}'.
 Respond with No Commentary, just the Strategy.
 
                 """
@@ -606,7 +600,7 @@ Respond with No Commentary, just the Strategy.
 </Your Tools>
 
 YOU ARE LIMITED TO {MAX_MESSAGES_TOOL_CALLING} TOOL CALLS
-Make sure to start your output with 'RESEARCH:' and end with 'END RESEARCH'.
+Make sure to start your output with '{RESEARCHER_NAME}' and end with 'END {RESEARCHER_NAME}'.
 Respond with No Commentary, just the Research.
 
 
@@ -699,7 +693,7 @@ Your Tools:
         Output: String - Confirmation that reflection was recorded for decision-making
 </Your Tools>
 
-Make sure to start your report with 'CODER' and end with 'END CODER'.
+Make sure to start your report with '{CODER_NAME}' and end with 'END {CODER_NAME}'.
 
                 """
             )
@@ -746,7 +740,7 @@ Make sure to start your report with 'CODER' and end with 'END CODER'.
             if (CreatorAgent.current_evolution > CREATOR_NUM_EVOLUTIONS):
                 lists = ["meta_messages", "analyzer_messages", "strategizer_messages", "researcher_messages", "coder_messages"]
                 for msg_list in lists:
-                    log_path = os.path.join(CreatorAgent.run_dir, f"llm_log_{self.llm_name}_{msg_list}.txt")
+                    log_path = os.path.join(CreatorAgent.run_dir, f"llm_log_{msg_list}.txt")
                     with open(log_path, "a") as log_file:
                         for m in state[msg_list]:
                             log_file.write(m.pretty_repr())
@@ -813,7 +807,7 @@ Make sure to start your report with 'CODER' and end with 'END CODER'.
         
         try:
 
-            log_path = os.path.join(CreatorAgent.run_dir, f"llm_log_{self.llm_name}.txt")
+            log_path = os.path.join(CreatorAgent.run_dir, f"llm_log.txt")
 
             def append_log_file(content: str):
                 with open(log_path, "a") as log_file:
