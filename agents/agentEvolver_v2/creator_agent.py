@@ -660,20 +660,23 @@ Respond with No Commentary, just the Research.
     - Include any comments that can be included in next OBJECTIVE to help you write better code 
 </Report Guidelines>
 
-<Your Tools>
-    - write_foo: Write the content of {FOO_TARGET_FILENAME}. 
+Your Tools:
+    - write_foo: Write the entire content of {FOO_TARGET_FILENAME}. Use this when you need to make significant changes or rewrite the file.
         Input: String new_text - python code that will be written to {FOO_TARGET_FILENAME}
+    - replace_code_in_foo: Replace a specific block of code in {FOO_TARGET_FILENAME}. Use this for smaller, targeted changes.
+        Input: String search - the exact code block to search for.
+        Input: String replace - the new code block to replace the search block with.
     - think_tool: Reflect on your current situation and plan your next steps before writing or after errors
         Input: String reflection - Your detailed reflection on implementation approach, risks, and next steps
         Output: String - Confirmation that reflection was recorded for decision-making
 </Your Tools>
 
-Make sure to start your report with 'CODER' and end with 'END CODER'.   
+Make sure to start your report with 'CODER' and end with 'END CODER'.
 
                 """
             )
            
-            tools = [write_foo, think_tool]
+            tools = [write_foo, replace_code_in_foo, think_tool]
             
             # # Give Coder The Last Number of Meta Messages
             if len(state["meta_messages"]) > MAX_META_MESSAGES_GIVEN_TO_CODER:
@@ -912,6 +915,30 @@ def write_foo(new_text: str) -> str:
     # )
 
     return f"{FOO_TARGET_FILENAME} updated successfully"
+
+def replace_code_in_foo(search: str, replace: str) -> str:
+    """
+    Replace a block of code in the Agent File.
+    """
+    # First, read the file
+    try:
+        content = read_foo()
+    except Exception as e:
+        return f"Error reading file: {e}"
+
+    # Then, perform the replacement
+    new_content = content.replace(search, replace)
+
+    if new_content == content:
+        return "Search string not found in file. No changes made."
+
+    # Finally, write the file back
+    try:
+        write_foo(new_content)
+        return f"Successfully replaced code in {FOO_TARGET_FILENAME}"
+    except Exception as e:
+        return f"Error writing file: {e}"
+
 
 def run_testfoo(short_game: bool = False) -> str:
     """
