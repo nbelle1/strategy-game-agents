@@ -1,4 +1,5 @@
 import os
+import re
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 from typing import List, Dict, Tuple, Any, Optional
@@ -789,6 +790,15 @@ Make sure to start your report with '{CODER_NAME}' and end with 'END {CODER_NAME
 
             meta_message = state["meta_messages"][-1].content
 
+            # First, try to find the chosen agent using the specific format
+            match = re.search(r"CHOSEN AGENT:\s*(\w+)", meta_message)
+            if match:
+                agent_name = match.group(1)
+                if agent_name in AGENT_KEYS:
+                    print(f"Meta Message: Found agent {agent_name} via specific format - going to {agent_name}")
+                    return agent_name
+
+            # If not found, fall back to just searching the test
             for key in AGENT_KEYS:
                 if key in meta_message:
                     print(f"Meta Message: {key} - going to {key}")
