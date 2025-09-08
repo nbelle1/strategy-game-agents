@@ -7,14 +7,14 @@ Python:
 uv venv --python=3.11
 source .venv/bin/activate
 ```
-
+OR
 Conda:
 ```bash
 conda create -n my-env python=3.11
 conda activate my-env
 ```
 
-Install requirements (run these commands in this order!!):
+### Install requirements (run these commands in this order!!):
 ```bash
 uv venv --python=3.11
 source .venv/bin/activate
@@ -28,7 +28,7 @@ cd ../catanatron_server && uv pip install -e .
 python testing.py
 ```
 
-Test:
+### Test:
 ```bash
 python testing.py
 ```
