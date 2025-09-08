@@ -1,14 +1,35 @@
-## setup
+## Setup
 
+### Create virtual environment
+
+Python:
 ```bash
 uv venv --python=3.11
 source .venv/bin/activate
-uv pip install -r requirements.txt
+```
+
+Conda:
+```bash
+conda create -n my-env python=3.11
+conda activate my-env
+```
+
+Install requirements (run these commands in this order!!):
+```bash
+uv venv --python=3.11
+source .venv/bin/activate
 cd catanatron && uv pip install -r all-requirements.txt
+cd .. && uv pip install -r requirements.txt
+uv pip install -e .
 cd catanatron/catanatron_core && uv pip install -e .
 cd ../catanatron_experimental && uv pip install -e .
 cd ../catanatron_gym && uv pip install -e .
-cd ../.. && uv pip install -e .
+cd ../catanatron_server && uv pip install -e .
+python testing.py
+```
+
+Test:
+```bash
 python testing.py
 ```
 
