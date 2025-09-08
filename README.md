@@ -1,10 +1,10 @@
 ## setup
 
 ```bash
-uv venv --python=3.10
+uv venv --python=3.11
 source .venv/bin/activate
 uv pip install -r requirements.txt
-cd catanatron && uv pip install -r requirements.txt
+cd catanatron && uv pip install -r all_requirements.txt
 cd catanatron/catanatron_core && uv pip install -e .
 cd ../catanatron_experimental && uv pip install -e .
 cd ../catanatron_gym && uv pip install -e .
