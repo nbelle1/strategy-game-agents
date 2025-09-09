@@ -870,7 +870,6 @@ def replace_code_in_foo(search: str, replace: str) -> str:
     except Exception as e:
         return f"Error writing file: {e}"
 
-
 def web_search_tool_call(query: str) -> str:
     """Perform a web search using the Tavily API.
 

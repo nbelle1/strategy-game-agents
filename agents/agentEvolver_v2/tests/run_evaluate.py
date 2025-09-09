@@ -7,6 +7,8 @@ import uuid
 from langsmith import Client
 from langsmith.evaluation import evaluate
 from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages.utils import _convert_to_message as dict_to_message
+
 
 # --- Path Setup ---
 # This script assumes it is located in agents/agentEvolver_v2/tests
@@ -20,7 +22,7 @@ try:
     if not (Path.cwd() / 'agents').is_dir() or not (Path.cwd() / 'catanatron').is_dir():
         print(f"Error: This script must be run from the repository root, but CWD is {Path.cwd()}")
         sys.exit(1)
-    from agents.agentEvolver_v2.creator_agent import CreatorAgent, DEFAULT_ANALYZE_MSG
+    from agents.agentEvolver_v2.creator_agent import CreatorAgent, DEFAULT_ANALYZE_MSG, CreatorGraphState
     from agents.agentEvolver_v2.tests.evaluators import evaluate_analyzer_output, setup_analyzer_test_environment
 except (ImportError, IndexError) as e:
     print(f"Error setting up path: {e}")
@@ -44,12 +46,18 @@ def create_langsmith_dataset(dataset_name: str):
     print(f"Dataset '{dataset_name}' created.")
 
     # The input for our target function is the initial state of the graph
-    mock_input_state = {
-        "analyzer_messages": [],
-        "recent_meta_message": HumanMessage(content=DEFAULT_ANALYZE_MSG.format(FOO_TARGET_FILENAME='foo_player.py')),
-        "meta_messages": [], "strategizer_messages": [], "researcher_messages": [], "coder_messages": [],
-        "recent_helper_response": AIMessage(content=''), "game_results": HumanMessage(content=''), "tool_calling_messages": []
-    }
+    mock_input_state = CreatorGraphState(
+        analyzer_messages=[],
+        recent_meta_message=HumanMessage(content=DEFAULT_ANALYZE_MSG.format(FOO_TARGET_FILENAME='foo_player.py')),
+        meta_messages=[],
+        strategizer_messages=[],
+        researcher_messages=[],
+        coder_messages=[],
+        recent_helper_response=AIMessage(content=''),
+        game_results=HumanMessage(content=''),
+        tool_calling_messages=[]
+    )
+    
 
     # The reference output for our evaluators
     reference_output = {"criteria": ["Defaulting to Random Action", "Choose action with score: 0", "Player FooPlayer had an error."]}
@@ -64,7 +72,7 @@ def create_langsmith_dataset(dataset_name: str):
 
 # --- Target Function Definition ---
 
-def target_func(inputs: dict):
+def target_func(inputs: CreatorGraphState):
     """
     The function to be evaluated. It runs an isolated instance of the agent.
 
@@ -81,8 +89,16 @@ def target_func(inputs: dict):
     # Setup mock data in this specific agent's run_dir using the imported setup function
     setup_analyzer_test_environment(run_dir)
 
-    # The analyzer_node returns the full updated state
-    return agent.analyzer_node(inputs)
+    # The input from the langsmith evaluator is a dict, we need to
+    # reconstruct the message objects.
+    reconstructed_inputs = inputs.copy()
+    for key, value in reconstructed_inputs.items():
+        if isinstance(value, dict) and "type" in value and "content" in value:
+             reconstructed_inputs[key] = dict_to_message(value)
+        elif isinstance(value, list):
+            reconstructed_inputs[key] = [dict_to_message(m) if isinstance(m, dict) and "type" in m and "content" in m else m for m in value]
+
+    return agent._analyzer_node(reconstructed_inputs)
 
 # --- Main Execution Logic ---
 
