@@ -43,7 +43,7 @@ from typing_extensions import TypedDict
 # CONFIG
 LANGCHAIN_TRACING_VAR = "false"
 PRINT_DEBUG = True
-PRINT_LLM = "LOG_FULL" # "NONE", "LOG", "LOG_FULL"
+PRINT_LLM = "LOG" # "NONE", "LOG", "LOG_FULL"
 
 # Coder LLM
 CODER_LLM_BACKEND = "mistral"
@@ -74,7 +74,7 @@ MAX_META_MESSAGES_GIVEN_TO_CODER = 6
 MAX_MESSAGES_IN_AGENT = 20
 
 # Catanatron
-FOO_RUN_COMMAND = "catanatron-play --players=AB,AE2 --num=30 --config-map=MINI --config-vps-to-win=10"
+FOO_RUN_COMMAND = "catanatron-play --players=AB,AE2 --num=10 --config-map=MINI --config-vps-to-win=10"
 
 
 # CONSTANTS
@@ -143,6 +143,8 @@ class CreatorAgent():
         config_path = os.path.join(CreatorAgent.run_dir, "config.txt")
         with open(config_path, "w") as f:
             f.write(f"LANGCHAIN_TRACING_VAR = {LANGCHAIN_TRACING_VAR}\n")
+            f.write(f"PRINT_DEBUG = {PRINT_DEBUG}\n")
+            f.write(f"PRINT_LLM = {PRINT_LLM}\n")
             f.write(f"CODER_LLM_BACKEND = {CODER_LLM_BACKEND}\n")
             f.write(f"CODER_LLM_MODEL = {CODER_LLM_MODEL}\n")
             f.write(f"ANALYZER_LLM_BACKEND = {ANALYZER_LLM_BACKEND}\n")
@@ -197,32 +199,50 @@ class CreatorAgent():
         self.react_graph = self.create_langchain_react_graph()
 
     def debug_log(self, message: str):
+        """
+        Logs debug messages to both console and a debug log file.
+        Use instead of print statements
+        """
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_entry = f"[{timestamp}] {message}"
+
         if PRINT_DEBUG:
-            print(message)
+            print(log_entry)
 
         log_path = os.path.join(CreatorAgent.run_dir, "log", "debug_log.txt")
         with open(log_path, "a") as f:
-            f.write(message + "\n")
+            f.write(log_entry + "\n")
 
     def agent_log_input(self, agent_name: str, messages: list[AnyMessage]):
+        """
+        Logs input messages for a specific agent to their own log file
+        """
         log_dir = os.path.join(CreatorAgent.run_dir, "log", agent_name)
         os.makedirs(log_dir, exist_ok=True)
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        log_path = os.path.join(log_dir, f"{agent_name}_{timestamp}.txt")
+        log_path = os.path.join(log_dir, f"{agent_name}_e{CreatorAgent.current_evolution}_{timestamp}.txt")
 
         with open(log_path, "w") as f:
             f.write(f"--- Input for {agent_name} at {timestamp} ---\n")
             for message in messages:
                 f.write(message.pretty_repr() + "\n")
             f.write("\n")
-        self.debug_log(f"Input for {agent_name} logged to {log_path}")
+
+        # Print only the relative path from run_dir
+        relative_path = Path(log_path).relative_to(Path(CreatorAgent.run_dir))
+        self.debug_log(f"{agent_name} logged to {relative_path}")
+
         return log_path
 
-    def agent_log_output(self, agent_name: str, messages: list[AnyMessage], log_path: str):
+    def agent_log_output(self, agent_name: str, messages: list[AnyMessage], agent_log_path: str):
+        """
+        Logs output messages for a specific agent to their own log file, as well
+        as to the full and short LLM logs if requested. 
+        """
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        with open(log_path, "a") as f:
+        with open(agent_log_path, "a") as f:
             f.write(f"--- Output from {agent_name} at {timestamp} ---\n")
             for message in messages:
                 f.write(message.pretty_repr() + "\n")
@@ -241,10 +261,7 @@ class CreatorAgent():
         with open(log_path, "a") as f:
             f.write(f"--- Output from {agent_name} at {timestamp} ---\n")
             if messages:
-                # Filter out tool calls for the llm_log.txt
-                content_messages = [m for m in messages if not isinstance(m, ToolMessage) and not (isinstance(m, AIMessage) and m.tool_calls)]
-                if content_messages:
-                    f.write(content_messages[-1].pretty_repr() + "\n")
+                f.write(messages[-1].pretty_repr() + "\n")
             f.write("\n")
 
         if PRINT_LLM == "LOG_FULL":
@@ -254,11 +271,9 @@ class CreatorAgent():
         elif PRINT_LLM == "LOG":
             print(f"--- Output from {agent_name} at {timestamp} ---")
             if messages:
-                content_messages = [m for m in messages if not isinstance(m, ToolMessage) and not (isinstance(m, AIMessage) and m.tool_calls)]
-                if content_messages:
-                    print(content_messages[-1].pretty_repr())
+                print(messages[-1].pretty_repr())
 
-    def _tool_calling_state_graph(self, llm, agent_name, sys_msg: SystemMessage, msgs: list[AnyMessage], tools):
+    def _tool_calling_state_graph(self, llm, sys_msg: SystemMessage, msgs: list[AnyMessage], tools):
         # Bind Tools to the LLM
         #llm_with_tools = llm.bind_tools(tools, parallel_tool_calls=False)
         llm_with_tools = llm.bind_tools(tools)
@@ -297,7 +312,7 @@ class CreatorAgent():
         """
         Initialize the state of the graph
         """
-        self.debug_log("In Init Node")
+        self.debug_log("INIT NODE")
 
         return {
             "meta_messages": [],
@@ -315,7 +330,7 @@ class CreatorAgent():
         """
         Runs Catanatron with the current Code
         """
-        #print("In Run Player Node")
+        self.debug_log("RUN PLAYER NODE")
 
         # Generate a test results (later will be running the game)
         game_results = self._run_testfoo(short_game=False)
@@ -335,6 +350,7 @@ class CreatorAgent():
         }
 
     def _meta_node(self, state: CreatorGraphState):
+        self.debug_log("META NODE")
 
         sys_msg = SystemMessage(
             content=META_SYSTEM_PROMPT.format(
@@ -351,8 +367,8 @@ class CreatorAgent():
         msgs = state["meta_messages"][-MAX_MESSAGES_IN_AGENT:]
         tools = [think_tool]
         log_path = self.agent_log_input("META", msgs)
-        output = self._tool_calling_state_graph(self.meta_llm, "META",sys_msg, msgs, tools)
-        self.agent_log_output("META", output["messages"], log_path)
+        output = self._tool_calling_state_graph(self.meta_llm, sys_msg, msgs, tools)
+        self.agent_log_output("META", output["messages"][len(msgs):], log_path)
 
         #new_meta_message = HumanMessage(content=f"Temporary Meta Message ")
 
@@ -365,8 +381,8 @@ class CreatorAgent():
         return {"recent_meta_message": new_meta_message,"meta_messages": meta_messages}
 
     def _analyzer_node(self, state: CreatorGraphState):
-        #print("In Analyzer Node")
-        
+        self.debug_log("ANALYZER NODE")
+
         sys_msg = SystemMessage(
             content=ANALYZER_SYSTEM_PROMPT.format(
                 MULTI_AGENT_PROMPT=MULTI_AGENT_PROMPT.format(FOO_TARGET_FILENAME=FOO_TARGET_FILENAME),
@@ -388,8 +404,8 @@ class CreatorAgent():
         #base_len = len(state["analyzer_messages"][-MAX_MESSAGES_IN_AGENT:])
         msgs = state["analyzer_messages"][-MAX_MESSAGES_IN_AGENT:] + [performance_msg, game_output_msg, game_results_msg, current_foo_msg, state["recent_meta_message"]]
         log_path = self.agent_log_input(ANALYZER_NAME, msgs)
-        output = self._tool_calling_state_graph(self.analyzer_llm, ANALYZER_NAME, sys_msg, msgs, tools)
-        self.agent_log_output(ANALYZER_NAME, output["messages"], log_path)
+        output = self._tool_calling_state_graph(self.analyzer_llm, sys_msg, msgs, tools)
+        self.agent_log_output(ANALYZER_NAME, output["messages"][len(msgs):], log_path)
 
         # Add to Meta Messages
         response = HumanMessage(content=output["messages"][-1].content)
@@ -408,9 +424,8 @@ class CreatorAgent():
         }
 
     def _strategizer_node(self, state: CreatorGraphState):
-        
-        #print("In Strategizer Node")
-        # Add custom tools for strategizer
+
+        self.debug_log("STRATEGIZER NODE")
 
         sys_msg = SystemMessage(
             content=STRATEGIZER_SYSTEM_PROMPT.format(
@@ -431,8 +446,8 @@ class CreatorAgent():
 
         msgs = state["strategizer_messages"][-MAX_MESSAGES_IN_AGENT:] + [performance_msg, current_foo_msg, state["recent_meta_message"]]
         log_path = self.agent_log_input(STRATEGIZER_NAME, msgs)
-        output = self._tool_calling_state_graph(self.strategizer_llm, STRATEGIZER_NAME, sys_msg, msgs, tools)
-        self.agent_log_output(STRATEGIZER_NAME, output["messages"], log_path)
+        output = self._tool_calling_state_graph(self.strategizer_llm, sys_msg, msgs, tools)
+        self.agent_log_output(STRATEGIZER_NAME, output["messages"][len(msgs):], log_path)
 
         # Add to Meta Messages
         response = HumanMessage(content=output["messages"][-1].content)
@@ -452,8 +467,7 @@ class CreatorAgent():
 
     def _researcher_node(self, state: CreatorGraphState):
 
-        #print("In Researcher Node")
-        # Add custom tools for researcher
+        self.debug_log("RESEARCHER NODE")
 
         sys_msg = SystemMessage(
             content=RESEARCHER_SYSTEM_PROMPT.format(
@@ -471,8 +485,8 @@ class CreatorAgent():
         #base_len = len(state["researcher_messages"][-MAX_MESSAGES_IN_AGENT:]) + 1
         msgs = state["researcher_messages"][-MAX_MESSAGES_IN_AGENT:] + [catanatron_files_msg, state["recent_meta_message"]]
         log_path = self.agent_log_input(RESEARCHER_NAME, msgs)
-        output = self._tool_calling_state_graph(self.researcher_llm, "RESEARCHER", sys_msg, msgs, tools)
-        self.agent_log_output(RESEARCHER_NAME, output["messages"], log_path)
+        output = self._tool_calling_state_graph(self.researcher_llm, sys_msg, msgs, tools)
+        self.agent_log_output(RESEARCHER_NAME, output["messages"][len(msgs):], log_path)
 
         # Add to Meta Messages
         response = HumanMessage(content=output["messages"][-1].content)
@@ -491,6 +505,8 @@ class CreatorAgent():
         }
 
     def _coder_node(self, state: CreatorGraphState):
+        
+        self.debug_log("CODER NODE")
 
         sys_msg = SystemMessage(
             content=CODER_SYSTEM_PROMPT.format(
@@ -514,8 +530,8 @@ class CreatorAgent():
         #base_len = len(state["coder_messages"][-MAX_MESSAGES_IN_AGENT:])
         msgs = state["coder_messages"][-MAX_MESSAGES_IN_AGENT:] + meta_msgs + [current_foo_msg]
         log_path = self.agent_log_input(CODER_NAME, msgs)
-        output = self._tool_calling_state_graph(self.coder_llm, "CODER", sys_msg, msgs, tools)
-        self.agent_log_output(CODER_NAME, output["messages"], log_path)
+        output = self._tool_calling_state_graph(self.coder_llm, sys_msg, msgs, tools)
+        self.agent_log_output(CODER_NAME, output["messages"][len(msgs):], log_path)
 
         # Add to Meta Messages
         response = HumanMessage(content=output["messages"][-1].content)
@@ -540,7 +556,7 @@ class CreatorAgent():
         """
         Conditional edge for Meta
         """
-        self.debug_log("In Conditional Edge Meta")
+        self.debug_log("Conditional Edge Meta")
 
         # End evolution if we exceed max evolutions
         if (CreatorAgent.current_evolution > CREATOR_NUM_EVOLUTIONS):
@@ -560,7 +576,7 @@ class CreatorAgent():
         # If not found, fall back to just searching the test
         for key in AGENT_KEYS:
             if key in meta_message:
-                self.debug_log(f"Meta Message: {key} - going to {key}")
+                self.debug_log(f"Meta Message: Found {key} somewhere in text - going to {key}")
                 return key
             
             # Default case if neither string is found
@@ -615,7 +631,8 @@ class CreatorAgent():
         try:
             for step in self.react_graph.stream({}, self.config, stream_mode="updates"):
                 for node, update in step.items():
-                    self.debug_log(f"In Node: {node}")
+                    #self.debug_log(f"In Node: {node}")
+                    pass
 
             self.debug_log("✅  graph finished")
 
@@ -743,6 +760,7 @@ class CreatorAgent():
         if not short_game:
             evolution_key = CreatorAgent.current_evolution
             CreatorAgent.current_evolution += 1
+            self.debug_log(f"Evolution {evolution_key}: wins={wins}, avg_score={avg_score}, avg_turns={avg_turns}")
 
             rel_output = output_file_path.relative_to(Path(CreatorAgent.run_dir))
             rel_cur_foo = cur_foo_path.relative_to(Path(CreatorAgent.run_dir))

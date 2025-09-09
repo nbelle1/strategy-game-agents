@@ -80,6 +80,7 @@ You have access to the following tool:
 - Do not include vague messages to your agents,
 - Always keep your GOAL in mind and try to achieve them
 - Only include one agent key (the output is parsed to detemine which agent to send it to)
+- Make sure to have the agent key be exacltly "CHOSEN AGENT: "AGENT_KEY", WITHOUT EXTRA FORMATTING!
 </Guidelines>
 
 <Output Format>
