@@ -59,8 +59,8 @@ STRATEGIZER_LLM_BACKEND = "mistral"
 STRATEGIZER_LLM_MODEL = "mistral-large-latest"
 
 # Meta LLM
-META_LLM_BACKEND = "openai"
-META_LLM_MODEL = "gpt-5-mini"
+META_LLM_BACKEND = "mistral"
+META_LLM_MODEL = "mistral-large-latest"
 
 FOO_MAX_BYTES   = 64_000      # context-friendly cap
 CREATOR_LANGRAPH_RECURSION_LIMIT = 200  # max depth of graph recursion
@@ -313,7 +313,7 @@ class CreatorAgent():
 
         return {"recent_meta_message": new_meta_message,"meta_messages": meta_messages}
 
-    def analyzer_node(self, state: CreatorGraphState):
+    def _analyzer_node(self, state: CreatorGraphState):
         #print("In Analyzer Node")
         
         sys_msg = SystemMessage(
@@ -524,7 +524,7 @@ class CreatorAgent():
         graph = StateGraph(CreatorGraphState)
         graph.add_node("init", self._init_node)
 
-        graph.add_node(ANALYZER_NAME, self.analyzer_node)
+        graph.add_node(ANALYZER_NAME, self._analyzer_node)
         graph.add_node(STRATEGIZER_NAME, self._strategizer_node)
         graph.add_node(RESEARCHER_NAME, self._researcher_node)
         graph.add_node(CODER_NAME, self._coder_node)
