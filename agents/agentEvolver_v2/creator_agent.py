@@ -8,6 +8,7 @@ from datetime import datetime
 import shutil
 from pathlib import Path
 import subprocess, shlex
+import traceback
 
 from agents.agentEvolver_v2.prompts import (
     ANALYZER_SYSTEM_PROMPT,
@@ -41,6 +42,8 @@ from typing_extensions import TypedDict
 ###################################################################################################
 # CONFIG
 LANGCHAIN_TRACING_VAR = "false"
+PRINT_DEBUG = True
+PRINT_LLM = "LOG_FULL" # "NONE", "LOG", "LOG_FULL"
 
 # Coder LLM
 CODER_LLM_BACKEND = "mistral"
@@ -177,6 +180,7 @@ class CreatorAgent():
             run_id = datetime.now().strftime("creator_%Y%m%d_%H%M%S")
             CreatorAgent.run_dir = os.path.join(runs_dir, run_id)
             os.makedirs(CreatorAgent.run_dir, exist_ok=True)
+            os.makedirs(os.path.join(CreatorAgent.run_dir, "log"), exist_ok=True)
 
         #Copy the Blank FooPlayer to the run directory
         shutil.copy2(                           # ↩ copy with metadata
@@ -191,6 +195,68 @@ class CreatorAgent():
         self.log_config_settings()
 
         self.react_graph = self.create_langchain_react_graph()
+
+    def debug_log(self, message: str):
+        if PRINT_DEBUG:
+            print(message)
+
+        log_path = os.path.join(CreatorAgent.run_dir, "log", "debug_log.txt")
+        with open(log_path, "a") as f:
+            f.write(message + "\n")
+
+    def agent_log_input(self, agent_name: str, messages: list[AnyMessage]):
+        log_dir = os.path.join(CreatorAgent.run_dir, "log", agent_name)
+        os.makedirs(log_dir, exist_ok=True)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        log_path = os.path.join(log_dir, f"{agent_name}_{timestamp}.txt")
+
+        with open(log_path, "w") as f:
+            f.write(f"--- Input for {agent_name} at {timestamp} ---\n")
+            for message in messages:
+                f.write(message.pretty_repr() + "\n")
+            f.write("\n")
+        self.debug_log(f"Input for {agent_name} logged to {log_path}")
+        return log_path
+
+    def agent_log_output(self, agent_name: str, messages: list[AnyMessage], log_path: str):
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        with open(log_path, "a") as f:
+            f.write(f"--- Output from {agent_name} at {timestamp} ---\n")
+            for message in messages:
+                f.write(message.pretty_repr() + "\n")
+            f.write("\n")
+
+        # Log to llm_log_full.txt
+        full_log_path = os.path.join(CreatorAgent.run_dir, "log", "llm_log_full.txt")
+        with open(full_log_path, "a") as f:
+            f.write(f"--- Output from {agent_name} at {timestamp} ---\n")
+            for message in messages:
+                f.write(message.pretty_repr() + "\n")
+            f.write("\n")
+
+        # Log to llm_log.txt
+        log_path = os.path.join(CreatorAgent.run_dir, "log", "llm_log.txt")
+        with open(log_path, "a") as f:
+            f.write(f"--- Output from {agent_name} at {timestamp} ---\n")
+            if messages:
+                # Filter out tool calls for the llm_log.txt
+                content_messages = [m for m in messages if not isinstance(m, ToolMessage) and not (isinstance(m, AIMessage) and m.tool_calls)]
+                if content_messages:
+                    f.write(content_messages[-1].pretty_repr() + "\n")
+            f.write("\n")
+
+        if PRINT_LLM == "LOG_FULL":
+            print(f"--- Output from {agent_name} at {timestamp} ---")
+            for message in messages:
+                print(message.pretty_repr())
+        elif PRINT_LLM == "LOG":
+            print(f"--- Output from {agent_name} at {timestamp} ---")
+            if messages:
+                content_messages = [m for m in messages if not isinstance(m, ToolMessage) and not (isinstance(m, AIMessage) and m.tool_calls)]
+                if content_messages:
+                    print(content_messages[-1].pretty_repr())
 
     def _tool_calling_state_graph(self, llm, agent_name, sys_msg: SystemMessage, msgs: list[AnyMessage], tools):
         # Bind Tools to the LLM
@@ -221,26 +287,9 @@ class CreatorAgent():
         react_graph = builder.compile()
 
         # Run Graph
+        last_event = None
         for event in react_graph.stream({"messages": msgs}, stream_mode="values"):
-            msg = event['messages'][-1]
-            msg.pretty_print()
-            print("\n")
             last_event = event
-
-        # Save tools to continuouslog file
-        log_path = os.path.join(CreatorAgent.run_dir, f"llm_log_tools.txt")
-        with open(log_path, "a") as log_file:
-            for m in last_event['messages']:
-                log_file.write(m.pretty_repr() + "\n")
-
-        # Create messages_tools directory if needed
-        os.makedirs(os.path.join(CreatorAgent.run_dir, "messages_tools"), exist_ok=True)
-
-        # Save tools to log file for individual agents
-        log_path = os.path.join(CreatorAgent.run_dir, "messages_tools", f"llm_log_{agent_name}_tools.txt")
-        with open(log_path, "a") as log_file:
-            for m in last_event['messages']:
-                log_file.write(m.pretty_repr() + "\n")
 
         return last_event
 
@@ -248,7 +297,7 @@ class CreatorAgent():
         """
         Initialize the state of the graph
         """
-        print("In Init Node")
+        self.debug_log("In Init Node")
 
         return {
             "meta_messages": [],
@@ -269,7 +318,7 @@ class CreatorAgent():
         #print("In Run Player Node")
 
         # Generate a test results (later will be running the game)
-        game_results = run_testfoo(short_game=False)
+        game_results = self._run_testfoo(short_game=False)
         game_msg = HumanMessage(content=f"GAME RESULTS:\n\n{game_results}")
 
         meta_messages = state["meta_messages"] + [game_msg]
@@ -301,7 +350,9 @@ class CreatorAgent():
 
         msgs = state["meta_messages"][-MAX_MESSAGES_IN_AGENT:]
         tools = [think_tool]
+        log_path = self.agent_log_input("META", msgs)
         output = self._tool_calling_state_graph(self.meta_llm, "META",sys_msg, msgs, tools)
+        self.agent_log_output("META", output["messages"], log_path)
 
         #new_meta_message = HumanMessage(content=f"Temporary Meta Message ")
 
@@ -336,7 +387,9 @@ class CreatorAgent():
         # Call the LLM with the provided tools
         #base_len = len(state["analyzer_messages"][-MAX_MESSAGES_IN_AGENT:])
         msgs = state["analyzer_messages"][-MAX_MESSAGES_IN_AGENT:] + [performance_msg, game_output_msg, game_results_msg, current_foo_msg, state["recent_meta_message"]]
+        log_path = self.agent_log_input(ANALYZER_NAME, msgs)
         output = self._tool_calling_state_graph(self.analyzer_llm, ANALYZER_NAME, sys_msg, msgs, tools)
+        self.agent_log_output(ANALYZER_NAME, output["messages"], log_path)
 
         # Add to Meta Messages
         response = HumanMessage(content=output["messages"][-1].content)
@@ -377,7 +430,9 @@ class CreatorAgent():
         current_foo_msg = HumanMessage(content=f"This is the current foo_player.py file\n\n{read_foo()}")
 
         msgs = state["strategizer_messages"][-MAX_MESSAGES_IN_AGENT:] + [performance_msg, current_foo_msg, state["recent_meta_message"]]
+        log_path = self.agent_log_input(STRATEGIZER_NAME, msgs)
         output = self._tool_calling_state_graph(self.strategizer_llm, STRATEGIZER_NAME, sys_msg, msgs, tools)
+        self.agent_log_output(STRATEGIZER_NAME, output["messages"], log_path)
 
         # Add to Meta Messages
         response = HumanMessage(content=output["messages"][-1].content)
@@ -415,7 +470,9 @@ class CreatorAgent():
         # Call the LLM with the provided tools (Add 1 because no need to summarize catanatron files)
         #base_len = len(state["researcher_messages"][-MAX_MESSAGES_IN_AGENT:]) + 1
         msgs = state["researcher_messages"][-MAX_MESSAGES_IN_AGENT:] + [catanatron_files_msg, state["recent_meta_message"]]
+        log_path = self.agent_log_input(RESEARCHER_NAME, msgs)
         output = self._tool_calling_state_graph(self.researcher_llm, "RESEARCHER", sys_msg, msgs, tools)
+        self.agent_log_output(RESEARCHER_NAME, output["messages"], log_path)
 
         # Add to Meta Messages
         response = HumanMessage(content=output["messages"][-1].content)
@@ -456,7 +513,9 @@ class CreatorAgent():
         current_foo_msg = HumanMessage(content=f"This is the old foo_player.py file\nNow It is your turn to update it with the new recommendations from META\n\n{read_foo()}")
         #base_len = len(state["coder_messages"][-MAX_MESSAGES_IN_AGENT:])
         msgs = state["coder_messages"][-MAX_MESSAGES_IN_AGENT:] + meta_msgs + [current_foo_msg]
+        log_path = self.agent_log_input(CODER_NAME, msgs)
         output = self._tool_calling_state_graph(self.coder_llm, "CODER", sys_msg, msgs, tools)
+        self.agent_log_output(CODER_NAME, output["messages"], log_path)
 
         # Add to Meta Messages
         response = HumanMessage(content=output["messages"][-1].content)
@@ -481,22 +540,11 @@ class CreatorAgent():
         """
         Conditional edge for Meta
         """
-        print("In Conditional Edge Meta")
-
-        # Create current_messages directory if needed
-        os.makedirs(os.path.join(CreatorAgent.run_dir, "messages_current"), exist_ok=True)
-
-        # Save all messages to log files
-        lists = ["meta_messages", "analyzer_messages", "strategizer_messages", "researcher_messages", "coder_messages"]
-        for msg_list in lists:
-            log_path = os.path.join(CreatorAgent.run_dir, "messages_current", f"llm_log_{msg_list}.txt")
-            with open(log_path, "w") as log_file:
-                for m in state[msg_list]:
-                    log_file.write(m.pretty_repr() + "\n")
+        self.debug_log("In Conditional Edge Meta")
 
         # End evolution if we exceed max evolutions
         if (CreatorAgent.current_evolution > CREATOR_NUM_EVOLUTIONS):
-            print(f"Reached Max Evolutions of {CREATOR_NUM_EVOLUTIONS}, going to END")
+            self.debug_log(f"Reached Max Evolutions of {CREATOR_NUM_EVOLUTIONS}, going to END")
             return END
 
         meta_message = state["meta_messages"][-1].content
@@ -506,17 +554,17 @@ class CreatorAgent():
         if match:
             agent_name = match.group(1)
             if agent_name in AGENT_KEYS:
-                print(f"Meta Message: Found agent {agent_name} via specific format - going to {agent_name}")
+                self.debug_log(f"Meta Message: Found agent {agent_name} via specific format - going to {agent_name}")
                 return agent_name
 
         # If not found, fall back to just searching the test
         for key in AGENT_KEYS:
             if key in meta_message:
-                print(f"Meta Message: {key} - going to {key}")
+                self.debug_log(f"Meta Message: {key} - going to {key}")
                 return key
             
             # Default case if neither string is found
-        print(f"Warning: Could not determine desired agent in recent meta message. Defaulting to {ANALYZER_NAME}")
+        self.debug_log(f"Warning: Could not determine desired agent in recent meta message. Defaulting to {ANALYZER_NAME}")
         return ANALYZER_NAME
 
     def create_langchain_react_graph(self):
@@ -565,30 +613,11 @@ class CreatorAgent():
     def run_react_graph(self):
         
         try:
-
-            log_path = os.path.join(CreatorAgent.run_dir, f"llm_log.txt")
-
-            def append_log_file(content: str):
-                with open(log_path, "a") as log_file:
-                    log_file.write(content + "\n")
-
-
             for step in self.react_graph.stream({}, self.config, stream_mode="updates"):
-                #print(step)
-                #log_file.write(f"Step: {step.}\n")
                 for node, update in step.items():
-                    
-                    print(f"In Node: {node}")
-                    append_log_file(f"In Node: {node}")
-                    # Simplified Messages code
-                    key_types = ["recent_meta_message", "recent_helper_response", "game_results"]
-                    for key in key_types:
-                        if key in update:
-                            msg = update[key]
-                            #msg.pretty_print()
-                            append_log_file(msg.pretty_repr() + "\n")
+                    self.debug_log(f"In Node: {node}")
 
-            print("✅  graph finished")
+            self.debug_log("✅  graph finished")
 
             # Copy Result File to the new directory
             dt = datetime.now().strftime("_%Y%m%d_%H%M%S_")
@@ -600,10 +629,140 @@ class CreatorAgent():
 
         
         except Exception as e:
-            print(f"Error calling LLM: {e}")
-            import traceback
-            traceback.print_exc()
+            self.debug_log(f"Error calling LLM: {e}\n{traceback.format_exc()}")
         return None
+
+    def _run_testfoo(self, short_game: bool = False) -> str:
+        """
+        Run one Catanatron match and return raw CLI output.
+        """
+        if short_game:
+            run_id = datetime.now().strftime("game_%Y%m%d_%H%M%S_vg")
+        else:
+            run_id = datetime.now().strftime("game_%Y%m%d_%H%M%S_fg")
+
+        # Build command, strip any stale --run-id
+        base_cmd = re.sub(r"--run-id=\S+", "", FOO_RUN_COMMAND).strip()
+        dynamic_command = f"{base_cmd} --run-id={run_id}"
+
+        game_run_dir = Path(CreatorAgent.run_dir) / run_id
+        game_run_dir.mkdir(exist_ok=True)
+
+        cur_foo_path = game_run_dir / FOO_TARGET_FILENAME
+        shutil.copy2(FOO_TARGET_FILE.resolve(), cur_foo_path)
+
+        MAX_CHARS = 20_000
+        try:
+            result = subprocess.run(
+                shlex.split(dynamic_command),
+                capture_output=True,
+                text=True,
+                timeout=30 if short_game else 14400,
+                check=False,
+            )
+            stdout_limited = result.stdout[-MAX_CHARS:]
+            stderr_limited = result.stderr[-MAX_CHARS:]
+            game_results = (stdout_limited + stderr_limited).strip()
+        except subprocess.TimeoutExpired as e:
+            so = (e.stdout or "")
+            se = (e.stderr or "")
+            if not isinstance(so, str):
+                so = so.decode("utf-8", errors="ignore")
+            if not isinstance(se, str):
+                se = se.decode("utf-8", errors="ignore")
+            stdout_limited = so[-MAX_CHARS:]
+            stderr_limited = se[-MAX_CHARS:]
+            game_results = "Game Ended From Timeout (As Expected).\n\n" + (stdout_limited + stderr_limited).strip()
+
+        # Write combined output
+        output_file_path = game_run_dir / "game_output.txt"
+        output_file_path.write_text(game_results, encoding="utf-8")
+
+        # ----- Locate results JSON via run_id pattern (no stdout parsing) -----
+        json_content = {}
+        json_copy_path = "None"
+
+        # Candidate run_results directories
+        candidate_dirs = [
+            LOCAL_CATANATRON_BASE_DIR / "run_results",
+            LOCAL_CATANATRON_BASE_DIR.parent / "run_results",
+        ]
+        existing_dirs = [d for d in candidate_dirs if d.exists()]
+        target_file = None
+
+        if existing_dirs:
+            pattern = f"{run_id}.json"
+            import time, glob
+            # Poll up to 3 seconds (30 * 0.1s) for file creation
+            for _ in range(30):
+                matches = []
+                for d in existing_dirs:
+                    matches.extend(Path(d).glob(pattern))
+                if matches:
+                    # Choose newest
+                    matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+                    target_file = matches[0]
+                    break
+                time.sleep(0.1)
+
+        if target_file and target_file.exists():
+            json_copy_path = game_run_dir / target_file.name
+            shutil.copy2(target_file, json_copy_path)
+            try:
+                json_content = json.loads(target_file.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                json_content = {"error": "Failed to parse JSON file"}
+        else:
+            self.debug_log(f"[DEBUG] No results JSON found for run_id={run_id}. Pattern search failed.")
+
+        # ----- Update performance history -----
+        performance_history_path = Path(CreatorAgent.run_dir) / "performance_history.json"
+        try:
+            performance_history = json.loads(performance_history_path.read_text())  # type: ignore
+        except Exception:
+            performance_history = {}
+
+        wins = 0
+        avg_score = 0
+        avg_turns = 0
+        try:
+            if "Player Summary" in json_content:
+                for player_key, stats in json_content["Player Summary"].items():
+                    if "fooplayer" in player_key.lower():
+                        wins = stats.get("WINS", wins)
+                        for vp_key in ("AVG VP", "AVG_VP", "AVG POINTS", "AVG_VPTS"):
+                            if vp_key in stats:
+                                avg_score = stats[vp_key]
+                                break
+                        break
+            if "Game Summary" in json_content:
+                avg_turns = json_content["Game Summary"].get("AVG TURNS", avg_turns)
+        except Exception as e:
+            self.debug_log(f"[DEBUG] Stat extraction error: {e}")
+
+        if not short_game:
+            evolution_key = CreatorAgent.current_evolution
+            CreatorAgent.current_evolution += 1
+
+            rel_output = output_file_path.relative_to(Path(CreatorAgent.run_dir))
+            rel_cur_foo = cur_foo_path.relative_to(Path(CreatorAgent.run_dir))
+            rel_json = "None"
+            if isinstance(json_copy_path, Path):
+                rel_json = json_copy_path.relative_to(Path(CreatorAgent.run_dir))
+
+            performance_history[f"Evolution {evolution_key}"] = {
+                "wins": wins,
+                "avg_score": avg_score,
+                "avg_turns": avg_turns,
+                "full_game_log_path": str(rel_output),
+                "json_game_results_path": str(rel_json),
+                "cur_foo_player_path": str(rel_cur_foo),
+                "cli_run_id": run_id,
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            }
+            performance_history_path.write_text(json.dumps(performance_history, indent=2))
+
+        return json.dumps(json_content, indent=2) if json_content else game_results
 
 
 ###################################################################################################
@@ -693,319 +852,6 @@ def replace_code_in_foo(search: str, replace: str) -> str:
     except Exception as e:
         return f"Error writing file: {e}"
 
-def run_testfoo(short_game: bool = False) -> str:
-    """
-    Run one Catanatron match and return raw CLI output.
-    """
-    if short_game:
-        run_id = datetime.now().strftime("game_%Y%m%d_%H%M%S_vg")
-    else:
-        run_id = datetime.now().strftime("game_%Y%m%d_%H%M%S_fg")
-
-    # Build command, strip any stale --run-id
-    base_cmd = re.sub(r"--run-id=\S+", "", FOO_RUN_COMMAND).strip()
-    dynamic_command = f"{base_cmd} --run-id={run_id}"
-
-    game_run_dir = Path(CreatorAgent.run_dir) / run_id
-    game_run_dir.mkdir(exist_ok=True)
-
-    cur_foo_path = game_run_dir / FOO_TARGET_FILENAME
-    shutil.copy2(FOO_TARGET_FILE.resolve(), cur_foo_path)
-
-    MAX_CHARS = 20_000
-    try:
-        result = subprocess.run(
-            shlex.split(dynamic_command),
-            capture_output=True,
-            text=True,
-            timeout=30 if short_game else 14400,
-            check=False,
-        )
-        stdout_limited = result.stdout[-MAX_CHARS:]
-        stderr_limited = result.stderr[-MAX_CHARS:]
-        game_results = (stdout_limited + stderr_limited).strip()
-    except subprocess.TimeoutExpired as e:
-        so = (e.stdout or "")
-        se = (e.stderr or "")
-        if not isinstance(so, str):
-            so = so.decode("utf-8", errors="ignore")
-        if not isinstance(se, str):
-            se = se.decode("utf-8", errors="ignore")
-        stdout_limited = so[-MAX_CHARS:]
-        stderr_limited = se[-MAX_CHARS:]
-        game_results = "Game Ended From Timeout (As Expected).\n\n" + (stdout_limited + stderr_limited).strip()
-
-    # Write combined output
-    output_file_path = game_run_dir / "game_output.txt"
-    output_file_path.write_text(game_results, encoding="utf-8")
-
-    # ----- Locate results JSON via run_id pattern (no stdout parsing) -----
-    json_content = {}
-    json_copy_path = "None"
-
-    # Candidate run_results directories
-    candidate_dirs = [
-        LOCAL_CATANATRON_BASE_DIR / "run_results",
-        LOCAL_CATANATRON_BASE_DIR.parent / "run_results",
-    ]
-    existing_dirs = [d for d in candidate_dirs if d.exists()]
-    target_file = None
-
-    if existing_dirs:
-        pattern = f"{run_id}.json"
-        import time, glob
-        # Poll up to 3 seconds (30 * 0.1s) for file creation
-        for _ in range(30):
-            matches = []
-            for d in existing_dirs:
-                matches.extend(Path(d).glob(pattern))
-            if matches:
-                # Choose newest
-                matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-                target_file = matches[0]
-                break
-            time.sleep(0.1)
-
-    if target_file and target_file.exists():
-        json_copy_path = game_run_dir / target_file.name
-        shutil.copy2(target_file, json_copy_path)
-        try:
-            json_content = json.loads(target_file.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            json_content = {"error": "Failed to parse JSON file"}
-    else:
-        print(f"[DEBUG] No results JSON found for run_id={run_id}. Pattern search failed.")
-
-    # ----- Update performance history -----
-    performance_history_path = Path(CreatorAgent.run_dir) / "performance_history.json"
-    try:
-        performance_history = json.loads(performance_history_path.read_text())  # type: ignore
-    except Exception:
-        performance_history = {}
-
-    wins = 0
-    avg_score = 0
-    avg_turns = 0
-    try:
-        if "Player Summary" in json_content:
-            for player_key, stats in json_content["Player Summary"].items():
-                if "fooplayer" in player_key.lower():
-                    wins = stats.get("WINS", wins)
-                    for vp_key in ("AVG VP", "AVG_VP", "AVG POINTS", "AVG_VPTS"):
-                        if vp_key in stats:
-                            avg_score = stats[vp_key]
-                            break
-                    break
-        if "Game Summary" in json_content:
-            avg_turns = json_content["Game Summary"].get("AVG TURNS", avg_turns)
-    except Exception as e:
-        print(f"[DEBUG] Stat extraction error: {e}")
-
-    if not short_game:
-        evolution_key = CreatorAgent.current_evolution
-        CreatorAgent.current_evolution += 1
-
-        rel_output = output_file_path.relative_to(Path(CreatorAgent.run_dir))
-        rel_cur_foo = cur_foo_path.relative_to(Path(CreatorAgent.run_dir))
-        rel_json = "None"
-        if isinstance(json_copy_path, Path):
-            rel_json = json_copy_path.relative_to(Path(CreatorAgent.run_dir))
-
-        performance_history[f"Evolution {evolution_key}"] = {
-            "wins": wins,
-            "avg_score": avg_score,
-            "avg_turns": avg_turns,
-            "full_game_log_path": str(rel_output),
-            "json_game_results_path": str(rel_json),
-            "cur_foo_player_path": str(rel_cur_foo),
-            "cli_run_id": run_id,
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        }
-        performance_history_path.write_text(json.dumps(performance_history, indent=2))
-
-    return json.dumps(json_content, indent=2) if json_content else game_results
-# def run_testfoo(short_game: bool = False) -> str:
-#     """
-#     Run one Catanatron match (R vs Agent File) and return raw CLI output.
-#     Input: short_game (bool): If True, run a short game with a 30 second timeout.
-#     """
-
-#     # Generate a unique run id (also used for directory + passed as --run-id)
-#     if short_game:
-#         run_id = datetime.now().strftime("game_%Y%m%d_%H%M%S_vg")
-#     else:
-#         run_id = datetime.now().strftime("game_%Y%m%d_%H%M%S_fg")
-    
-#     # Build command with a per-run --run-id (strip any stale one first)
-#     base_cmd = FOO_RUN_COMMAND
-#     # Remove any accidental existing --run-id param
-#     base_cmd = re.sub(r"--run-id=\S+", "", base_cmd).strip()
-#     dynamic_command = f"{base_cmd} --run-id={run_id}"
-#     # Optional: print for debugging
-#     # print(f"[DEBUG] Running command: {dynamic_command}")
- 
-#     game_run_dir = Path(CreatorAgent.run_dir) / run_id
-#     game_run_dir.mkdir(exist_ok=True)
-    
-#     cur_foo_path = game_run_dir / FOO_TARGET_FILENAME
-#     # Save the current prompt used for this game
-#     shutil.copy2(
-#         FOO_TARGET_FILE.resolve(),
-#         cur_foo_path
-#     )
-        
-#     MAX_CHARS = 20_000                      
-
-#     try:
-#         if short_game:
-#             result = subprocess.run(
-#                 shlex.split(dynamic_command),
-#                 capture_output=True,
-#                 text=True,
-#                 timeout=30,
-#                 check=False
-#             )
-#         else:
-#             result = subprocess.run(
-#                 shlex.split(dynamic_command),
-#                 capture_output=True,
-#                 text=True,
-#                 timeout=14400,
-#                 check=False
-#             )
-#         stdout_limited  = result.stdout[-MAX_CHARS:]
-#         stderr_limited  = result.stderr[-MAX_CHARS:]
-#         game_results = (stdout_limited + stderr_limited).strip()
-#     except subprocess.TimeoutExpired as e:
-#         # Handle timeout case
-#         stdout_output = e.stdout or ""
-#         stderr_output = e.stderr or ""
-#         if stdout_output and not isinstance(stdout_output, str):
-#             stdout_output = stdout_output.decode('utf-8', errors='ignore')
-#         if stderr_output and not isinstance(stderr_output, str):
-#             stderr_output = stderr_output.decode('utf-8', errors='ignore')
-#         stdout_limited  = stdout_output[-MAX_CHARS:]
-#         stderr_limited  = stderr_output[-MAX_CHARS:]
-#         game_results = "Game Ended From Timeout (As Expected).\n\n" + (stdout_limited + stderr_limited).strip()
-    
-
-#     # Save the output to a log file in the game run directory
-#     output_file_path = game_run_dir / "game_output.txt"
-    
-#     with open(output_file_path, "w") as output_file:
-#         output_file.write(game_results)
-
-
-#     # Search for the JSON results file path in the output
-#     json_path = None
-#     import re
-#     path_match = re.search(r'results_file_path:([^\s]+)', game_results)
-#     if path_match:
-#         # Extract the complete path
-#         json_path = path_match.group(1).strip()
-
-#     # Load in the most recent JSON File Game Rur
-#     json_content = {}
-#     json_copy_path = "None"
-#     # If we found a JSON file path, copy it and load its contents
-#     if json_path and Path(json_path).exists():
-#         # Copy the JSON file to our game run directory
-#         json_filename = Path(json_path).name
-#         json_copy_path = game_run_dir / json_filename
-#         shutil.copy2(json_path, json_copy_path)
-        
-#         # Load the JSON content
-#         try:
-#             with open(json_path, 'r') as f:
-#                 json_content = json.load(f)
-#         except json.JSONDecodeError:
-#             json_content = {"error": "Failed to parse JSON file"}
-
-
-#     # Update performance_history.json
-#     performance_history_path = Path(CreatorAgent.run_dir) / "performance_history.json"
-#     try:
-#         # Load existing performance history
-#         with open(performance_history_path, 'r') as f:
-#             performance_history = json.load(f)
-#     except (json.JSONDecodeError, FileNotFoundError):
-#         performance_history = {}
-    
-#     # Extract relevant data from json_content
-#     wins = 0
-#     avg_score = 0
-#     avg_turns = 0
-    
-#     try:
-#         # Extract data from the JSON structure
-#         if "Player Summary" in json_content:
-#             our_player = "FooPlayer"
-#             for player, stats in json_content["Player Summary"].items():
-#                 if player.startswith(our_player):  # Check if player key starts with our player's name
-#                     if "WINS" in stats:
-#                         wins = stats["WINS"]
-#                     if "AVG VP" in stats:
-#                         avg_score = stats["AVG VP"]
-                    
-#         if "Game Summary" in json_content:
-#             if "AVG TURNS" in json_content["Game Summary"]:
-#                 avg_turns = json_content["Game Summary"]["AVG TURNS"]
-#     except Exception as e:
-#         print(f"Error extracting stats from JSON: {e}")
-        
-#     # Update performance history only on long game runs
-#     if not short_game:
-#         # Create or update the entry for this evolution
-#         evolution_key = CreatorAgent.current_evolution
-#         CreatorAgent.current_evolution += 1
-        
-#         # Convert paths to be relative to run_dir
-#         rel_output_file_path = output_file_path.relative_to(Path(CreatorAgent.run_dir))
-#         rel_cur_foo_path = cur_foo_path.relative_to(Path(CreatorAgent.run_dir))
-#         # Handle the case where json_copy_path is a string "None"
-#         rel_json_copy_path = "None"
-#         if json_copy_path != "None" and isinstance(json_copy_path, Path):
-#             rel_json_copy_path = json_copy_path.relative_to(Path(CreatorAgent.run_dir))
-        
-#         performance_history[f"Evolution {evolution_key}"] = {
-#             "wins": wins,
-#             "avg_score": avg_score,
-#             "avg_turns": avg_turns,
-#             "full_game_log_path": str(rel_output_file_path),
-#             "json_game_results_path": str(rel_json_copy_path),
-#             "cur_foo_player_path": str(rel_cur_foo_path),
-#             "cli_run_id": run_id,
-#             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-#             #"summary": "Not yet summarized"
-#         }
-        
-#         # Write updated performance history
-#         with open(performance_history_path, 'w') as f:
-#             json.dump(performance_history, f, indent=2)
-        
-#     if json_content:
-#         return json.dumps(json_content, indent=2)
-#     else:
-#         # If we didn't find a JSON file, return a limited version of the game output
-#         # MAX_CHARS = 5_000
-#         # stdout_limited = result.stdout[-MAX_CHARS:]
-#         # stderr_limited = result.stderr[-MAX_CHARS:]
-#         return game_results
-#     # Extract the score from the game results
-
-#     # Create a folder in the Creator.run_dir with EvolveCounter#_FooScore#
-
-#     # Inside the folder, 
-#     #   place the game_results.txt file with the game results
-#     #   copy the FOO_TARGET_FILE as foo_player.py
-
-#     # Add a file with the stdout and stderr called catanatron_output.txt
-#     # output_file_path = latest_run_folder / "catanatron_output.txt"
-#     # with open(output_file_path, "w") as output_file:
-#     #     output_file.write(game_results)
-        
-#     #print(game_results)
-#         # limit the output to a certain number of characters
 
 def web_search_tool_call(query: str) -> str:
     """Perform a web search using the Tavily API.
