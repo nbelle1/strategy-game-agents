@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Literal, Union
 from pathlib import Path
 import json
+import uuid
 
 
 import click
@@ -131,6 +132,11 @@ class CustomTimeRemainingColumn(TimeRemainingColumn):
     help="Show player codes and exits.",
     is_flag=True,
 )
+@click.option(
+    "--run-id",
+    default=None,
+    help="Optional unique run identifier to embed in results filename (else auto-generated).",
+)
 def simulate(
     num,
     players,
@@ -144,6 +150,7 @@ def simulate(
     config_map,
     quiet,
     help_players,
+    run_id,
 ):
     """
     Catan Bot Simulator.
@@ -181,6 +188,10 @@ def simulate(
                 players.append(player)
                 break
 
+    # Normalize / generate run id
+    if not run_id:
+        run_id = uuid.uuid4().hex[:10]
+
     output_options = OutputOptions(output, csv, json, db)
     game_config = GameConfigOptions(config_discard_limit, config_vps_to_win, config_map)
     play_batch(
@@ -189,6 +200,7 @@ def simulate(
         output_options,
         game_config,
         quiet,
+        run_id=run_id,
     )
 
 
@@ -258,9 +270,11 @@ def play_batch(
     output_options=None,
     game_config=None,
     quiet=False,
+    run_id: str | None = None,
 ):
     output_options = output_options or OutputOptions()
     game_config = game_config or GameConfigOptions()
+    run_id = run_id or uuid.uuid4().hex[:10]
 
     statistics_accumulator = StatisticsAccumulator()
     vp_accumulator = VpDistributionAccumulator()
@@ -405,9 +419,8 @@ def play_batch(
     results_dir = Path(__file__).resolve().parents[3] / "run_results"
     results_dir.mkdir(exist_ok=True, parents=True)
 
-    # Create timestamp for filename
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    results_file = results_dir / f"game_results_{timestamp}.json"
+    results_file = results_dir / f"{run_id}.json"
 
     # Build JSON structure
     results = {
@@ -438,9 +451,10 @@ def play_batch(
     with open(results_file, 'w') as f:
         json.dump(results, f, indent=2, default=str)
 
-    if not quiet:
-        console.print(f"results_file_path:{results_file}")
-    
+    # Unwrapped sentinel line for reliable parsing (even if quiet=False still emit)
+    # print(f'CTN_RESULTS_FILE="{results_file}"', flush=True)
+    # if not quiet:
+    #     console.print(f"[green]results_file_path:{results_file}[/green]")
     ### END NB ADDITIONS ###
 
 

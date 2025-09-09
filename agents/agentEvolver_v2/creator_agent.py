@@ -63,7 +63,7 @@ MAX_META_MESSAGES_GIVEN_TO_CODER = 6
 MAX_MESSAGES_IN_AGENT = 20
 
 # Catanatron
-FOO_RUN_COMMAND = "catanatron-play --players=AB,AE2  --num=30 --config-map=MINI  --config-vps-to-win=10"
+FOO_RUN_COMMAND = "catanatron-play --players=AB,AE2 --num=30 --config-map=MINI --config-vps-to-win=10"
 
 
 # CONSTANTS
@@ -983,178 +983,319 @@ def replace_code_in_foo(search: str, replace: str) -> str:
     except Exception as e:
         return f"Error writing file: {e}"
 
-
 def run_testfoo(short_game: bool = False) -> str:
     """
-    Run one Catanatron match (R vs Agent File) and return raw CLI output.
-    Input: short_game (bool): If True, run a short game with a 30 second timeout.
+    Run one Catanatron match and return raw CLI output.
     """
-
     if short_game:
         run_id = datetime.now().strftime("game_%Y%m%d_%H%M%S_vg")
     else:
         run_id = datetime.now().strftime("game_%Y%m%d_%H%M%S_fg")
+
+    # Build command, strip any stale --run-id
+    base_cmd = re.sub(r"--run-id=\S+", "", FOO_RUN_COMMAND).strip()
+    dynamic_command = f"{base_cmd} --run-id={run_id}"
+
     game_run_dir = Path(CreatorAgent.run_dir) / run_id
     game_run_dir.mkdir(exist_ok=True)
-    
-    cur_foo_path = game_run_dir / FOO_TARGET_FILENAME
-    # Save the current prompt used for this game
-    shutil.copy2(
-        FOO_TARGET_FILE.resolve(),
-        cur_foo_path
-    )
-        
-    MAX_CHARS = 20_000                      
 
+    cur_foo_path = game_run_dir / FOO_TARGET_FILENAME
+    shutil.copy2(FOO_TARGET_FILE.resolve(), cur_foo_path)
+
+    MAX_CHARS = 20_000
     try:
-        if short_game:
-            result = subprocess.run(
-                shlex.split(FOO_RUN_COMMAND),
-                capture_output=True,
-                text=True,
-                timeout=30,
-                check=False
-            )
-        else:
-            result = subprocess.run(
-                shlex.split(FOO_RUN_COMMAND),
-                capture_output=True,
-                text=True,
-                timeout=14400,
-                check=False
-            )
-        stdout_limited  = result.stdout[-MAX_CHARS:]
-        stderr_limited  = result.stderr[-MAX_CHARS:]
+        result = subprocess.run(
+            shlex.split(dynamic_command),
+            capture_output=True,
+            text=True,
+            timeout=30 if short_game else 14400,
+            check=False,
+        )
+        stdout_limited = result.stdout[-MAX_CHARS:]
+        stderr_limited = result.stderr[-MAX_CHARS:]
         game_results = (stdout_limited + stderr_limited).strip()
     except subprocess.TimeoutExpired as e:
-        # Handle timeout case
-        stdout_output = e.stdout or ""
-        stderr_output = e.stderr or ""
-        if stdout_output and not isinstance(stdout_output, str):
-            stdout_output = stdout_output.decode('utf-8', errors='ignore')
-        if stderr_output and not isinstance(stderr_output, str):
-            stderr_output = stderr_output.decode('utf-8', errors='ignore')
-        stdout_limited  = stdout_output[-MAX_CHARS:]
-        stderr_limited  = stderr_output[-MAX_CHARS:]
+        so = (e.stdout or "")
+        se = (e.stderr or "")
+        if not isinstance(so, str):
+            so = so.decode("utf-8", errors="ignore")
+        if not isinstance(se, str):
+            se = se.decode("utf-8", errors="ignore")
+        stdout_limited = so[-MAX_CHARS:]
+        stderr_limited = se[-MAX_CHARS:]
         game_results = "Game Ended From Timeout (As Expected).\n\n" + (stdout_limited + stderr_limited).strip()
-    
 
-    # Save the output to a log file in the game run directory
+    # Write combined output
     output_file_path = game_run_dir / "game_output.txt"
-    
-    with open(output_file_path, "w") as output_file:
-        output_file.write(game_results)
+    output_file_path.write_text(game_results, encoding="utf-8")
 
-
-    # Search for the JSON results file path in the output
-    json_path = None
-    import re
-    path_match = re.search(r'results_file_path:([^\s]+)', game_results)
-    if path_match:
-        # Extract the complete path
-        json_path = path_match.group(1).strip()
-
-    # Load in the most recent JSON File Game Rur
+    # ----- Locate results JSON via run_id pattern (no stdout parsing) -----
     json_content = {}
     json_copy_path = "None"
-    # If we found a JSON file path, copy it and load its contents
-    if json_path and Path(json_path).exists():
-        # Copy the JSON file to our game run directory
-        json_filename = Path(json_path).name
-        json_copy_path = game_run_dir / json_filename
-        shutil.copy2(json_path, json_copy_path)
-        
-        # Load the JSON content
+
+    # Candidate run_results directories
+    candidate_dirs = [
+        LOCAL_CATANATRON_BASE_DIR / "run_results",
+        LOCAL_CATANATRON_BASE_DIR.parent / "run_results",
+    ]
+    existing_dirs = [d for d in candidate_dirs if d.exists()]
+    target_file = None
+
+    if existing_dirs:
+        pattern = f"{run_id}.json"
+        import time, glob
+        # Poll up to 3 seconds (30 * 0.1s) for file creation
+        for _ in range(30):
+            matches = []
+            for d in existing_dirs:
+                matches.extend(Path(d).glob(pattern))
+            if matches:
+                # Choose newest
+                matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+                target_file = matches[0]
+                break
+            time.sleep(0.1)
+
+    if target_file and target_file.exists():
+        json_copy_path = game_run_dir / target_file.name
+        shutil.copy2(target_file, json_copy_path)
         try:
-            with open(json_path, 'r') as f:
-                json_content = json.load(f)
+            json_content = json.loads(target_file.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             json_content = {"error": "Failed to parse JSON file"}
+    else:
+        print(f"[DEBUG] No results JSON found for run_id={run_id}. Pattern search failed.")
 
-
-    # Update performance_history.json
+    # ----- Update performance history -----
     performance_history_path = Path(CreatorAgent.run_dir) / "performance_history.json"
     try:
-        # Load existing performance history
-        with open(performance_history_path, 'r') as f:
-            performance_history = json.load(f)
-    except (json.JSONDecodeError, FileNotFoundError):
+        performance_history = json.loads(performance_history_path.read_text())  # type: ignore
+    except Exception:
         performance_history = {}
-    
-    # Extract relevant data from json_content
+
     wins = 0
     avg_score = 0
     avg_turns = 0
-    
     try:
-        # Extract data from the JSON structure
         if "Player Summary" in json_content:
-            our_player = "FooPlayer"
-            for player, stats in json_content["Player Summary"].items():
-                if player.startswith(our_player):  # Check if player key starts with our player's name
-                    if "WINS" in stats:
-                        wins = stats["WINS"]
-                    if "AVG VP" in stats:
-                        avg_score = stats["AVG VP"]
-                    
+            for player_key, stats in json_content["Player Summary"].items():
+                if "fooplayer" in player_key.lower():
+                    wins = stats.get("WINS", wins)
+                    for vp_key in ("AVG VP", "AVG_VP", "AVG POINTS", "AVG_VPTS"):
+                        if vp_key in stats:
+                            avg_score = stats[vp_key]
+                            break
+                    break
         if "Game Summary" in json_content:
-            if "AVG TURNS" in json_content["Game Summary"]:
-                avg_turns = json_content["Game Summary"]["AVG TURNS"]
+            avg_turns = json_content["Game Summary"].get("AVG TURNS", avg_turns)
     except Exception as e:
-        print(f"Error extracting stats from JSON: {e}")
-        
-    # Update performance history only on long game runs
+        print(f"[DEBUG] Stat extraction error: {e}")
+
     if not short_game:
-        # Create or update the entry for this evolution
         evolution_key = CreatorAgent.current_evolution
         CreatorAgent.current_evolution += 1
-        
-        # Convert paths to be relative to run_dir
-        rel_output_file_path = output_file_path.relative_to(Path(CreatorAgent.run_dir))
-        rel_cur_foo_path = cur_foo_path.relative_to(Path(CreatorAgent.run_dir))
-        # Handle the case where json_copy_path is a string "None"
-        rel_json_copy_path = "None"
-        if json_copy_path != "None" and isinstance(json_copy_path, Path):
-            rel_json_copy_path = json_copy_path.relative_to(Path(CreatorAgent.run_dir))
-        
+
+        rel_output = output_file_path.relative_to(Path(CreatorAgent.run_dir))
+        rel_cur_foo = cur_foo_path.relative_to(Path(CreatorAgent.run_dir))
+        rel_json = "None"
+        if isinstance(json_copy_path, Path):
+            rel_json = json_copy_path.relative_to(Path(CreatorAgent.run_dir))
+
         performance_history[f"Evolution {evolution_key}"] = {
             "wins": wins,
             "avg_score": avg_score,
             "avg_turns": avg_turns,
-            "full_game_log_path": str(rel_output_file_path),
-            "json_game_results_path": str(rel_json_copy_path),
-            "cur_foo_player_path": str(rel_cur_foo_path),
+            "full_game_log_path": str(rel_output),
+            "json_game_results_path": str(rel_json),
+            "cur_foo_player_path": str(rel_cur_foo),
+            "cli_run_id": run_id,
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            #"summary": "Not yet summarized"
         }
-        
-        # Write updated performance history
-        with open(performance_history_path, 'w') as f:
-            json.dump(performance_history, f, indent=2)
-        
-    if json_content:
-        return json.dumps(json_content, indent=2)
-    else:
-        # If we didn't find a JSON file, return a limited version of the game output
-        # MAX_CHARS = 5_000
-        # stdout_limited = result.stdout[-MAX_CHARS:]
-        # stderr_limited = result.stderr[-MAX_CHARS:]
-        return game_results
-    # Extract the score from the game results
+        performance_history_path.write_text(json.dumps(performance_history, indent=2))
 
-    # Create a folder in the Creator.run_dir with EvolveCounter#_FooScore#
+    return json.dumps(json_content, indent=2) if json_content else game_results
+# def run_testfoo(short_game: bool = False) -> str:
+#     """
+#     Run one Catanatron match (R vs Agent File) and return raw CLI output.
+#     Input: short_game (bool): If True, run a short game with a 30 second timeout.
+#     """
 
-    # Inside the folder, 
-    #   place the game_results.txt file with the game results
-    #   copy the FOO_TARGET_FILE as foo_player.py
-
-    # Add a file with the stdout and stderr called catanatron_output.txt
-    # output_file_path = latest_run_folder / "catanatron_output.txt"
-    # with open(output_file_path, "w") as output_file:
-    #     output_file.write(game_results)
+#     # Generate a unique run id (also used for directory + passed as --run-id)
+#     if short_game:
+#         run_id = datetime.now().strftime("game_%Y%m%d_%H%M%S_vg")
+#     else:
+#         run_id = datetime.now().strftime("game_%Y%m%d_%H%M%S_fg")
+    
+#     # Build command with a per-run --run-id (strip any stale one first)
+#     base_cmd = FOO_RUN_COMMAND
+#     # Remove any accidental existing --run-id param
+#     base_cmd = re.sub(r"--run-id=\S+", "", base_cmd).strip()
+#     dynamic_command = f"{base_cmd} --run-id={run_id}"
+#     # Optional: print for debugging
+#     # print(f"[DEBUG] Running command: {dynamic_command}")
+ 
+#     game_run_dir = Path(CreatorAgent.run_dir) / run_id
+#     game_run_dir.mkdir(exist_ok=True)
+    
+#     cur_foo_path = game_run_dir / FOO_TARGET_FILENAME
+#     # Save the current prompt used for this game
+#     shutil.copy2(
+#         FOO_TARGET_FILE.resolve(),
+#         cur_foo_path
+#     )
         
-    #print(game_results)
-        # limit the output to a certain number of characters
+#     MAX_CHARS = 20_000                      
+
+#     try:
+#         if short_game:
+#             result = subprocess.run(
+#                 shlex.split(dynamic_command),
+#                 capture_output=True,
+#                 text=True,
+#                 timeout=30,
+#                 check=False
+#             )
+#         else:
+#             result = subprocess.run(
+#                 shlex.split(dynamic_command),
+#                 capture_output=True,
+#                 text=True,
+#                 timeout=14400,
+#                 check=False
+#             )
+#         stdout_limited  = result.stdout[-MAX_CHARS:]
+#         stderr_limited  = result.stderr[-MAX_CHARS:]
+#         game_results = (stdout_limited + stderr_limited).strip()
+#     except subprocess.TimeoutExpired as e:
+#         # Handle timeout case
+#         stdout_output = e.stdout or ""
+#         stderr_output = e.stderr or ""
+#         if stdout_output and not isinstance(stdout_output, str):
+#             stdout_output = stdout_output.decode('utf-8', errors='ignore')
+#         if stderr_output and not isinstance(stderr_output, str):
+#             stderr_output = stderr_output.decode('utf-8', errors='ignore')
+#         stdout_limited  = stdout_output[-MAX_CHARS:]
+#         stderr_limited  = stderr_output[-MAX_CHARS:]
+#         game_results = "Game Ended From Timeout (As Expected).\n\n" + (stdout_limited + stderr_limited).strip()
+    
+
+#     # Save the output to a log file in the game run directory
+#     output_file_path = game_run_dir / "game_output.txt"
+    
+#     with open(output_file_path, "w") as output_file:
+#         output_file.write(game_results)
+
+
+#     # Search for the JSON results file path in the output
+#     json_path = None
+#     import re
+#     path_match = re.search(r'results_file_path:([^\s]+)', game_results)
+#     if path_match:
+#         # Extract the complete path
+#         json_path = path_match.group(1).strip()
+
+#     # Load in the most recent JSON File Game Rur
+#     json_content = {}
+#     json_copy_path = "None"
+#     # If we found a JSON file path, copy it and load its contents
+#     if json_path and Path(json_path).exists():
+#         # Copy the JSON file to our game run directory
+#         json_filename = Path(json_path).name
+#         json_copy_path = game_run_dir / json_filename
+#         shutil.copy2(json_path, json_copy_path)
+        
+#         # Load the JSON content
+#         try:
+#             with open(json_path, 'r') as f:
+#                 json_content = json.load(f)
+#         except json.JSONDecodeError:
+#             json_content = {"error": "Failed to parse JSON file"}
+
+
+#     # Update performance_history.json
+#     performance_history_path = Path(CreatorAgent.run_dir) / "performance_history.json"
+#     try:
+#         # Load existing performance history
+#         with open(performance_history_path, 'r') as f:
+#             performance_history = json.load(f)
+#     except (json.JSONDecodeError, FileNotFoundError):
+#         performance_history = {}
+    
+#     # Extract relevant data from json_content
+#     wins = 0
+#     avg_score = 0
+#     avg_turns = 0
+    
+#     try:
+#         # Extract data from the JSON structure
+#         if "Player Summary" in json_content:
+#             our_player = "FooPlayer"
+#             for player, stats in json_content["Player Summary"].items():
+#                 if player.startswith(our_player):  # Check if player key starts with our player's name
+#                     if "WINS" in stats:
+#                         wins = stats["WINS"]
+#                     if "AVG VP" in stats:
+#                         avg_score = stats["AVG VP"]
+                    
+#         if "Game Summary" in json_content:
+#             if "AVG TURNS" in json_content["Game Summary"]:
+#                 avg_turns = json_content["Game Summary"]["AVG TURNS"]
+#     except Exception as e:
+#         print(f"Error extracting stats from JSON: {e}")
+        
+#     # Update performance history only on long game runs
+#     if not short_game:
+#         # Create or update the entry for this evolution
+#         evolution_key = CreatorAgent.current_evolution
+#         CreatorAgent.current_evolution += 1
+        
+#         # Convert paths to be relative to run_dir
+#         rel_output_file_path = output_file_path.relative_to(Path(CreatorAgent.run_dir))
+#         rel_cur_foo_path = cur_foo_path.relative_to(Path(CreatorAgent.run_dir))
+#         # Handle the case where json_copy_path is a string "None"
+#         rel_json_copy_path = "None"
+#         if json_copy_path != "None" and isinstance(json_copy_path, Path):
+#             rel_json_copy_path = json_copy_path.relative_to(Path(CreatorAgent.run_dir))
+        
+#         performance_history[f"Evolution {evolution_key}"] = {
+#             "wins": wins,
+#             "avg_score": avg_score,
+#             "avg_turns": avg_turns,
+#             "full_game_log_path": str(rel_output_file_path),
+#             "json_game_results_path": str(rel_json_copy_path),
+#             "cur_foo_player_path": str(rel_cur_foo_path),
+#             "cli_run_id": run_id,
+#             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+#             #"summary": "Not yet summarized"
+#         }
+        
+#         # Write updated performance history
+#         with open(performance_history_path, 'w') as f:
+#             json.dump(performance_history, f, indent=2)
+        
+#     if json_content:
+#         return json.dumps(json_content, indent=2)
+#     else:
+#         # If we didn't find a JSON file, return a limited version of the game output
+#         # MAX_CHARS = 5_000
+#         # stdout_limited = result.stdout[-MAX_CHARS:]
+#         # stderr_limited = result.stderr[-MAX_CHARS:]
+#         return game_results
+#     # Extract the score from the game results
+
+#     # Create a folder in the Creator.run_dir with EvolveCounter#_FooScore#
+
+#     # Inside the folder, 
+#     #   place the game_results.txt file with the game results
+#     #   copy the FOO_TARGET_FILE as foo_player.py
+
+#     # Add a file with the stdout and stderr called catanatron_output.txt
+#     # output_file_path = latest_run_folder / "catanatron_output.txt"
+#     # with open(output_file_path, "w") as output_file:
+#     #     output_file.write(game_results)
+        
+#     #print(game_results)
+#         # limit the output to a certain number of characters
 
 def web_search_tool_call(query: str) -> str:
     """Perform a web search using the Tavily API.
