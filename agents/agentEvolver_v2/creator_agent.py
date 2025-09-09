@@ -8,8 +8,17 @@ from datetime import datetime
 import shutil
 from pathlib import Path
 import subprocess, shlex
+import traceback
 
-
+from agents.agentEvolver_v2.prompts import (
+    ANALYZER_SYSTEM_PROMPT,
+    CODER_SYSTEM_PROMPT,
+    DEFAULT_ANALYZE_MSG,
+    META_SYSTEM_PROMPT,
+    MULTI_AGENT_PROMPT,
+    RESEARCHER_SYSTEM_PROMPT,
+    STRATEGIZER_SYSTEM_PROMPT,
+)
 from langchain_openai import AzureChatOpenAI
 from langchain_openai import ChatOpenAI
 from langchain_mistralai import ChatMistralAI
@@ -33,6 +42,8 @@ from typing_extensions import TypedDict
 ###################################################################################################
 # CONFIG
 LANGCHAIN_TRACING_VAR = "false"
+PRINT_DEBUG = True
+PRINT_LLM = "LOG" # "NONE", "LOG", "LOG_FULL"
 
 # Coder LLM
 CODER_LLM_BACKEND = "mistral"
@@ -51,8 +62,8 @@ STRATEGIZER_LLM_BACKEND = "mistral"
 STRATEGIZER_LLM_MODEL = "mistral-large-latest"
 
 # Meta LLM
-META_LLM_BACKEND = "openai"
-META_LLM_MODEL = "gpt-5-mini"
+META_LLM_BACKEND = "mistral"
+META_LLM_MODEL = "mistral-large-latest"
 
 FOO_MAX_BYTES   = 64_000      # context-friendly cap
 CREATOR_LANGRAPH_RECURSION_LIMIT = 200  # max depth of graph recursion
@@ -63,7 +74,7 @@ MAX_META_MESSAGES_GIVEN_TO_CODER = 6
 MAX_MESSAGES_IN_AGENT = 20
 
 # Catanatron
-FOO_RUN_COMMAND = "catanatron-play --players=AB,AE2 --num=30 --config-map=MINI --config-vps-to-win=10"
+FOO_RUN_COMMAND = "catanatron-play --players=AB,AE2 --num=10 --config-map=MINI --config-vps-to-win=10"
 
 
 # CONSTANTS
@@ -71,7 +82,6 @@ LOCAL_CATANATRON_BASE_DIR = (Path(__file__).parent.parent.parent / "catanatron")
 FOO_TARGET_FILENAME = "foo_player.py"
 FOO_TARGET_FILE = Path(__file__).parent / FOO_TARGET_FILENAME    # absolute path
 
-MULTI_AGENT_PROMPT = f"""You are apart of a multi-agent system that is working to evolve the code in {FOO_TARGET_FILENAME} to become the best player in the Catanatron Minigame.\n\tYour specific role is the:"""
 ANALYZER_NAME = "ANALYZER"
 STRATEGIZER_NAME = "STRATEGIZER"
 RESEARCHER_NAME = "RESEARCHER"
@@ -80,6 +90,17 @@ AGENT_KEYS = [ANALYZER_NAME, STRATEGIZER_NAME, RESEARCHER_NAME, CODER_NAME]
 
 # VARIABLES
 
+class CreatorGraphState(TypedDict):
+    meta_messages: list[AnyMessage] # Messages from the meta node (used for debugging)
+    analyzer_messages: list[AnyMessage] # Messages from the analyzer node (used for debugging)
+    strategizer_messages: list[AnyMessage] # Messages from the strategizer node (used for debugging)
+    researcher_messages: list[AnyMessage] # Messages from the researcher node (used for debugging)
+    coder_messages: list[AnyMessage] # Messages from the coder node (used for debugging)
+
+    recent_meta_message: HumanMessage # Recent Message from the meta node (used for debugging)
+    recent_helper_response: HumanMessage # Recent Message from the helper node (used for debugging)
+    game_results: HumanMessage # Last results of running the game
+    tool_calling_messages: list[AnyMessage] # Messages from the tool calling state graph
 
 ###################################################################################################
 #  LANGGRAPH
@@ -122,6 +143,8 @@ class CreatorAgent():
         config_path = os.path.join(CreatorAgent.run_dir, "config.txt")
         with open(config_path, "w") as f:
             f.write(f"LANGCHAIN_TRACING_VAR = {LANGCHAIN_TRACING_VAR}\n")
+            f.write(f"PRINT_DEBUG = {PRINT_DEBUG}\n")
+            f.write(f"PRINT_LLM = {PRINT_LLM}\n")
             f.write(f"CODER_LLM_BACKEND = {CODER_LLM_BACKEND}\n")
             f.write(f"CODER_LLM_MODEL = {CODER_LLM_MODEL}\n")
             f.write(f"ANALYZER_LLM_BACKEND = {ANALYZER_LLM_BACKEND}\n")
@@ -159,6 +182,7 @@ class CreatorAgent():
             run_id = datetime.now().strftime("creator_%Y%m%d_%H%M%S")
             CreatorAgent.run_dir = os.path.join(runs_dir, run_id)
             os.makedirs(CreatorAgent.run_dir, exist_ok=True)
+            os.makedirs(os.path.join(CreatorAgent.run_dir, "log"), exist_ok=True)
 
         #Copy the Blank FooPlayer to the run directory
         shutil.copy2(                           # ↩ copy with metadata
@@ -174,676 +198,426 @@ class CreatorAgent():
 
         self.react_graph = self.create_langchain_react_graph()
 
+    def debug_log(self, message: str):
+        """
+        Logs debug messages to both console and a debug log file.
+        Use instead of print statements
+        """
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_entry = f"[{timestamp}] {message}"
+
+        if PRINT_DEBUG:
+            print(log_entry)
+
+        log_path = os.path.join(CreatorAgent.run_dir, "log", "debug_log.txt")
+        with open(log_path, "a") as f:
+            f.write(log_entry + "\n")
+
+    def agent_log_input(self, agent_name: str, messages: list[AnyMessage]):
+        """
+        Logs input messages for a specific agent to their own log file
+        """
+        log_dir = os.path.join(CreatorAgent.run_dir, "log", agent_name)
+        os.makedirs(log_dir, exist_ok=True)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        log_path = os.path.join(log_dir, f"{agent_name}_e{CreatorAgent.current_evolution}_{timestamp}.txt")
+
+        with open(log_path, "w") as f:
+            f.write(f"--- Input for {agent_name} at {timestamp} ---\n")
+            for message in messages:
+                f.write(message.pretty_repr() + "\n")
+            f.write("\n")
+
+        # Print only the relative path from run_dir
+        relative_path = Path(log_path).relative_to(Path(CreatorAgent.run_dir))
+        self.debug_log(f"{agent_name} logged to {relative_path}")
+
+        return log_path
+
+    def agent_log_output(self, agent_name: str, messages: list[AnyMessage], agent_log_path: str):
+        """
+        Logs output messages for a specific agent to their own log file, as well
+        as to the full and short LLM logs if requested. 
+        """
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        with open(agent_log_path, "a") as f:
+            f.write(f"--- Output from {agent_name} at {timestamp} ---\n")
+            for message in messages:
+                f.write(message.pretty_repr() + "\n")
+            f.write("\n")
+
+        # Log to llm_log_full.txt
+        full_log_path = os.path.join(CreatorAgent.run_dir, "log", "llm_log_full.txt")
+        with open(full_log_path, "a") as f:
+            f.write(f"--- Output from {agent_name} at {timestamp} ---\n")
+            for message in messages:
+                f.write(message.pretty_repr() + "\n")
+            f.write("\n")
+
+        # Log to llm_log.txt
+        log_path = os.path.join(CreatorAgent.run_dir, "log", "llm_log.txt")
+        with open(log_path, "a") as f:
+            f.write(f"--- Output from {agent_name} at {timestamp} ---\n")
+            if messages:
+                f.write(messages[-1].pretty_repr() + "\n")
+            f.write("\n")
+
+        if PRINT_LLM == "LOG_FULL":
+            print(f"--- Output from {agent_name} at {timestamp} ---")
+            for message in messages:
+                print(message.pretty_repr())
+        elif PRINT_LLM == "LOG":
+            print(f"--- Output from {agent_name} at {timestamp} ---")
+            if messages:
+                print(messages[-1].pretty_repr())
+
+    def _tool_calling_state_graph(self, llm, sys_msg: SystemMessage, msgs: list[AnyMessage], tools):
+        # Bind Tools to the LLM
+        #llm_with_tools = llm.bind_tools(tools, parallel_tool_calls=False)
+        llm_with_tools = llm.bind_tools(tools)
+
+        def assistant(sub_state: MessagesState):
+            return {"messages": [llm_with_tools.invoke([sys_msg] + sub_state["messages"])]}
+
+        # Graph
+        builder = StateGraph(MessagesState)
+
+        # Define nodes: these do the work
+        builder.add_node("assistant", assistant)
+        builder.add_node("tools", ToolNode(tools))
+        #builder.add_node("final_assistant", final_assistant)
+
+        # Define edges: these determine how the control flow moves
+        builder.add_edge(START, "assistant")
+        builder.add_conditional_edges(
+            "assistant",
+            # If the latest message (result) from assistant is a tool call -> tools_condition routes to tools
+            # If the latest message (result) from assistant is a not a tool call -> tools_condition routes to END
+            tools_condition,
+        )
+        #builder.add_conditional_edges("tools", check_num_messages, "assistant", "final_assistant")
+        builder.add_edge("tools", "assistant")
+        react_graph = builder.compile()
+
+        # Run Graph
+        last_event = None
+        for event in react_graph.stream({"messages": msgs}, stream_mode="values"):
+            last_event = event
+
+        return last_event
+
+    def _init_node(self, state: CreatorGraphState):
+        """
+        Initialize the state of the graph
+        """
+        self.debug_log("INIT NODE")
+
+        return {
+            "meta_messages": [],
+            "analyzer_messages": [],
+            "strategizer_messages": [],
+            "researcher_messages": [],
+            "coder_messages": [],
+            "recent_meta_message": HumanMessage(content=""),
+            "recent_helper_response": HumanMessage(content=""),
+            "game_results": HumanMessage(content=""),
+            "tool_calling_messages": [],
+        }
+
+    def _run_player_node(self, state: CreatorGraphState):
+        """
+        Runs Catanatron with the current Code
+        """
+        self.debug_log("RUN PLAYER NODE")
+
+        # Generate a test results (later will be running the game)
+        game_results = self._run_testfoo(short_game=False)
+        game_msg = HumanMessage(content=f"GAME RESULTS:\n\n{game_results}")
+
+        meta_messages = state["meta_messages"] + [game_msg]
+
+        # Create a dummy meta message to automatically generate a summary of the last run_pla
+        defualt_analyze_msg = HumanMessage(content=DEFAULT_ANALYZE_MSG.format(
+            FOO_TARGET_FILENAME=FOO_TARGET_FILENAME
+        ))
+        # Clear all past messages
+        return {
+            "game_results": game_msg,
+            "recent_meta_message": defualt_analyze_msg,
+            "meta_messages": meta_messages,
+        }
+
+    def _meta_node(self, state: CreatorGraphState):
+        self.debug_log("META NODE")
+
+        sys_msg = SystemMessage(
+            content=META_SYSTEM_PROMPT.format(
+                MULTI_AGENT_PROMPT=MULTI_AGENT_PROMPT.format(FOO_TARGET_FILENAME=FOO_TARGET_FILENAME),
+                FOO_TARGET_FILENAME=FOO_TARGET_FILENAME,
+                read_full_performance_history=read_full_performance_history(),
+                ANALYZER_NAME=ANALYZER_NAME,
+                STRATEGIZER_NAME=STRATEGIZER_NAME,
+                RESEARCHER_NAME=RESEARCHER_NAME,
+                CODER_NAME=CODER_NAME,
+            )
+        )
+
+        msgs = state["meta_messages"][-MAX_MESSAGES_IN_AGENT:]
+        tools = [think_tool]
+        log_path = self.agent_log_input("META", msgs)
+        output = self._tool_calling_state_graph(self.meta_llm, sys_msg, msgs, tools)
+        self.agent_log_output("META", output["messages"][len(msgs):], log_path)
+
+        #new_meta_message = HumanMessage(content=f"Temporary Meta Message ")
+
+        # Place AI Message in the meta history
+        meta_messages = state["meta_messages"] + [output["messages"][-1]]
+
+        # Save the new_meta_message as a human message
+        new_meta_message = HumanMessage(content=output["messages"][-1].content)
+
+        return {"recent_meta_message": new_meta_message,"meta_messages": meta_messages}
+
+    def _analyzer_node(self, state: CreatorGraphState):
+        self.debug_log("ANALYZER NODE")
+
+        sys_msg = SystemMessage(
+            content=ANALYZER_SYSTEM_PROMPT.format(
+                MULTI_AGENT_PROMPT=MULTI_AGENT_PROMPT.format(FOO_TARGET_FILENAME=FOO_TARGET_FILENAME),
+                FOO_TARGET_FILENAME=FOO_TARGET_FILENAME,
+                ANALYZER_NAME=ANALYZER_NAME,
+                MAX_MESSAGES_TOOL_CALLING=MAX_MESSAGES_TOOL_CALLING,
+            )
+        )
+
+        tools = [read_local_file, think_tool]
+
+        performance_msg = HumanMessage(content=f"This is the current performance history\n\n{read_full_performance_history()}")
+        game_output_msg = HumanMessage(content=f"This is the current game_output.txt file\n\n{read_game_output_file()}")
+        game_results_msg = HumanMessage(content=f"This is the current game_results json file\n\n{read_game_results_file()}")
+        current_foo_msg = HumanMessage(content=f"This is the current foo_player.py file\n\n{read_foo()}")
+
+
+        # Call the LLM with the provided tools
+        #base_len = len(state["analyzer_messages"][-MAX_MESSAGES_IN_AGENT:])
+        msgs = state["analyzer_messages"][-MAX_MESSAGES_IN_AGENT:] + [performance_msg, game_output_msg, game_results_msg, current_foo_msg, state["recent_meta_message"]]
+        log_path = self.agent_log_input(ANALYZER_NAME, msgs)
+        output = self._tool_calling_state_graph(self.analyzer_llm, sys_msg, msgs, tools)
+        self.agent_log_output(ANALYZER_NAME, output["messages"][len(msgs):], log_path)
+
+        # Add to Meta Messages
+        response = HumanMessage(content=output["messages"][-1].content)
+        meta_messages = state["meta_messages"] + [response]
+
+        # Add To Node Messages: Meta Human Request --> AI Response(content = tool_call_summary) + AI Response(content = final_message)
+        # Only summarize new messages
+        #tool_call_summary = summarize_messages(output["messages"][base_len:])
+        analyzer_messages = state["analyzer_messages"] + [state["recent_meta_message"], AIMessage(content=response.content)]
+
+        return {
+            "recent_helper_response": response,
+            "tool_calling_messages": output["messages"],
+            "meta_messages": meta_messages,
+            "analyzer_messages": analyzer_messages,
+        }
+
+    def _strategizer_node(self, state: CreatorGraphState):
+
+        self.debug_log("STRATEGIZER NODE")
+
+        sys_msg = SystemMessage(
+            content=STRATEGIZER_SYSTEM_PROMPT.format(
+                MULTI_AGENT_PROMPT=MULTI_AGENT_PROMPT.format(FOO_TARGET_FILENAME=FOO_TARGET_FILENAME),
+                STRATEGIZER_NAME=STRATEGIZER_NAME,
+                FOO_TARGET_FILENAME=FOO_TARGET_FILENAME,
+                MAX_MESSAGES_TOOL_CALLING=MAX_MESSAGES_TOOL_CALLING,
+            )
+        )
+
+        tools = [read_local_file, read_game_results_file, read_older_foo_file, web_search_tool_call, think_tool]
+
+        # Call the LLM with the provided tools
+        #base_len = len(state["strategizer_messages"][-MAX_MESSAGES_IN_AGENT:])
+
+        performance_msg = HumanMessage(content=f"This is the current performance history\n\n{read_full_performance_history()}")
+        current_foo_msg = HumanMessage(content=f"This is the current foo_player.py file\n\n{read_foo()}")
+
+        msgs = state["strategizer_messages"][-MAX_MESSAGES_IN_AGENT:] + [performance_msg, current_foo_msg, state["recent_meta_message"]]
+        log_path = self.agent_log_input(STRATEGIZER_NAME, msgs)
+        output = self._tool_calling_state_graph(self.strategizer_llm, sys_msg, msgs, tools)
+        self.agent_log_output(STRATEGIZER_NAME, output["messages"][len(msgs):], log_path)
+
+        # Add to Meta Messages
+        response = HumanMessage(content=output["messages"][-1].content)
+        meta_messages = state["meta_messages"] + [response]
+
+        # Add To Node Messages: Meta Human Request --> AI Response(content = tool_call_summary) + AI Response(content = final_message)
+        # Only summarize new messages
+        #tool_call_summary = summarize_messages(output["messages"][base_len:])
+        strategizer_messages = state["strategizer_messages"] + [state["recent_meta_message"], AIMessage(content=response.content)]
+
+        return {
+            "recent_helper_response": response,
+            "tool_calling_messages": output["messages"],
+            "meta_messages": meta_messages,
+            "strategizer_messages": strategizer_messages,
+        }
+
+    def _researcher_node(self, state: CreatorGraphState):
+
+        self.debug_log("RESEARCHER NODE")
+
+        sys_msg = SystemMessage(
+            content=RESEARCHER_SYSTEM_PROMPT.format(
+                MULTI_AGENT_PROMPT=MULTI_AGENT_PROMPT.format(FOO_TARGET_FILENAME=FOO_TARGET_FILENAME),
+                RESEARCHER_NAME=RESEARCHER_NAME,
+                FOO_TARGET_FILENAME=FOO_TARGET_FILENAME,
+                MAX_MESSAGES_TOOL_CALLING=MAX_MESSAGES_TOOL_CALLING,
+            )
+        )
+
+        tools = [read_local_file, web_search_tool_call, think_tool]
+
+        catanatron_files_msg = HumanMessage(content=f"This is the list of catanatron files\n\n{list_catanatron_files()}")
+        # Call the LLM with the provided tools (Add 1 because no need to summarize catanatron files)
+        #base_len = len(state["researcher_messages"][-MAX_MESSAGES_IN_AGENT:]) + 1
+        msgs = state["researcher_messages"][-MAX_MESSAGES_IN_AGENT:] + [catanatron_files_msg, state["recent_meta_message"]]
+        log_path = self.agent_log_input(RESEARCHER_NAME, msgs)
+        output = self._tool_calling_state_graph(self.researcher_llm, sys_msg, msgs, tools)
+        self.agent_log_output(RESEARCHER_NAME, output["messages"][len(msgs):], log_path)
+
+        # Add to Meta Messages
+        response = HumanMessage(content=output["messages"][-1].content)
+        meta_messages = state["meta_messages"] + [response]
+
+        # Add To Node Messages: Meta Human Request --> AI Response(content = tool_call_summary) + AI Response(content = final_message)
+        # Only summarize new messages
+        #tool_call_summary = summarize_messages(output["messages"][base_len:])
+        researcher_messages = state["researcher_messages"] + [state["recent_meta_message"], AIMessage(content=response.content)]
+
+        return {
+            "recent_helper_response": response,
+            "tool_calling_messages": output["messages"],
+            "meta_messages": meta_messages,
+            "researcher_messages": researcher_messages,
+        }
+
+    def _coder_node(self, state: CreatorGraphState):
+        
+        self.debug_log("CODER NODE")
+
+        sys_msg = SystemMessage(
+            content=CODER_SYSTEM_PROMPT.format(
+                MULTI_AGENT_PROMPT=MULTI_AGENT_PROMPT.format(FOO_TARGET_FILENAME=FOO_TARGET_FILENAME),
+                CODER_NAME=CODER_NAME,
+                MAX_META_MESSAGES_GIVEN_TO_CODER=MAX_META_MESSAGES_GIVEN_TO_CODER,
+                FOO_TARGET_FILENAME=FOO_TARGET_FILENAME,
+            )
+        )
+
+        tools = [write_foo, replace_code_in_foo, think_tool]
+
+        # # Give Coder The Last Number of Meta Messages
+        if len(state["meta_messages"]) > MAX_META_MESSAGES_GIVEN_TO_CODER:
+            meta_msgs = state["meta_messages"][-MAX_META_MESSAGES_GIVEN_TO_CODER:]
+        else:
+            meta_msgs = state["meta_messages"]
+
+        # Call the LLM with the provided tools
+        current_foo_msg = HumanMessage(content=f"This is the old foo_player.py file\nNow It is your turn to update it with the new recommendations from META\n\n{read_foo()}")
+        #base_len = len(state["coder_messages"][-MAX_MESSAGES_IN_AGENT:])
+        msgs = state["coder_messages"][-MAX_MESSAGES_IN_AGENT:] + meta_msgs + [current_foo_msg]
+        log_path = self.agent_log_input(CODER_NAME, msgs)
+        output = self._tool_calling_state_graph(self.coder_llm, sys_msg, msgs, tools)
+        self.agent_log_output(CODER_NAME, output["messages"][len(msgs):], log_path)
+
+        # Add to Meta Messages
+        response = HumanMessage(content=output["messages"][-1].content)
+        meta_messages = state["meta_messages"] + [response]
+
+        #Add To Node Messages: Meta Human Request --> AI Response(content = tool_call_summary) + AI Response(content = final_message)
+        #Only summarize new messages
+        #tool_call_summary = summarize_messages(output["messages"][base_len:])
+        coder_messages = state["coder_messages"] + [state["recent_meta_message"], AIMessage(content=response.content)]
+
+        # Add to Coder Messages
+        #coder_messages = state["coder_messages"] + [state["recent_meta_message"], AIMessage(content=response.content)]
+        
+        return {
+            "recent_helper_response": response,
+            "tool_calling_messages": output["messages"],
+            "meta_messages": meta_messages,
+            "coder_messages": coder_messages,
+        }
+
+    def _meta_choice(self, state: CreatorGraphState):
+        """
+        Conditional edge for Meta
+        """
+        self.debug_log("Conditional Edge Meta")
+
+        # End evolution if we exceed max evolutions
+        if (CreatorAgent.current_evolution > CREATOR_NUM_EVOLUTIONS):
+            self.debug_log(f"Reached Max Evolutions of {CREATOR_NUM_EVOLUTIONS}, going to END")
+            return END
+
+        meta_message = state["meta_messages"][-1].content
+
+        # First, try to find the chosen agent using the specific format
+        match = re.search(r"CHOSEN AGENT:\s*(\w+)", meta_message)
+        if match:
+            agent_name = match.group(1)
+            if agent_name in AGENT_KEYS:
+                self.debug_log(f"Meta Message: Found agent {agent_name} via specific format - going to {agent_name}")
+                return agent_name
+
+        # If not found, fall back to just searching the test
+        for key in AGENT_KEYS:
+            if key in meta_message:
+                self.debug_log(f"Meta Message: Found {key} somewhere in text - going to {key}")
+                return key
+            
+            # Default case if neither string is found
+        self.debug_log(f"Warning: Could not determine desired agent in recent meta message. Defaulting to {ANALYZER_NAME}")
+        return ANALYZER_NAME
+
     def create_langchain_react_graph(self):
         """Create a react graph for the LLM to use."""
-        
+        graph = StateGraph(CreatorGraphState)
+        graph.add_node("init", self._init_node)
 
-        class CreatorGraphState(TypedDict):
-            meta_messages: list[AnyMessage] # Messages from the meta node (used for debugging)
-            analyzer_messages: list[AnyMessage] # Messages from the analyzer node (used for debugging)
-            strategizer_messages: list[AnyMessage] # Messages from the strategizer node (used for debugging)
-            researcher_messages: list[AnyMessage] # Messages from the researcher node (used for debugging)
-            coder_messages: list[AnyMessage] # Messages from the coder node (used for debugging)
+        graph.add_node(ANALYZER_NAME, self._analyzer_node)
+        graph.add_node(STRATEGIZER_NAME, self._strategizer_node)
+        graph.add_node(RESEARCHER_NAME, self._researcher_node)
+        graph.add_node(CODER_NAME, self._coder_node)
+        graph.add_node("run_player", self._run_player_node)
 
-            recent_meta_message: HumanMessage # Recent Message from the meta node (used for debugging)
-            recent_helper_response: HumanMessage # Recent Message from the helper node (used for debugging)
-            game_results: HumanMessage # Last results of running the game
-            tool_calling_messages: list[AnyMessage] # Messages from the tool calling state graph
+        graph.add_node("meta", self._meta_node)
 
-        def tool_calling_state_graph(llm, agent_name, sys_msg: SystemMessage, msgs: list[AnyMessage], tools):
-            # Bind Tools to the LLM
-            #llm_with_tools = llm.bind_tools(tools, parallel_tool_calls=False)
-            llm_with_tools = llm.bind_tools(tools)
-
-            def assistant(sub_state: MessagesState):
-                return {"messages": [llm_with_tools.invoke([sys_msg] + sub_state["messages"])]}
-
-            # Graph
-            builder = StateGraph(MessagesState)
-
-            # Define nodes: these do the work
-            builder.add_node("assistant", assistant)
-            builder.add_node("tools", ToolNode(tools))
-            #builder.add_node("final_assistant", final_assistant)
-
-            # Define edges: these determine how the control flow moves
-            builder.add_edge(START, "assistant")
-            builder.add_conditional_edges(
-                "assistant",
-                # If the latest message (result) from assistant is a tool call -> tools_condition routes to tools
-                # If the latest message (result) from assistant is a not a tool call -> tools_condition routes to END
-                tools_condition,
-            )
-            #builder.add_conditional_edges("tools", check_num_messages, "assistant", "final_assistant")
-            builder.add_edge("tools", "assistant")
-            react_graph = builder.compile()
-            
-            # Run Graph
-            for event in react_graph.stream({"messages": msgs}, stream_mode="values"):
-                msg = event['messages'][-1]
-                msg.pretty_print()
-                print("\n")
-                last_event = event
-
-            # Save tools to continuouslog file
-            log_path = os.path.join(CreatorAgent.run_dir, f"llm_log_tools.txt")
-            with open(log_path, "a") as log_file:
-                for m in last_event['messages']:
-                    log_file.write(m.pretty_repr() + "\n")
-
-            # Create messages_tools directory if needed
-            os.makedirs(os.path.join(CreatorAgent.run_dir, "messages_tools"), exist_ok=True)
-
-            # Save tools to log file for individual agents
-            log_path = os.path.join(CreatorAgent.run_dir, "messages_tools", f"llm_log_{agent_name}_tools.txt")
-            with open(log_path, "a") as log_file:
-                for m in last_event['messages']:
-                    log_file.write(m.pretty_repr() + "\n")
-
-            return last_event
-
-        def init_node(state: CreatorGraphState):
-            """
-            Initialize the state of the graph
-            """
-            print("In Init Node")
-            
-            return {
-                "meta_messages": [],
-                "analyzer_messages": [],
-                "strategizer_messages": [],
-                "researcher_messages": [],
-                "coder_messages": [],
-                "recent_meta_message": HumanMessage(content=""),
-                "recent_helper_response": HumanMessage(content=""),
-                "game_results": HumanMessage(content=""),
-                "tool_calling_messages": [],
+        graph.add_edge(START, "init")
+        graph.add_edge("init", "run_player")
+        graph.add_edge("run_player", ANALYZER_NAME)
+        graph.add_conditional_edges(
+            "meta",
+            self._meta_choice,
+            {
+            ANALYZER_NAME: ANALYZER_NAME,
+            STRATEGIZER_NAME: STRATEGIZER_NAME,
+            RESEARCHER_NAME: RESEARCHER_NAME,
+            CODER_NAME: CODER_NAME,
+            END: END
             }
+        )
 
-        def run_player_node(state: CreatorGraphState):
-            """
-            Runs Catanatron with the current Code
-            """
-            #print("In Run Player Node")
+        graph.add_edge(ANALYZER_NAME, "meta")
+        graph.add_edge(STRATEGIZER_NAME, "meta")
+        graph.add_edge(RESEARCHER_NAME, "meta")
+        graph.add_edge(CODER_NAME, "run_player")
 
-            # Generate a test results (later will be running the game)
-            game_results = run_testfoo(short_game=False)
-            game_msg = HumanMessage(content=f"GAME RESULTS:\n\n{game_results}")
 
-            meta_messages = state["meta_messages"] + [game_msg]
-
-            # Create a dummy meta message to automatically generate a summary of the last run_pla
-            defualt_analyze_msg = HumanMessage(content=f"""
-ANALYZER OBJECTIVE:
-
-If there is no syntax errors, I want you to return
-    - The Scores of the {FOO_TARGET_FILENAME} player from the game_results json file
-    - Short analysis of the game output (return anything interseting that was printed)
-    - EMPHASIZE any errors, warnings, or signs of player implementation error in the game_output.txt file 
-
-If there is a syntax error, I want you to return
-    - The error message from the game_output.txt file
-    - The exact line number of the error if possible
-    - The exact line of code that caused the error if possible
-
-Keep the Response as concise as possible
-Start your response with "After Running The New {FOO_TARGET_FILENAME} Player, Here is my analysis and findings:"
-"""
-            )
-            # Clear all past messages
-            return {
-                "game_results": game_msg,
-                "recent_meta_message": defualt_analyze_msg,
-                "meta_messages": meta_messages,
-            }
-
-        def meta_node(state: CreatorGraphState):
-
-            sys_msg = SystemMessage(
-                content=f"""
-{MULTI_AGENT_PROMPT} META SUPERVISOR
-
-Task: You are the highest level of intelligence, and you must think critically about all your outputs.
-
-META HIGH LEVEL GOAL: Learn how to create a Catanatron player in {FOO_TARGET_FILENAME} that can win games against the opponent
-
-<Performance History>
-Here is your Current Performance History for Evolving the {FOO_TARGET_FILENAME} player:
-{read_full_performance_history()}
-</Performance History>
-
-<Available Tools>
-You have access to the following tool:
-1. **think_tool**: For reflection and strategic planning during research. Note that your thoughts will not be saved in your message history.
-
-**CRITICAL: Use think_tool to plan your approach if you feel like you need to think deeper. Do not call think_tool with any other tools in parallel.**
-</Available Tools>
-
-<Instructions>
-1st Step: Look at the previous messages and take note of your previous goals, and the newest information provided to you
-    - Be sure to carefully consider what the analyzer is saying regarding the game output
-    - If needed, use think_tool to reflect on your current situation and plan your next steps
-    - Note: The think_tool messages will only be visible to you for your current turn, so ensure to summarize your thoughts in META THOUGHTS
-
-2nd Step: Output your current META THOUGHTS, and META GOAL at the top of your message
-    - If you used think_tool, include a brief summary of your thoughts from the tool call in META THOUGHTS
-
-3rd Step: Determine the sub-agent that you wish to consult, and prepare an OBJECTIVE message for them
-    - If your performance history has not improved in the last three evolutions or stays at 0, consult the strategizer
-</Instructions>
-
-<AGENTS>
-    {ANALYZER_NAME}: Analyer has access to the performance history, and the {FOO_TARGET_FILENAME}.py, game_output.txt, and game_results*.json for all the previous games/iterations
-        Ex. - Can you give me the code for the best performing {FOO_TARGET_FILENAME} player?
-        Ex. - Create a detailed report on all the game outputs
-        Ex. - How many average wins, victory points, and cities did the most recent {FOO_TARGET_FILENAME} player obtain?
-        Ex. - Can you give me the code for the last successful {FOO_TARGET_FILENAME} player?
-
-    {STRATEGIZER_NAME}: Strategizer has knowledge of the strategies you have attempted, and can generate new strategies by searching the web
-        Ex. - What was the strategy of the best {FOO_TARGET_FILENAME} player?
-        Ex. - Can you search the web for a single new strategy to implement?
-        Ex. - What are 5 new strategy options that could give the current {FOO_TARGET_FILENAME} player a boost?
-        Ex. - What are the previous strategies that I have attempted, and what are the results of each strategy?
-
-    {RESEARCHER_NAME}: Researcher has access to the catanatron game files/API, and can perform web searches to find information
-        - Use to look into code syntax errors or questions relating to the Catanatron API
-        Ex. - Can you find for me the different ActionTypes, and what I need to import to include them?
-        Ex. - Can you give me the strategy that the opponent player is using?
-        Ex. - What are the state functions that I can call to get information about the game state?
-
-    {CODER_NAME}: Coder will only write the {FOO_TARGET_FILENAME} file. Afterwards the game is automatically run and the results are returned
-        - Make Sure to Give Very Explicit Instructions to the coder (including all required code snippets)
-        - Emphasize including print statements for debugging, and try/except blocks for error handling
-        Ex. - Replace each 'action.type' call with the correct syntax of 'action.action_type'
-        Ex. - Implement a a new function that will weight all the available actions. Follow this pseudocode .....
-</AGENTS>
-
-<Guidelines>
-    - Make sure to be clear and concise in your message
-    - Do not include vague messages to your agents, 
-    - Always keep your GOAL in mind and try to achieve them
-    - Only include one agent key (the output is parsed to detemine which agent to send it to)
-</Guidelines>
-
-<Output Format>
-    - META THOUGHTS: <insert here>
-    - META GOAL: <insert here>
-    - CHOSEN AGENT: {ANALYZER_NAME} / {STRATEGIZER_NAME} / {RESEARCHER_NAME} / {CODER_NAME} (choose one)
-    - AGENT OBJECTIVE: <insert your objective message for the agent here>
-</Output Format>
-
-                """
-            )
-            
-            msgs = state["meta_messages"][-MAX_MESSAGES_IN_AGENT:]
-            tools = [think_tool]
-            output = tool_calling_state_graph(self.meta_llm, "META",sys_msg, msgs, tools)
-
-            #new_meta_message = HumanMessage(content=f"Temporary Meta Message ")
-            
-            # Place AI Message in the meta history
-            meta_messages = state["meta_messages"] + [output["messages"][-1]]
-
-            # Save the new_meta_message as a human message
-            new_meta_message = HumanMessage(content=output["messages"][-1].content)
-
-            return {"recent_meta_message": new_meta_message,"meta_messages": meta_messages}
-        
-        def analyzer_node(state: CreatorGraphState):
-            #print("In Analyzer Node")
-            
-            sys_msg = SystemMessage(
-                content=f"""
-{MULTI_AGENT_PROMPT} ANALYZER
-                    
-<Your Inputs>
-    - The previous messages between the Coordinator agent and you
-    - The most up to date performance history, with the scores and game results of the {FOO_TARGET_FILENAME} player accross evolutions
-    - The most recent foo_player.py file (note previous messages might be referring to an older version)
-    - The most recent game_output.txt file which contains the output from run game command
-    - The most recent game_results json file which contains the breakdown of the {FOO_TARGET_FILENAME} player vs. the opponent
-        - Note: The game_results json file will not be included if the game failed to run due to a syntax error
-    - Your OBJECTIVE: The most recent message includes the task that you are responding to... starts with {ANALYZER_NAME}
-</Your Inputs>
-
-<Your Role>
-    - You are the Game ANALYZER Expert for Evolving the {FOO_TARGET_FILENAME} player
-    - As an expert, you can always use the think_tool to reflect and plan your next steps
-    - As the analyzer, you are the forefront for the game output for the foo_player.py
-    - You are aware of the nuances of the game output, and how to interpret the results
-    - You are in charge of storing all the knowledge that you have learned
-    - You can open any file from the performace history using the read_local_file tool
-    - Ensure output from the game_output.txt matches the {FOO_TARGET_FILENAME} player
-</Your Role>
-
-<Your Task>
-    1. Digest the your past inquiries, the performance history, the game output, the game results, and your OBJECTIVE
-    2. Use any additional tools required to get the information you need
-    3. Respond to your OBJECTIVE message following your guidelines
-</Your Task>
-
-<Your Guidelines>
-    - Prepare an organized, clear, and concise report with your answer to the most recent message
-    - Do not make up information. If you do not know the answer, say you do not know and where you looked
-    - Cite the sources that you used in your report at the bottom (so you know where to find it in the future)
-    - Anytime when asked about the game output, log, or game_output.txt file, be sure to return debugging information
-    - Ensure to include log messages like this in your response
-            "Error: Syntax Error"
-            "Unrecognized action type: UNKNOWN" - could be problem with action type
-            "Defaulting to Random Action" - could be problem with action selection
-            "Choose action with score: 0" - could be problem with action scoring 
-    - End your response with 'Let me know if you need anything else'
-</Your Guidelines>
-
-<Your Tools>
-    - read_local_file: Read the content of a file that is in the catanatron files
-        Input: String rel_path - path of the file to read from catanatron files or {FOO_TARGET_FILENAME}
-        Output: String - content of the file                        
-    - think_tool: Reflect on your current situation and plan your next steps
-        Input: String reflection -Your detailed reflection on research progress, findings, gaps, and next steps
-        Output: String - Confirmation that reflection was recorded for decision-making
-</Your Tools>
-
-YOU ARE LIMITED TO {MAX_MESSAGES_TOOL_CALLING} TOOL CALLS
-Make sure to start your output with '{ANALYZER_NAME}' and end with 'END {ANALYZER_NAME}'.
-Respond with No Commentary, just the Analysis.
-                """
-            )
-            
-            tools = [read_local_file, think_tool]
-
-            performance_msg = HumanMessage(content=f"This is the current performance history\n\n{read_full_performance_history()}")
-            game_output_msg = HumanMessage(content=f"This is the current game_output.txt file\n\n{read_game_output_file()}")
-            game_results_msg = HumanMessage(content=f"This is the current game_results json file\n\n{read_game_results_file()}")
-            current_foo_msg = HumanMessage(content=f"This is the current foo_player.py file\n\n{read_foo()}")
-
-
-            # Call the LLM with the provided tools
-            #base_len = len(state["analyzer_messages"][-MAX_MESSAGES_IN_AGENT:])
-            msgs = state["analyzer_messages"][-MAX_MESSAGES_IN_AGENT:] + [performance_msg, game_output_msg, game_results_msg, current_foo_msg, state["recent_meta_message"]]
-            output = tool_calling_state_graph(self.analyzer_llm, ANALYZER_NAME, sys_msg, msgs, tools)
-            
-            # Add to Meta Messages
-            response = HumanMessage(content=output["messages"][-1].content)
-            meta_messages = state["meta_messages"] + [response]
-
-            # Add To Node Messages: Meta Human Request --> AI Response(content = tool_call_summary) + AI Response(content = final_message)
-            # Only summarize new messages
-            #tool_call_summary = summarize_messages(output["messages"][base_len:])
-            analyzer_messages = state["analyzer_messages"] + [state["recent_meta_message"], AIMessage(content=response.content)]
-
-            return {
-                "recent_helper_response": response, 
-                "tool_calling_messages": output["messages"], 
-                "meta_messages": meta_messages, 
-                "analyzer_messages": analyzer_messages,
-            }
-        
-        def strategizer_node(state: CreatorGraphState):
-            
-            #print("In Strategizer Node")
-            # Add custom tools for strategizer
-
-            sys_msg = SystemMessage(
-                content=f"""
-{MULTI_AGENT_PROMPT} {STRATEGIZER_NAME}
-
-<Your Inputs>
-    - The previous messages between the Coordinator agent and you
-    - The most up to date performance history, with the scores and game results of the {FOO_TARGET_FILENAME} player accross evolutions.
-        - If a score is 0 for a Evolution and json_game_results_path is None, it means that the game failed to run due to a syntax error
-        - Sometimes you might need to look at the most recent running {FOO_TARGET_FILENAME} player to see if the game ran, which will be a nonzero score for Evolution
-    - The most recent foo_player.py file (note previous messages might be referring to an older version)
-    - Your OBJECTIVE: The most recent message includes the task that you are responding to... starts with {STRATEGIZER_NAME}
-</Your Inputs>
-
-<Your Role>
-    - You are the Strategy Expert for Evolving the {FOO_TARGET_FILENAME} player
-    - As an expert, you can always use the think_tool to reflect and plan your next steps
-    - As the strategizer, you are the forefront for improvement the foo_player.py
-    - You are **Creative**, and are always looking for new strategies to implement
-    - If you feel like the current strategy is not working, feel free to include it in your response
-    - You are in charge of storing all the different attempts at strategies, and the results of each strategy
-</Your Role>
-
-<Your Task>
-    1. Digest the current performance history, the current foo_player.py, the past messages, and your OBJECTIVE
-    2. Use any additional tools required to get the information you need
-    3. Respond to your OBJECTIVE message following your guidelines
-</Your Task>
-
-<Your Guidelines>
-    - Prepare an organized, clear, and concise report with your answer to the most recent message
-    - Do not make up information. If you do not know the answer, say you do not know
-    - Cite any sources that you use in your report at the bottom
-</Your Guidelines>
-
-<Scenarios>
-    Within the first 5 Evolutions, if The performance history shows that the player consistentaly does not compile (score stays at 0) or cannot get a score better than default (score stays at 2), Repond With
-        Try the following code snippet to get the player to compile and get simple results:
-        for action in playable_actions:
-            "if action.action_type == ActionType.BUILD_SETTLEMENT:
-                return action"
-
-    If The performance history contains a previous version of {FOO_TARGET_FILENAME} that is more successful then the recent iterations, 
-        Call read_older_foo_file tool to get the code of the previous {FOO_TARGET_FILENAME}
-        Either return the entire contents of the file, or just your analysis of the differences
-
-    If the performance history shows no signs of player improving over the last 3 successful evolutions (game ran successfully)
-        Recommend that the player should try a new strategy to optimize the {FOO_TARGET_FILENAME} player (This means starting from scratch)
-</Scenarios>
-    
-<Your Tools>
-    - read_local_file: Read the content of a file that is in the performance history
-        Input: String rel_path - path of the file to read
-        Output: String - content of the file
-    - read_game_results_file: Read the content of the game_results*.json file
-        Input: Int num - the evolution number you want to read (default is -1 for most recent), 0 will return the default template
-        Output: String - contents of the file (Includes Player Summary With Wins, Victory Points, Cities, Settles, Road, Army, and Game Summary with number of Ticks, Turns))
-    - read_older_foo_file: Read the content of an older vesrion {FOO_TARGET_FILENAME} file
-        Input: Int num - the evolution number you want to read (default is -1 for most recent), 0 will return the default template
-        Output: String - contents of the python file for the older player as a string
-    - web_search_tool_call: Perform a web search using the Tavily API.
-        Input: String query - the search query
-        Output: TavilySearchResults - the search results
-    - think_tool: Reflect on your current situation and plan your next steps
-        Input: String reflection - Your detailed reflection on strategy options, tradeoffs, and next steps
-        Output: String - Confirmation that reflection was recorded for decision-making
-</Your Tools>
-
-YOU ARE LIMITED TO {MAX_MESSAGES_TOOL_CALLING} TOOL CALLS
-Make sure to start your output with '{STRATEGIZER_NAME}' and end with 'END {STRATEGIZER_NAME}'.
-Respond with No Commentary, just the Strategy.
-
-                """
-            )
-
-            tools = [read_local_file, read_game_results_file, read_older_foo_file, web_search_tool_call, think_tool]
-            
-            # Call the LLM with the provided tools
-            #base_len = len(state["strategizer_messages"][-MAX_MESSAGES_IN_AGENT:])
-
-            performance_msg = HumanMessage(content=f"This is the current performance history\n\n{read_full_performance_history()}")
-            current_foo_msg = HumanMessage(content=f"This is the current foo_player.py file\n\n{read_foo()}")
-
-            msgs = state["strategizer_messages"][-MAX_MESSAGES_IN_AGENT:] + [performance_msg, current_foo_msg, state["recent_meta_message"]]
-            output = tool_calling_state_graph(self.strategizer_llm, STRATEGIZER_NAME, sys_msg, msgs, tools)
-
-            # Add to Meta Messages
-            response = HumanMessage(content=output["messages"][-1].content)
-            meta_messages = state["meta_messages"] + [response]
-
-            # Add To Node Messages: Meta Human Request --> AI Response(content = tool_call_summary) + AI Response(content = final_message)
-            # Only summarize new messages
-            #tool_call_summary = summarize_messages(output["messages"][base_len:])
-            strategizer_messages = state["strategizer_messages"] + [state["recent_meta_message"], AIMessage(content=response.content)]
-
-            return {
-                "recent_helper_response": response, 
-                "tool_calling_messages": output["messages"], 
-                "meta_messages": meta_messages, 
-                "strategizer_messages": strategizer_messages,
-            }
-    
-        def researcher_node(state: CreatorGraphState):
-            
-            #print("In Researcher Node")
-            # Add custom tools for researcher
-
-            sys_msg = SystemMessage(
-                content=f"""                     
-{MULTI_AGENT_PROMPT} {RESEARCHER_NAME}
-
-<Your Inputs>
-    - The previous messages between the Coordinator agent and you
-    - A list of all of the files in the catanatron directory that you have access to
-    - Your OBJECTIVE: The most recent message includes the task that you are responding to... starts with {RESEARCHER_NAME}
-</Your Inputs>
-
-<Your Role>
-    - You are the Research Expert for Evolving the {FOO_TARGET_FILENAME} player
-    - As an expert, you can always use the think_tool to reflect and plan your next steps
-    - As the researcher, you are the forefront for knowledge for the foo_player.py
-    - You are aware of the nuances of the Catanatron game, and the Catanatron codebase
-    - You are in charge of storing all the knowledge that you have learned
-</Your Role>
-
-<Your Task>
-    1. Digest the catanatron directory, your past inquiries, and your current OBJEECTIVE
-    2. Use any additional tools required to get the information you need
-    3. Respond to your OBJECTIVE message following your guidelines
-</Your Task>
-
-<Your Guidelines>
-    - Prepare an organized, clear, and concise report with your answer to the most recent message
-    - For questions on syntax, ensure to provide relevant code that you found
-    - Do not make up information. If you do not know the answer, say you do not know and where you looked
-    - Cite the sources that you used in your report at the bottom, with a note on the information they included (so you know where to find it in the future)
-        Ex. 1. catanatron_core/catanatron/models/enums.py - includes enums for Development Cards, NodeRef, EdgeRef, ActionPrompt, and ActionType
-</Your Guidelines>
-
-<Your Tools>
-    - read_local_file: Read the content of a file that is in the catanatron files. (look at previous sources cited at the bottom of your messages for file information)
-        Input: String rel_path - path of the file to read from catanatron files or {FOO_TARGET_FILENAME}
-        Output: String - content of the file
-    - web_search_tool_call: Perform a web search using the Tavily API.
-        Input: String query - the search query
-        Output: TavilySearchResults - the search results
-    - think_tool: Reflect on your current situation and plan your next steps
-        Input: String reflection - Your detailed reflection on research progress, findings, gaps, and next steps
-        Output: String - Confirmation that reflection was recorded for decision-making
-</Your Tools>
-
-YOU ARE LIMITED TO {MAX_MESSAGES_TOOL_CALLING} TOOL CALLS
-Make sure to start your output with '{RESEARCHER_NAME}' and end with 'END {RESEARCHER_NAME}'.
-Respond with No Commentary, just the Research.
-
-
-                """
-            )
-
-            tools = [read_local_file, web_search_tool_call, think_tool]
-            
-            catanatron_files_msg = HumanMessage(content=f"This is the list of catanatron files\n\n{list_catanatron_files()}")
-            # Call the LLM with the provided tools (Add 1 because no need to summarize catanatron files)
-            #base_len = len(state["researcher_messages"][-MAX_MESSAGES_IN_AGENT:]) + 1
-            msgs = state["researcher_messages"][-MAX_MESSAGES_IN_AGENT:] + [catanatron_files_msg, state["recent_meta_message"]]
-            output = tool_calling_state_graph(self.researcher_llm, "RESEARCHER", sys_msg, msgs, tools)
-
-            # Add to Meta Messages
-            response = HumanMessage(content=output["messages"][-1].content)
-            meta_messages = state["meta_messages"] + [response]
-
-            # Add To Node Messages: Meta Human Request --> AI Response(content = tool_call_summary) + AI Response(content = final_message)
-            # Only summarize new messages
-            #tool_call_summary = summarize_messages(output["messages"][base_len:])
-            researcher_messages = state["researcher_messages"] + [state["recent_meta_message"], AIMessage(content=response.content)]
-
-            return {
-                "recent_helper_response": response, 
-                "tool_calling_messages": output["messages"], 
-                "meta_messages": meta_messages, 
-                "researcher_messages": researcher_messages,
-            }
-
-        def coder_node(state: CreatorGraphState):
-
-            sys_msg = SystemMessage(
-                content=f"""                    
-{MULTI_AGENT_PROMPT} {CODER_NAME}
-
-<Your Inputs>
-    - The previous messages between the Coordinator agent and you
-    - The most last {MAX_META_MESSAGES_GIVEN_TO_CODER} before the {FOO_TARGET_FILENAME} include the most recent META messages
-    - Your OBJECTIVE: The most last META message that includes the task that you are responding to... starts with {CODER_NAME}
-    - The most recent foo_player.py file (note previous messages might be referring to an older version)
-</Your Inputs>
-
-<Your Role>
-    - You are the Coding Expert for Evolving the {FOO_TARGET_FILENAME} player
-    - As an expert, you can always use the think_tool to reflect and plan your next steps
-    - As the coder, you are the forefront for implementation for the foo_player.py
-    - You are in charge of storing all the coding nuances that you have learned
-</Your Role>
-
-<Your Task>
-    1. Digest your past inquiries, the meta messages, your current OBJEECTIVE, and the current {FOO_TARGET_FILENAME}
-    2. Call the write_foo tool call to write the new code to the {FOO_TARGET_FILENAME} file
-    3. Create a report with the changes you made to the code
-</Your Task>
-
-<Coding Guidelines>
-    - Focus on making sure the code implementes the solution in the most correct way possible
-    - Make Sure to not add backslashes to comments, ONLY OUTPUT VALID PYTHON CODE
-        WRONG:        print(\\'Choosing First Action on Default\\')
-        CORRECT:      print('Choosing First Action on Default')
-    - Give plenty of comments in the code to explain what you are doing, and what you have learned (along with syntax help)
-    - Use print statement to usefully debug the output of the code
-    - DO NOT MAKE UP VARIABLES OR FUNCTIONS RELATING TO THE GAME
-    - Note: You will have multiple of iterations to evolve, so make sure the syntax is correct
-    - PRIORITIZE FIXING BUGS AND ERRORS THAT ARISE
-    - Make sure to follow **python 3.11** syntax!!
-    - Your code will go straight to the {FOO_TARGET_FILENAME} file, to be run in the game, so make sure to be aware of the syntax
-</Coding Guidelines>
-
-<Report Guidelines>
-    - Return bullet points of the changes you made to the code
-    - Make sure to report if you did any of the following
-        - Created new functions
-        - Added functions/enums from the game
-        - Are not sure if the syntax is correct for specific lines of code
-        - Added print statements to debug the code
-        - Want information on imports, or the game
-    - Include any comments that can be included in next OBJECTIVE to help you write better code 
-</Report Guidelines>
-
-Your Tools:
-    - write_foo: Write the entire content of {FOO_TARGET_FILENAME}. Use this when you need to make significant changes or rewrite the file.
-        Input: String new_text - python code that will be written to {FOO_TARGET_FILENAME}
-    - replace_code_in_foo: Replace a specific block of code in {FOO_TARGET_FILENAME}. Use this for smaller, targeted changes.
-        Input: String search - the exact code block to search for.
-        Input: String replace - the new code block to replace the search block with.
-    - think_tool: Reflect on your current situation and plan your next steps before writing or after errors
-        Input: String reflection - Your detailed reflection on implementation approach, risks, and next steps
-        Output: String - Confirmation that reflection was recorded for decision-making
-</Your Tools>
-
-Make sure to start your report with '{CODER_NAME}' and end with 'END {CODER_NAME}'.
-
-                """
-            )
-           
-            tools = [write_foo, replace_code_in_foo, think_tool]
-            
-            # # Give Coder The Last Number of Meta Messages
-            if len(state["meta_messages"]) > MAX_META_MESSAGES_GIVEN_TO_CODER:
-                meta_msgs = state["meta_messages"][-MAX_META_MESSAGES_GIVEN_TO_CODER:]
-            else:
-                meta_msgs = state["meta_messages"]
-
-            # Call the LLM with the provided tools
-            current_foo_msg = HumanMessage(content=f"This is the old foo_player.py file\nNow It is your turn to update it with the new recommendations from META\n\n{read_foo()}")
-            #base_len = len(state["coder_messages"][-MAX_MESSAGES_IN_AGENT:])
-            msgs = state["coder_messages"][-MAX_MESSAGES_IN_AGENT:] + meta_msgs + [current_foo_msg]
-            output = tool_calling_state_graph(self.coder_llm, "CODER", sys_msg, msgs, tools)
-
-            # Add to Meta Messages
-            response = HumanMessage(content=output["messages"][-1].content)
-            meta_messages = state["meta_messages"] + [response]
-
-            #Add To Node Messages: Meta Human Request --> AI Response(content = tool_call_summary) + AI Response(content = final_message)
-            #Only summarize new messages
-            #tool_call_summary = summarize_messages(output["messages"][base_len:])
-            coder_messages = state["coder_messages"] + [state["recent_meta_message"], AIMessage(content=response.content)]
-            
-            # Add to Coder Messages
-            #coder_messages = state["coder_messages"] + [state["recent_meta_message"], AIMessage(content=response.content)]
-            
-            return {
-                "recent_helper_response": response, 
-                "tool_calling_messages": output["messages"], 
-                "meta_messages": meta_messages, 
-                "coder_messages": coder_messages,
-            }
- 
-        def meta_choice(state: CreatorGraphState):
-            """
-            Conditional edge for Meta
-            """
-            print("In Conditional Edge Meta")
-        
-            # Create current_messages directory if needed
-            os.makedirs(os.path.join(CreatorAgent.run_dir, "messages_current"), exist_ok=True)
-
-            # Save all messages to log files
-            lists = ["meta_messages", "analyzer_messages", "strategizer_messages", "researcher_messages", "coder_messages"]
-            for msg_list in lists:
-                log_path = os.path.join(CreatorAgent.run_dir, "messages_current", f"llm_log_{msg_list}.txt")
-                with open(log_path, "w") as log_file:
-                    for m in state[msg_list]:
-                        log_file.write(m.pretty_repr() + "\n")
-
-            # End evolution if we exceed max evolutions
-            if (CreatorAgent.current_evolution > CREATOR_NUM_EVOLUTIONS):
-                print(f"Reached Max Evolutions of {CREATOR_NUM_EVOLUTIONS}, going to END")
-                return END
-
-            meta_message = state["meta_messages"][-1].content
-
-            # First, try to find the chosen agent using the specific format
-            match = re.search(r"CHOSEN AGENT:\s*(\w+)", meta_message)
-            if match:
-                agent_name = match.group(1)
-                if agent_name in AGENT_KEYS:
-                    print(f"Meta Message: Found agent {agent_name} via specific format - going to {agent_name}")
-                    return agent_name
-
-            # If not found, fall back to just searching the test
-            for key in AGENT_KEYS:
-                if key in meta_message:
-                    print(f"Meta Message: {key} - going to {key}")
-                    return key
-                
-                # Default case if neither string is found
-            print(f"Warning: Could not determine desired agent in recent meta message. Defaulting to {ANALYZER_NAME}")
-            return ANALYZER_NAME
-
-        def construct_graph():
-            graph = StateGraph(CreatorGraphState)
-            graph.add_node("init", init_node)
-            
-            graph.add_node(ANALYZER_NAME, analyzer_node)
-            graph.add_node(STRATEGIZER_NAME, strategizer_node)
-            graph.add_node(RESEARCHER_NAME, researcher_node)
-            graph.add_node(CODER_NAME, coder_node)
-            graph.add_node("run_player", run_player_node)
-
-            graph.add_node("meta", meta_node)
-
-            graph.add_edge(START, "init")
-            graph.add_edge("init", "run_player")
-            graph.add_edge("run_player", ANALYZER_NAME)
-            graph.add_conditional_edges(
-                "meta", 
-                meta_choice,
-                {
-                ANALYZER_NAME: ANALYZER_NAME,
-                STRATEGIZER_NAME: STRATEGIZER_NAME,
-                RESEARCHER_NAME: RESEARCHER_NAME,
-                CODER_NAME: CODER_NAME,
-                END: END
-                }
-            )
-            
-            graph.add_edge(ANALYZER_NAME, "meta")
-            graph.add_edge(STRATEGIZER_NAME, "meta")
-            graph.add_edge(RESEARCHER_NAME, "meta")
-            graph.add_edge(CODER_NAME, "run_player")
-
-
-            return graph.compile()
-    
-        return construct_graph()
+        return graph.compile()
 
     def print_react_graph(self):
         """
@@ -855,30 +629,12 @@ Make sure to start your report with '{CODER_NAME}' and end with 'END {CODER_NAME
     def run_react_graph(self):
         
         try:
-
-            log_path = os.path.join(CreatorAgent.run_dir, f"llm_log.txt")
-
-            def append_log_file(content: str):
-                with open(log_path, "a") as log_file:
-                    log_file.write(content + "\n")
-
-
             for step in self.react_graph.stream({}, self.config, stream_mode="updates"):
-                #print(step)
-                #log_file.write(f"Step: {step.}\n")
                 for node, update in step.items():
-                    
-                    print(f"In Node: {node}")
-                    append_log_file(f"In Node: {node}")
-                    # Simplified Messages code
-                    key_types = ["recent_meta_message", "recent_helper_response", "game_results"]
-                    for key in key_types:
-                        if key in update:
-                            msg = update[key]
-                            #msg.pretty_print()
-                            append_log_file(msg.pretty_repr() + "\n")
+                    #self.debug_log(f"In Node: {node}")
+                    pass
 
-            print("✅  graph finished")
+            self.debug_log("✅  graph finished")
 
             # Copy Result File to the new directory
             dt = datetime.now().strftime("_%Y%m%d_%H%M%S_")
@@ -890,10 +646,141 @@ Make sure to start your report with '{CODER_NAME}' and end with 'END {CODER_NAME
 
         
         except Exception as e:
-            print(f"Error calling LLM: {e}")
-            import traceback
-            traceback.print_exc()
+            self.debug_log(f"Error calling LLM: {e}\n{traceback.format_exc()}")
         return None
+
+    def _run_testfoo(self, short_game: bool = False) -> str:
+        """
+        Run one Catanatron match and return raw CLI output.
+        """
+        if short_game:
+            run_id = datetime.now().strftime("game_%Y%m%d_%H%M%S_vg")
+        else:
+            run_id = datetime.now().strftime("game_%Y%m%d_%H%M%S_fg")
+
+        # Build command, strip any stale --run-id
+        base_cmd = re.sub(r"--run-id=\S+", "", FOO_RUN_COMMAND).strip()
+        dynamic_command = f"{base_cmd} --run-id={run_id}"
+
+        game_run_dir = Path(CreatorAgent.run_dir) / run_id
+        game_run_dir.mkdir(exist_ok=True)
+
+        cur_foo_path = game_run_dir / FOO_TARGET_FILENAME
+        shutil.copy2(FOO_TARGET_FILE.resolve(), cur_foo_path)
+
+        MAX_CHARS = 20_000
+        try:
+            result = subprocess.run(
+                shlex.split(dynamic_command),
+                capture_output=True,
+                text=True,
+                timeout=30 if short_game else 14400,
+                check=False,
+            )
+            stdout_limited = result.stdout[-MAX_CHARS:]
+            stderr_limited = result.stderr[-MAX_CHARS:]
+            game_results = (stdout_limited + stderr_limited).strip()
+        except subprocess.TimeoutExpired as e:
+            so = (e.stdout or "")
+            se = (e.stderr or "")
+            if not isinstance(so, str):
+                so = so.decode("utf-8", errors="ignore")
+            if not isinstance(se, str):
+                se = se.decode("utf-8", errors="ignore")
+            stdout_limited = so[-MAX_CHARS:]
+            stderr_limited = se[-MAX_CHARS:]
+            game_results = "Game Ended From Timeout (As Expected).\n\n" + (stdout_limited + stderr_limited).strip()
+
+        # Write combined output
+        output_file_path = game_run_dir / "game_output.txt"
+        output_file_path.write_text(game_results, encoding="utf-8")
+
+        # ----- Locate results JSON via run_id pattern (no stdout parsing) -----
+        json_content = {}
+        json_copy_path = "None"
+
+        # Candidate run_results directories
+        candidate_dirs = [
+            LOCAL_CATANATRON_BASE_DIR / "run_results",
+            LOCAL_CATANATRON_BASE_DIR.parent / "run_results",
+        ]
+        existing_dirs = [d for d in candidate_dirs if d.exists()]
+        target_file = None
+
+        if existing_dirs:
+            pattern = f"{run_id}.json"
+            import time, glob
+            # Poll up to 3 seconds (30 * 0.1s) for file creation
+            for _ in range(30):
+                matches = []
+                for d in existing_dirs:
+                    matches.extend(Path(d).glob(pattern))
+                if matches:
+                    # Choose newest
+                    matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+                    target_file = matches[0]
+                    break
+                time.sleep(0.1)
+
+        if target_file and target_file.exists():
+            json_copy_path = game_run_dir / target_file.name
+            shutil.copy2(target_file, json_copy_path)
+            try:
+                json_content = json.loads(target_file.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                json_content = {"error": "Failed to parse JSON file"}
+        else:
+            self.debug_log(f"[DEBUG] No results JSON found for run_id={run_id}. Pattern search failed.")
+
+        # ----- Update performance history -----
+        performance_history_path = Path(CreatorAgent.run_dir) / "performance_history.json"
+        try:
+            performance_history = json.loads(performance_history_path.read_text())  # type: ignore
+        except Exception:
+            performance_history = {}
+
+        wins = 0
+        avg_score = 0
+        avg_turns = 0
+        try:
+            if "Player Summary" in json_content:
+                for player_key, stats in json_content["Player Summary"].items():
+                    if "fooplayer" in player_key.lower():
+                        wins = stats.get("WINS", wins)
+                        for vp_key in ("AVG VP", "AVG_VP", "AVG POINTS", "AVG_VPTS"):
+                            if vp_key in stats:
+                                avg_score = stats[vp_key]
+                                break
+                        break
+            if "Game Summary" in json_content:
+                avg_turns = json_content["Game Summary"].get("AVG TURNS", avg_turns)
+        except Exception as e:
+            self.debug_log(f"[DEBUG] Stat extraction error: {e}")
+
+        if not short_game:
+            evolution_key = CreatorAgent.current_evolution
+            CreatorAgent.current_evolution += 1
+            self.debug_log(f"Evolution {evolution_key}: wins={wins}, avg_score={avg_score}, avg_turns={avg_turns}")
+
+            rel_output = output_file_path.relative_to(Path(CreatorAgent.run_dir))
+            rel_cur_foo = cur_foo_path.relative_to(Path(CreatorAgent.run_dir))
+            rel_json = "None"
+            if isinstance(json_copy_path, Path):
+                rel_json = json_copy_path.relative_to(Path(CreatorAgent.run_dir))
+
+            performance_history[f"Evolution {evolution_key}"] = {
+                "wins": wins,
+                "avg_score": avg_score,
+                "avg_turns": avg_turns,
+                "full_game_log_path": str(rel_output),
+                "json_game_results_path": str(rel_json),
+                "cur_foo_player_path": str(rel_cur_foo),
+                "cli_run_id": run_id,
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            }
+            performance_history_path.write_text(json.dumps(performance_history, indent=2))
+
+        return json.dumps(json_content, indent=2) if json_content else game_results
 
 
 ###################################################################################################
@@ -982,320 +869,6 @@ def replace_code_in_foo(search: str, replace: str) -> str:
         return f"Successfully replaced code in {FOO_TARGET_FILENAME}"
     except Exception as e:
         return f"Error writing file: {e}"
-
-def run_testfoo(short_game: bool = False) -> str:
-    """
-    Run one Catanatron match and return raw CLI output.
-    """
-    if short_game:
-        run_id = datetime.now().strftime("game_%Y%m%d_%H%M%S_vg")
-    else:
-        run_id = datetime.now().strftime("game_%Y%m%d_%H%M%S_fg")
-
-    # Build command, strip any stale --run-id
-    base_cmd = re.sub(r"--run-id=\S+", "", FOO_RUN_COMMAND).strip()
-    dynamic_command = f"{base_cmd} --run-id={run_id}"
-
-    game_run_dir = Path(CreatorAgent.run_dir) / run_id
-    game_run_dir.mkdir(exist_ok=True)
-
-    cur_foo_path = game_run_dir / FOO_TARGET_FILENAME
-    shutil.copy2(FOO_TARGET_FILE.resolve(), cur_foo_path)
-
-    MAX_CHARS = 20_000
-    try:
-        result = subprocess.run(
-            shlex.split(dynamic_command),
-            capture_output=True,
-            text=True,
-            timeout=30 if short_game else 14400,
-            check=False,
-        )
-        stdout_limited = result.stdout[-MAX_CHARS:]
-        stderr_limited = result.stderr[-MAX_CHARS:]
-        game_results = (stdout_limited + stderr_limited).strip()
-    except subprocess.TimeoutExpired as e:
-        so = (e.stdout or "")
-        se = (e.stderr or "")
-        if not isinstance(so, str):
-            so = so.decode("utf-8", errors="ignore")
-        if not isinstance(se, str):
-            se = se.decode("utf-8", errors="ignore")
-        stdout_limited = so[-MAX_CHARS:]
-        stderr_limited = se[-MAX_CHARS:]
-        game_results = "Game Ended From Timeout (As Expected).\n\n" + (stdout_limited + stderr_limited).strip()
-
-    # Write combined output
-    output_file_path = game_run_dir / "game_output.txt"
-    output_file_path.write_text(game_results, encoding="utf-8")
-
-    # ----- Locate results JSON via run_id pattern (no stdout parsing) -----
-    json_content = {}
-    json_copy_path = "None"
-
-    # Candidate run_results directories
-    candidate_dirs = [
-        LOCAL_CATANATRON_BASE_DIR / "run_results",
-        LOCAL_CATANATRON_BASE_DIR.parent / "run_results",
-    ]
-    existing_dirs = [d for d in candidate_dirs if d.exists()]
-    target_file = None
-
-    if existing_dirs:
-        pattern = f"{run_id}.json"
-        import time, glob
-        # Poll up to 3 seconds (30 * 0.1s) for file creation
-        for _ in range(30):
-            matches = []
-            for d in existing_dirs:
-                matches.extend(Path(d).glob(pattern))
-            if matches:
-                # Choose newest
-                matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-                target_file = matches[0]
-                break
-            time.sleep(0.1)
-
-    if target_file and target_file.exists():
-        json_copy_path = game_run_dir / target_file.name
-        shutil.copy2(target_file, json_copy_path)
-        try:
-            json_content = json.loads(target_file.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            json_content = {"error": "Failed to parse JSON file"}
-    else:
-        print(f"[DEBUG] No results JSON found for run_id={run_id}. Pattern search failed.")
-
-    # ----- Update performance history -----
-    performance_history_path = Path(CreatorAgent.run_dir) / "performance_history.json"
-    try:
-        performance_history = json.loads(performance_history_path.read_text())  # type: ignore
-    except Exception:
-        performance_history = {}
-
-    wins = 0
-    avg_score = 0
-    avg_turns = 0
-    try:
-        if "Player Summary" in json_content:
-            for player_key, stats in json_content["Player Summary"].items():
-                if "fooplayer" in player_key.lower():
-                    wins = stats.get("WINS", wins)
-                    for vp_key in ("AVG VP", "AVG_VP", "AVG POINTS", "AVG_VPTS"):
-                        if vp_key in stats:
-                            avg_score = stats[vp_key]
-                            break
-                    break
-        if "Game Summary" in json_content:
-            avg_turns = json_content["Game Summary"].get("AVG TURNS", avg_turns)
-    except Exception as e:
-        print(f"[DEBUG] Stat extraction error: {e}")
-
-    if not short_game:
-        evolution_key = CreatorAgent.current_evolution
-        CreatorAgent.current_evolution += 1
-
-        rel_output = output_file_path.relative_to(Path(CreatorAgent.run_dir))
-        rel_cur_foo = cur_foo_path.relative_to(Path(CreatorAgent.run_dir))
-        rel_json = "None"
-        if isinstance(json_copy_path, Path):
-            rel_json = json_copy_path.relative_to(Path(CreatorAgent.run_dir))
-
-        performance_history[f"Evolution {evolution_key}"] = {
-            "wins": wins,
-            "avg_score": avg_score,
-            "avg_turns": avg_turns,
-            "full_game_log_path": str(rel_output),
-            "json_game_results_path": str(rel_json),
-            "cur_foo_player_path": str(rel_cur_foo),
-            "cli_run_id": run_id,
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        }
-        performance_history_path.write_text(json.dumps(performance_history, indent=2))
-
-    return json.dumps(json_content, indent=2) if json_content else game_results
-# def run_testfoo(short_game: bool = False) -> str:
-#     """
-#     Run one Catanatron match (R vs Agent File) and return raw CLI output.
-#     Input: short_game (bool): If True, run a short game with a 30 second timeout.
-#     """
-
-#     # Generate a unique run id (also used for directory + passed as --run-id)
-#     if short_game:
-#         run_id = datetime.now().strftime("game_%Y%m%d_%H%M%S_vg")
-#     else:
-#         run_id = datetime.now().strftime("game_%Y%m%d_%H%M%S_fg")
-    
-#     # Build command with a per-run --run-id (strip any stale one first)
-#     base_cmd = FOO_RUN_COMMAND
-#     # Remove any accidental existing --run-id param
-#     base_cmd = re.sub(r"--run-id=\S+", "", base_cmd).strip()
-#     dynamic_command = f"{base_cmd} --run-id={run_id}"
-#     # Optional: print for debugging
-#     # print(f"[DEBUG] Running command: {dynamic_command}")
- 
-#     game_run_dir = Path(CreatorAgent.run_dir) / run_id
-#     game_run_dir.mkdir(exist_ok=True)
-    
-#     cur_foo_path = game_run_dir / FOO_TARGET_FILENAME
-#     # Save the current prompt used for this game
-#     shutil.copy2(
-#         FOO_TARGET_FILE.resolve(),
-#         cur_foo_path
-#     )
-        
-#     MAX_CHARS = 20_000                      
-
-#     try:
-#         if short_game:
-#             result = subprocess.run(
-#                 shlex.split(dynamic_command),
-#                 capture_output=True,
-#                 text=True,
-#                 timeout=30,
-#                 check=False
-#             )
-#         else:
-#             result = subprocess.run(
-#                 shlex.split(dynamic_command),
-#                 capture_output=True,
-#                 text=True,
-#                 timeout=14400,
-#                 check=False
-#             )
-#         stdout_limited  = result.stdout[-MAX_CHARS:]
-#         stderr_limited  = result.stderr[-MAX_CHARS:]
-#         game_results = (stdout_limited + stderr_limited).strip()
-#     except subprocess.TimeoutExpired as e:
-#         # Handle timeout case
-#         stdout_output = e.stdout or ""
-#         stderr_output = e.stderr or ""
-#         if stdout_output and not isinstance(stdout_output, str):
-#             stdout_output = stdout_output.decode('utf-8', errors='ignore')
-#         if stderr_output and not isinstance(stderr_output, str):
-#             stderr_output = stderr_output.decode('utf-8', errors='ignore')
-#         stdout_limited  = stdout_output[-MAX_CHARS:]
-#         stderr_limited  = stderr_output[-MAX_CHARS:]
-#         game_results = "Game Ended From Timeout (As Expected).\n\n" + (stdout_limited + stderr_limited).strip()
-    
-
-#     # Save the output to a log file in the game run directory
-#     output_file_path = game_run_dir / "game_output.txt"
-    
-#     with open(output_file_path, "w") as output_file:
-#         output_file.write(game_results)
-
-
-#     # Search for the JSON results file path in the output
-#     json_path = None
-#     import re
-#     path_match = re.search(r'results_file_path:([^\s]+)', game_results)
-#     if path_match:
-#         # Extract the complete path
-#         json_path = path_match.group(1).strip()
-
-#     # Load in the most recent JSON File Game Rur
-#     json_content = {}
-#     json_copy_path = "None"
-#     # If we found a JSON file path, copy it and load its contents
-#     if json_path and Path(json_path).exists():
-#         # Copy the JSON file to our game run directory
-#         json_filename = Path(json_path).name
-#         json_copy_path = game_run_dir / json_filename
-#         shutil.copy2(json_path, json_copy_path)
-        
-#         # Load the JSON content
-#         try:
-#             with open(json_path, 'r') as f:
-#                 json_content = json.load(f)
-#         except json.JSONDecodeError:
-#             json_content = {"error": "Failed to parse JSON file"}
-
-
-#     # Update performance_history.json
-#     performance_history_path = Path(CreatorAgent.run_dir) / "performance_history.json"
-#     try:
-#         # Load existing performance history
-#         with open(performance_history_path, 'r') as f:
-#             performance_history = json.load(f)
-#     except (json.JSONDecodeError, FileNotFoundError):
-#         performance_history = {}
-    
-#     # Extract relevant data from json_content
-#     wins = 0
-#     avg_score = 0
-#     avg_turns = 0
-    
-#     try:
-#         # Extract data from the JSON structure
-#         if "Player Summary" in json_content:
-#             our_player = "FooPlayer"
-#             for player, stats in json_content["Player Summary"].items():
-#                 if player.startswith(our_player):  # Check if player key starts with our player's name
-#                     if "WINS" in stats:
-#                         wins = stats["WINS"]
-#                     if "AVG VP" in stats:
-#                         avg_score = stats["AVG VP"]
-                    
-#         if "Game Summary" in json_content:
-#             if "AVG TURNS" in json_content["Game Summary"]:
-#                 avg_turns = json_content["Game Summary"]["AVG TURNS"]
-#     except Exception as e:
-#         print(f"Error extracting stats from JSON: {e}")
-        
-#     # Update performance history only on long game runs
-#     if not short_game:
-#         # Create or update the entry for this evolution
-#         evolution_key = CreatorAgent.current_evolution
-#         CreatorAgent.current_evolution += 1
-        
-#         # Convert paths to be relative to run_dir
-#         rel_output_file_path = output_file_path.relative_to(Path(CreatorAgent.run_dir))
-#         rel_cur_foo_path = cur_foo_path.relative_to(Path(CreatorAgent.run_dir))
-#         # Handle the case where json_copy_path is a string "None"
-#         rel_json_copy_path = "None"
-#         if json_copy_path != "None" and isinstance(json_copy_path, Path):
-#             rel_json_copy_path = json_copy_path.relative_to(Path(CreatorAgent.run_dir))
-        
-#         performance_history[f"Evolution {evolution_key}"] = {
-#             "wins": wins,
-#             "avg_score": avg_score,
-#             "avg_turns": avg_turns,
-#             "full_game_log_path": str(rel_output_file_path),
-#             "json_game_results_path": str(rel_json_copy_path),
-#             "cur_foo_player_path": str(rel_cur_foo_path),
-#             "cli_run_id": run_id,
-#             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-#             #"summary": "Not yet summarized"
-#         }
-        
-#         # Write updated performance history
-#         with open(performance_history_path, 'w') as f:
-#             json.dump(performance_history, f, indent=2)
-        
-#     if json_content:
-#         return json.dumps(json_content, indent=2)
-#     else:
-#         # If we didn't find a JSON file, return a limited version of the game output
-#         # MAX_CHARS = 5_000
-#         # stdout_limited = result.stdout[-MAX_CHARS:]
-#         # stderr_limited = result.stderr[-MAX_CHARS:]
-#         return game_results
-#     # Extract the score from the game results
-
-#     # Create a folder in the Creator.run_dir with EvolveCounter#_FooScore#
-
-#     # Inside the folder, 
-#     #   place the game_results.txt file with the game results
-#     #   copy the FOO_TARGET_FILE as foo_player.py
-
-#     # Add a file with the stdout and stderr called catanatron_output.txt
-#     # output_file_path = latest_run_folder / "catanatron_output.txt"
-#     # with open(output_file_path, "w") as output_file:
-#     #     output_file.write(game_results)
-        
-#     #print(game_results)
-#         # limit the output to a certain number of characters
 
 def web_search_tool_call(query: str) -> str:
     """Perform a web search using the Tavily API.
