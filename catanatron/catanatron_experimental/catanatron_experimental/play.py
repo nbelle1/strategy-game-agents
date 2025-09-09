@@ -4,8 +4,6 @@ from dataclasses import dataclass
 from typing import Literal, Union
 from pathlib import Path
 import json
-import uuid
-
 
 import click
 from rich.console import Console
@@ -133,9 +131,15 @@ class CustomTimeRemainingColumn(TimeRemainingColumn):
     is_flag=True,
 )
 @click.option(
-    "--run-id",
+    "--results-path",
     default=None,
-    help="Optional unique run identifier to embed in results filename (else auto-generated).",
+    help=(
+        "File or directory path for JSON results. "
+        "If path exists and is a directory: create results_{timestamp}.json inside it. "
+        "If path exists and is a file: overwrite it. "
+        "If path does not exist and has a suffix: treated as file and created. "
+        "If path does not exist and has no suffix: treated as directory; created and a timestamped file is written."
+    ),
 )
 def simulate(
     num,
@@ -150,7 +154,7 @@ def simulate(
     config_map,
     quiet,
     help_players,
-    run_id,
+    results_path,
 ):
     """
     Catan Bot Simulator.
@@ -180,17 +184,13 @@ def simulate(
     colors = [c for c in Color]
     for i, key in enumerate(player_keys):
         parts = key.split(":")
-        code = parts[0]
+        code_key = parts[0]
         for cli_player in CLI_PLAYERS:
-            if cli_player.code == code:
+            if cli_player.code == code_key:
                 params = [colors[i]] + parts[1:]
                 player = cli_player.import_fn(*params)
                 players.append(player)
                 break
-
-    # Normalize / generate run id
-    if not run_id:
-        run_id = uuid.uuid4().hex[:10]
 
     output_options = OutputOptions(output, csv, json, db)
     game_config = GameConfigOptions(config_discard_limit, config_vps_to_win, config_map)
@@ -200,7 +200,7 @@ def simulate(
         output_options,
         game_config,
         quiet,
-        run_id=run_id,
+        results_path=results_path,
     )
 
 
@@ -270,11 +270,10 @@ def play_batch(
     output_options=None,
     game_config=None,
     quiet=False,
-    run_id: str | None = None,
+    results_path: str | None = None,
 ):
     output_options = output_options or OutputOptions()
     game_config = game_config or GameConfigOptions()
-    run_id = run_id or uuid.uuid4().hex[:10]
 
     statistics_accumulator = StatisticsAccumulator()
     vp_accumulator = VpDistributionAccumulator()
@@ -413,16 +412,45 @@ def play_batch(
     #         wins = statistics_accumulator.wins[player.color]
     #         console.print(f"\n===== FOO_PLAYER_STATS: wins={wins}, avg_vp={avg_vps:.2f} =====\n")
     #         break
-    
-    ### BEGIN NB ADDITIONS ###
+
+    ## Begin NB additions
     from datetime import datetime
-    results_dir = Path(__file__).resolve().parents[3] / "run_results"
-    results_dir.mkdir(exist_ok=True, parents=True)
-
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    results_file = results_dir / f"{run_id}.json"
 
-    # Build JSON structure
+    def resolve_results_file(user_path: str | None) -> Path:
+        """
+        Determine destination JSON file.
+        Rules:
+          - If user_path is provided:
+              * If it exists and is a dir: results_{timestamp}.json inside it
+              * If it exists and is a file: that file (overwrite)
+              * If it doesn't exist:
+                  - If it has a suffix: treat as file (create parents)
+                  - Else: treat as directory (create) and write results_{timestamp}.json
+          - If user_path not provided:
+              * Use repo_root/run_results/results_{timestamp}.json
+        """
+        if user_path:
+            p = Path(user_path).expanduser()
+            if p.exists():
+                if p.is_dir():
+                    return (p / f"results_{timestamp}.json").resolve()
+                else:
+                    return p.resolve()
+            else:
+                if p.suffix:  # looks like a file
+                    p.parent.mkdir(parents=True, exist_ok=True)
+                    return p.resolve()
+                else:  # treat as directory
+                    p.mkdir(parents=True, exist_ok=True)
+                    return (p / f"results_{timestamp}.json").resolve()
+        # default behavior
+        default_dir = Path(__file__).resolve().parents[3] / "run_results"
+        default_dir.mkdir(parents=True, exist_ok=True)
+        return (default_dir / f"results_{timestamp}.json").resolve()
+
+    results_file = resolve_results_file(results_path)
+
     results = {
         "Player Summary": {},
         "Game Summary": {
@@ -431,12 +459,10 @@ def play_batch(
             "AVG DURATION": statistics_accumulator.get_avg_duration()
         }
     }
-    
-    # Add player data
+
     for player in players:
         vps = statistics_accumulator.results_by_player[player.color]
         avg_vps = sum(vps) / len(vps)
-        
         results["Player Summary"][f"{player}"] = {
             "WINS": statistics_accumulator.wins[player.color],
             "AVG VP": avg_vps,
@@ -447,17 +473,14 @@ def play_batch(
             "AVG DEV VP": vp_accumulator.get_avg_devvps(player.color)
         }
 
-    # Save to file
-    with open(results_file, 'w') as f:
-        json.dump(results, f, indent=2, default=str)
+    with open(results_file, "w") as f:
+        json.dump(results, f, indent=2)
 
-    # Unwrapped sentinel line for reliable parsing (even if quiet=False still emit)
-    # print(f'CTN_RESULTS_FILE="{results_file}"', flush=True)
-    # if not quiet:
-    #     console.print(f"[green]results_file_path:{results_file}[/green]")
-    ### END NB ADDITIONS ###
+    if not quiet:
+        console.print(f"[green]Results written to: {results_file}[/green]")
 
-
+    ### End NB additions
+    
     return (
         dict(statistics_accumulator.wins),
         dict(statistics_accumulator.results_by_player),
