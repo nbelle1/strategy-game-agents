@@ -1,0 +1,474 @@
+# Robust import that works both as a package and when run locally
+try:
+    from .adapters import (
+        Game, Player, Color, Action, ActionType,
+        playable_actions, pruned_actions, chance_children,
+        make_value_fn, DEFAULT_WEIGHTS, value_production,
+        production_features_sampler, winning_color, copy_game
+    )
+except ImportError:
+    # Fallback if executed as a script from within this folder
+    from adapters import (
+        Game, Player, Color, Action, ActionType,
+        playable_actions, pruned_actions, chance_children,
+        make_value_fn, DEFAULT_WEIGHTS, value_production,
+        production_features_sampler, winning_color, copy_game
+    )
+
+class FooPlayer(Player):
+    def __init__(self, color, value_builder="base_fn", params=DEFAULT_WEIGHTS):
+        super().__init__(color)
+        self.V = make_value_fn(value_builder, params)  # callable(game, pov_color)
+        self._opening_used_count = 0
+        self._road_bias_used_count = 0
+
+    def decide(self, game, _playable):
+        try:
+            # Normalize available actions into _actions so the opening code can use it reliably
+            _actions = None
+            # Common parameter names to check
+            for n in ("available_actions", "available_actions_list", "available_actions_arg", "actions", "possible_actions", "legal_actions", "action_list", "action_space"):
+                if n in locals():
+                    _actions = locals()[n]
+                    break
+            # Try attributes on function args (if method signature is decide(self, game, actions))
+            if _actions is None:
+                _actions = globals().get("available_actions", None)
+            # try stored last known actions as fallback
+            if _actions is None:
+                _actions = getattr(self, "_last_available_actions", None)
+            if _actions is None:
+                _actions = []
+        except Exception as e:
+            print("[OPENING] _actions normalization error:", e)
+            _actions = []
+
+        try:
+            # opening detection
+            my_settlements = len([s for s in game.settlements if s.owner == self.color]) if hasattr(game, "settlements") else 0
+            opening_condition = (getattr(game, "turn", 0) < 2) or (my_settlements < 2)
+            if opening_condition:
+                candidate_actions = []
+                for a in _actions:
+                    try:
+                        if self.is_settlement_placement_action(a):
+                            candidate_actions.append(a)
+                    except Exception:
+                        continue
+                if candidate_actions:
+                    best = None
+                    best_score = -1e9
+                    for a in candidate_actions:
+                        s = self.score_opening_placement(game, a)
+                        print(f"[OPENING] action={a} score={s}")
+                        if s > best_score:
+                            best_score = s
+                            best = a
+                    if best is not None:
+                        print(f"[OPENING] chosen {best} score {best_score}")
+                        self._opening_used_count += 1
+                        return best
+        except Exception as e:
+            print("[OPENING] placement logic error:", e)
+            # continue with normal decision-making
+
+        acts = pruned_actions(game)
+        if not acts:
+            acts = playable_actions(game)
+        if len(acts) == 1:
+            return acts[0]
+
+        # Expectation over chance outcomes, mirroring AlphaBeta’s spectrum
+        exp = {}
+        for a, outs in chance_children(game, acts).items():
+            exp[a] = sum(p * self.V(gp, self.color) for gp, p in outs)
+
+        # choose max-EV action
+        return max(exp, key=exp.get)
+
+    def pip_weight(self, number):
+        if number in (6, 8):
+            return 5.0
+        if number in (5, 9):
+            return 4.0
+        if number in (4, 10):
+            return 3.0
+        if number in (3, 11):
+            return 2.0
+        if number in (2, 12):
+            return 1.0
+        return 0.0
+
+    def get_adjacent_tiles_for_action(self, game, action):
+        # Try multiple attribute names that may be present on action
+        # and on game.board representation.
+        # Return a list of tile objects or simple dicts with .resource and .number
+        try:
+            location = getattr(action, "location", None)
+            if location is None:
+                location = getattr(action, "vertex", None)
+            if location is None:
+                location = getattr(action, "point", None)
+            # If action includes a list of hex ids directly
+            hexes = getattr(action, "hexes", None) or getattr(action, "adjacent_hexes", None)
+            if hexes:
+                tiles = []
+                for hx in hexes:
+                    # try resolving hex object from game.board
+                    try:
+                        tiles.append(game.board.hexes[hx])
+                    except Exception:
+                        # maybe hex is already a tile object
+                        tiles.append(hx)
+                return tiles
+            # Otherwise, try to derive adjacent tiles from board using location
+            if location is not None:
+                # This is adapter-dependent. Try common patterns, gracefully degrade.
+                if hasattr(game.board, "adjacent_tiles_to_vertex"):
+                    return game.board.adjacent_tiles_to_vertex(location)
+                if hasattr(game.board, "tiles_adjacent_to_point"):
+                    return game.board.tiles_adjacent_to_point(location)
+                # Last-resort: look for an attribute on location itself
+                tiles = getattr(location, "adjacent_tiles", None)
+                if tiles:
+                    return tiles
+        except Exception as e:
+            print("get_adjacent_tiles_for_action fallback error:", e)
+        # If we can't find anything, return empty list
+        return []
+
+    def score_opening_placement(self, game, action):
+        try:
+            tiles = self.get_adjacent_tiles_for_action(game, action)
+            if not tiles:
+                return -9999.0  # strongly discourage unknown placements
+            resources = set()
+            pip_sum = 0.0
+            for t in tiles:
+                # tile may be a dict or object
+                resource = None
+                number = None
+                if isinstance(t, dict):
+                    resource = t.get("resource") or t.get("type") or t.get("res")
+                    number = t.get("number") or t.get("pip") or t.get("roll")
+                else:
+                    resource = getattr(t, "resource", None) or getattr(t, "type", None)
+                    number = getattr(t, "number", None) or getattr(t, "pip", None)
+                if resource and str(resource).lower() not in ("desert", "none", "null"):
+                    resources.add(resource)
+                pip_sum += self.pip_weight(number)
+            # Score formula:
+            # diversity bonus + pip sum (weighted)
+            diversity_score = len(resources) * 2.0
+            pip_score = pip_sum * 1.5  # 1.5 scaling for pip weight
+            return diversity_score + pip_score
+        except Exception as e:
+            print("Error scoring opening placement:", e)
+            return -9999.0
+
+    def is_settlement_placement_action(self, a):
+        try:
+            # detect placement actions conservatively
+            at = getattr(a, "action_type", None) or getattr(a, "type", None) or str(a)
+            if at is None:
+                return False
+            at_str = str(at).upper()
+            if "SETTLEMENT" in at_str or "PLACE_SETTLEMENT" in at_str or "BUILD_SETTLEMENT" in at_str:
+                return True
+        except Exception:
+            return False
+        return False
+
+    def is_build_road_action(self, action):
+        try:
+            at = getattr(action, "action_type", None) or getattr(action, "type", None) or str(action)
+            if at is None:
+                return False
+            at_str = str(at).upper()
+            if "ROAD" in at_str or "BUILD_ROAD" in at_str or "PLACE_ROAD" in at_str:
+                return True
+        except Exception:
+            return False
+        return False
+
+    def estimate_road_value(self, game, action):
+        try:
+            # resolve the endpoint point/edge from action (try attributes 'edge','location','point','endpoint')
+            endpoint = getattr(action, 'edge', None) or getattr(action, 'location', None) or getattr(action, 'point', None) or getattr(action, 'endpoint', None)
+            if endpoint is None:
+                return 0.0
+            # get adjacent vertices to this edge/endpoint
+            vertices = []
+            if hasattr(game.board, 'vertices_adjacent_to_edge'):
+                vertices = game.board.vertices_adjacent_to_edge(endpoint)
+            elif hasattr(game.board, 'adjacent_vertices_to_edge'):
+                vertices = game.board.adjacent_vertices_to_edge(endpoint)
+            else:
+                # fallback: try endpoint.adjacent_vertices
+                vertices = getattr(endpoint, 'adjacent_vertices', []) or getattr(endpoint, 'vertices', [])
+            open_vertices = []
+            pip_sum = 0.0
+            for v in vertices:
+                # check if vertex is empty (no owner) - try common fields
+                owner = getattr(v, 'owner', None) or v.get('owner') if isinstance(v, dict) else None
+                if not owner:
+                    open_vertices.append(v)
+                    # collect adjacent tiles to vertex
+                    tiles = []
+                    if hasattr(game.board, 'adjacent_tiles_to_vertex'):
+                        tiles = game.board.adjacent_tiles_to_vertex(v)
+                    else:
+                        tiles = getattr(v, 'adjacent_tiles', []) or getattr(v, 'tiles', []) or []
+                    for t in tiles:
+                        num = getattr(t, 'number', None) if not isinstance(t, dict) else t.get('number') or t.get('pip')
+                        pip_sum += self.pip_weight(num)
+            value = len(open_vertices) * 2.0 + pip_sum * 1.0
+            # blocking heuristic: if any adjacent pieces belong to opponent add bonus
+            try:
+                for r in getattr(game, 'roads', []) or []:
+                    # detect adjacency between r and endpoint, and if owner != self.color add blocking bonus
+                    pass
+            except Exception:
+                pass
+            return float(value)
+        except Exception as e:
+            print("[ROAD] estimate_road_value def error:", e)
+            return 0.0
+
+    def decide(self, game, _playable):
+        try:
+            # Normalize available actions into _actions so the opening code can use it reliably
+            _actions = None
+            # Common parameter names to check
+            for n in ("available_actions", "available_actions_list", "available_actions_arg", "actions", "possible_actions", "legal_actions", "action_list", "action_space"):
+                if n in locals():
+                    _actions = locals()[n]
+                    break
+            # Try attributes on function args (if method signature is decide(self, game, actions))
+            if _actions is None:
+                _actions = globals().get("available_actions", None)
+            # try stored last known actions as fallback
+            if _actions is None:
+                _actions = getattr(self, "_last_available_actions", None)
+            if _actions is None:
+                _actions = []
+        except Exception as e:
+            print("[OPENING] _actions normalization error:", e)
+            _actions = []
+
+        try:
+            # opening detection
+            my_settlements = len([s for s in game.settlements if s.owner == self.color]) if hasattr(game, "settlements") else 0
+            opening_condition = (getattr(game, "turn", 0) < 2) or (my_settlements < 2)
+            if opening_condition:
+                candidate_actions = []
+                for a in _actions:
+                    try:
+                        if self.is_settlement_placement_action(a):
+                            candidate_actions.append(a)
+                    except Exception:
+                        continue
+                if candidate_actions:
+                    best = None
+                    best_score = -1e9
+                    for a in candidate_actions:
+                        s = self.score_opening_placement(game, a)
+                        print(f"[OPENING] action={a} score={s}")
+                        if s > best_score:
+                            best_score = s
+                            best = a
+                    if best is not None:
+                        print(f"[OPENING] chosen {best} score {best_score}")
+                        self._opening_used_count += 1
+                        return best
+        except Exception as e:
+            print("[OPENING] placement logic error:", e)
+            # continue with normal decision-making
+
+        acts = pruned_actions(game)
+        if not acts:
+            acts = playable_actions(game)
+        if len(acts) == 1:
+            return acts[0]
+
+        # Expectation over chance outcomes, mirroring AlphaBeta’s spectrum
+        exp = {}
+        for a, outs in chance_children(game, acts).items():
+            exp[a] = sum(p * self.V(gp, self.color) for gp, p in outs)
+
+        # choose max-EV action
+        return max(exp, key=exp.get)
+
+This is the current adapters.py file (YOU MUST USE THIS INTERFACE)
+
+"""
+Unified adapter for Catanatron agents.
+
+Expose a small, stable surface for multi-agent systems to:
+- Inspect game state
+- Enumerate legal actions
+- Execute hypothetical moves (with/without validation)
+- Expand chance outcomes (dice, dev cards, robber)
+- Use pruning helpers
+- Build/evaluate heuristics
+
+Everything here is a thin re-export or trivial wrapper from catanatron & friends.
+"""
+
+from typing import Any, Iterable, List, Tuple, Dict, Optional
+
+# === Core types & enums =======================================================
+from catanatron.game import Game  # has .state, .copy(), .execute(), .winning_color()
+from catanatron.models.player import Player, Color
+from catanatron.models.enums import (
+    DEVELOPMENT_CARDS,
+    RESOURCES,
+    SETTLEMENT,
+    CITY,
+    Action,        # Action(color, action_type, value?)
+    ActionType,    # END_TURN, BUILD_SETTLEMENT, ROLL, MOVE_ROBBER, ...
+)
+
+# === State helpers (commonly used by search / heuristics) ====================
+from catanatron.state_functions import (
+    get_player_buildings,   # (state, color, BUILDING_TYPE) -> Iterable[node_id]
+    get_dev_cards_in_hand,  # (state, color, card) -> int
+    get_player_freqdeck,    # (state, color) -> frequency deck (hand histogram)
+    get_enemy_colors,       # (colors, my_color) -> Iterable[color]
+)
+
+# === Map / probability utilities ============================================
+from catanatron.models.map import number_probability  # P(roll sum)
+
+# === Features & value functions =============================================
+from catanatron_gym.features import build_production_features
+from catanatron_experimental.machine_learning.players.value import (
+    DEFAULT_WEIGHTS,
+    get_value_fn,          # (builder_name, params, custom_value_fn?) -> callable(game, pov_color)->float
+    value_production,      # features -> scalar
+)
+
+# === Tree-search spectrum & pruning (chance and action reduction) ============
+# Bring in the exact logic AlphaBeta uses
+from catanatron_experimental.machine_learning.players.tree_search_utils import (
+    DETERMINISTIC_ACTIONS,
+    execute_deterministic,
+    execute_spectrum,      # (game, action) -> List[(game_copy, proba)]
+    expand_spectrum,       # (game, actions) -> Dict[action, List[(game_copy, proba)]]
+    list_prunned_actions,  # (game) -> List[action]
+    prune_robber_actions,  # (current_color, game, actions) -> filtered actions
+)
+
+# === Thin convenience wrappers ==============================================
+
+def current_color(game: Game) -> Color:
+    """Color to move at current state."""
+    return game.state.current_color()
+
+def playable_actions(game: Game) -> List[Action]:
+    """Legal actions in the current state."""
+    return list(game.state.playable_actions)
+
+def is_initial_build_phase(game: Game) -> bool:
+    return bool(game.state.is_initial_build_phase)
+
+def colors(game: Game) -> List[Color]:
+    return list(game.state.colors)
+
+def board(game: Game) -> Any:
+    """Board object (tiles, ports, map). Use sparingly to keep adapter stable."""
+    return game.state.board
+
+def copy_game(game: Game) -> Game:
+    """Deep copy so search can branch safely."""
+    return game.copy()
+
+def execute(game: Game, action: Action, *, validate: bool = False) -> None:
+    """Apply action to game. Use validate=False for speed in lookahead."""
+    game.execute(action, validate_action=validate)
+
+def winning_color(game: Game) -> Optional[Color]:
+    """None if no winner yet; else Color."""
+    return game.winning_color()
+
+# === Action helpers ==========================================================
+
+def make_action(color: Color, action_type: ActionType, value: Any = None) -> Action:
+    """Uniform action constructor MAS can call without importing enums directly."""
+    return Action(color, action_type, value)
+
+# === Chance expansion (expectation over outcomes) ============================
+
+def chance_children_for_action(game: Game, action: Action) -> List[Tuple[Game, float]]:
+    """
+    Mirror AlphaBeta's stochastic modeling:
+    - Deterministic actions -> single (next_state, 1.0)
+    - BUY_DEVELOPMENT_CARD -> all possible dev cards w/ deck-informed probabilities
+    - ROLL -> all dice outcomes 2..12 with number_probability
+    - MOVE_ROBBER -> all resource steals (if any) with uniform p=1/5
+    """
+    return execute_spectrum(game, action)
+
+def chance_children(game: Game, actions: Iterable[Action]) -> Dict[Action, List[Tuple[Game, float]]]:
+    """Batch version (action -> [(state, p), ...]) exactly like AlphaBeta uses."""
+    return expand_spectrum(game, list(actions))
+
+# === Pruning shortcuts =======================================================
+
+def pruned_actions(game: Game) -> List[Action]:
+    """Smart subset of legal actions (roads/settlements filtering, trades, robber)."""
+    return list_prunned_actions(game)
+
+# === Heuristic builders ======================================================
+
+def make_value_fn(
+    builder_name: str,
+    params: Dict[str, float] = DEFAULT_WEIGHTS,
+    custom_value_fn = None,
+):
+    """
+    Build a positional value function.
+      builder_name: "base_fn" or "contender_fn" (AlphaBeta uses these names)
+      params: weight dict
+      custom_value_fn: optional callable(game, pov_color)->float
+    Returns: callable(game, pov_color)->float
+    """
+    return get_value_fn(builder_name, params, custom_value_fn)
+
+def production_features_sampler(include_variety: bool = True):
+    """
+    Returns a callable features_fn(game, color)->feature_vector,
+    matching what value_production expects.
+    """
+    return build_production_features(include_variety)
+
+# === Common state queries used by heuristics / pruning =======================
+
+def player_build_nodes(game: Game, color: Color, building_type: Any) -> Iterable[int]:
+    return get_player_buildings(game.state, color, building_type)
+
+def dev_cards_in_hand(game: Game, color: Color, card: Any) -> int:
+    return get_dev_cards_in_hand(game.state, color, card)
+
+def enemy_colors_of(game: Game, my_color: Color) -> Iterable[Color]:
+    return get_enemy_colors(game.state.colors, my_color)
+
+def opponent_freqdeck(game: Game, color: Color) -> Any:
+    """Histogram-like representation of opponent resources (used by robber logic)."""
+    return get_player_freqdeck(game.state, color)
+
+# === Probability helper ======================================================
+
+def p_roll(total: int) -> float:
+    """P(sum of two fair dice == total), 2..12."""
+    return number_probability(total)
+
+# === Tiny debug helpers ======================================================
+
+def state_action_count(game: Game) -> int:
+    """Approximate ply index for labeling debug nodes (matches AlphaBeta usage)."""
+    return len(game.state.actions)
+
+def num_turns(game: Game) -> int:
+    """Optional parity with AlphaBeta's commented debug prints."""
+    return getattr(game.state, "num_turns", 0)

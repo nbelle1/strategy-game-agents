@@ -1,0 +1,1090 @@
+{
+  "timestamp": "2025-09-17T16:47:39.716319",
+  "player_color": "BLUE",
+  "game_state": {
+    "__type__": "Game",
+    "seed": 5063629987528252839,
+    "id": "bc860b5d-c464-480d-af79-ef8668388f61",
+    "vps_to_win": 5,
+    "state": {
+      "__type__": "State",
+      "players": [
+        {
+          "__type__": "AlphaBetaPlayer",
+          "color": "RED",
+          "is_bot": true,
+          "depth": 2,
+          "prunning": false,
+          "value_fn_builder_name": "base_fn",
+          "params": {
+            "public_vps": 300000000000000.0,
+            "production": 100000000.0,
+            "enemy_production": -100000000.0,
+            "num_tiles": 1,
+            "reachable_production_0": 0,
+            "reachable_production_1": 10000.0,
+            "buildable_nodes": 1000.0,
+            "longest_road": 10,
+            "hand_synergy": 100.0,
+            "hand_resources": "<recursion:int>",
+            "discard_penalty": -5,
+            "hand_devs": "<recursion:int>",
+            "army_size": 10.1
+          },
+          "use_value_function": null,
+          "epsilon": "<recursion:NoneType>"
+        },
+        {
+          "__type__": "FooPlayer",
+          "color": "BLUE",
+          "is_bot": "<recursion:bool>",
+          "V": {
+            "__type__": "function"
+          }
+        }
+      ],
+      "colors": [
+        "<recursion:Color>",
+        "<recursion:Color>"
+      ],
+      "board": {
+        "__type__": "Board",
+        "buildable_subgraph": {
+          "__type__": "Graph",
+          "graph": {},
+          "add_node": {
+            "__type__": "function"
+          },
+          "add_nodes_from": "<recursion:function>",
+          "remove_node": "<recursion:function>",
+          "remove_nodes_from": "<recursion:function>",
+          "add_edge": "<recursion:function>",
+          "add_edges_from": "<recursion:function>",
+          "add_weighted_edges_from": "<recursion:function>",
+          "remove_edge": "<recursion:function>",
+          "remove_edges_from": "<recursion:function>",
+          "clear": "<recursion:function>",
+          "clear_edges": "<recursion:function>",
+          "frozen": "<recursion:bool>",
+          "edges": "[(0, 5), (0, 1), (0, 20), (1, 2), (1, 6), (2, 3), (2, 9), (3, 4), (3, 12), (4, 5), (4, 15), (5, 16), (6, 7), (6, 23), (7, 8), (7, 24), (8, 9), (8, 27), (9, 10), (10, 11), (10, 29), (11, 12), (11, 32), (12, 13), (13, 14), (13, 34), (14, 15), (14, 37), (15, 17), (16, 18), (16, 21), (17, 18), (17, 39), (18, 40), (19, 21), (19, 20), (19, 46), (20, 22), (21, 43), (22, 23), (22, 49), (23, 52), (24, 25), (24, 53), (25, 26), (26, 27), (27, 28), (28, 29), (29, 30), (30, 31), (31, 32), (32, 33), (33, 34), (34, 35), (35, 36), (36, 37), (37, 38), (38, 39), (39, 41), (40, 42), (40, 44), (41, 42), (43, 44), (43, 47), (45, 47), (45, 46), (46, 48), (48, 49), (49, 50), (50, 51), (51, 52), (52, 53)]"
+        },
+        "buildable_edges_cache": {},
+        "player_port_resources_cache": {
+          "<recursion:Color>": []
+        },
+        "map": {
+          "__type__": "CatanMap",
+          "tiles": {
+            "['<recursion:int>', '<recursion:int>', '<recursion:int>']": {
+              "nodes": "<recursion:dict>",
+              "edges": "<recursion:dict>"
+            },
+            "['<recursion:int>', -1, '<recursion:int>']": {
+              "id": "<recursion:int>",
+              "resource": "WOOD",
+              "number": "<recursion:int>",
+              "nodes": {
+                "<recursion:NodeRef>": "<recursion:int>"
+              },
+              "edges": {
+                "<recursion:EdgeRef>": [
+                  "<recursion:int>",
+                  "<recursion:int>"
+                ]
+              }
+            },
+            "['<recursion:int>', -2, '<recursion:int>']": {
+              "id": "<recursion:int>",
+              "resource": "<recursion:str>",
+              "number": "<recursion:int>",
+              "nodes": {
+                "<recursion:NodeRef>": "<recursion:int>"
+              },
+              "edges": "<recursion:dict>"
+            },
+            "['<recursion:int>', -3, '<recursion:int>']": {
+              "id": "<recursion:int>",
+              "resource": "<recursion:NoneType>",
+              "direction": "WEST",
+              "nodes": "<recursion:dict>",
+              "edges": "<recursion:dict>"
+            }
+          },
+          "land_tiles": {
+            "<recursion:tuple>": "<recursion:LandTile>"
+          },
+          "port_nodes": {
+            "<recursion:NoneType>": [
+              38,
+              39,
+              40,
+              44,
+              45,
+              47,
+              "<recursion:int>",
+              "<recursion:int>"
+            ],
+            "<recursion:str>": [
+              52,
+              53
+            ]
+          },
+          "land_nodes": "frozenset({0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53})",
+          "adjacent_tiles": {
+            "<recursion:int>": [
+              "<recursion:LandTile>"
+            ],
+            "34": [
+              "<recursion:LandTile>",
+              "<recursion:LandTile>"
+            ],
+            "37": [
+              "<recursion:LandTile>",
+              "<recursion:LandTile>"
+            ],
+            "41": [
+              "<recursion:LandTile>"
+            ],
+            "42": [
+              "<recursion:LandTile>"
+            ],
+            "43": [
+              "<recursion:LandTile>",
+              "<recursion:LandTile>"
+            ],
+            "46": [
+              "<recursion:LandTile>",
+              "<recursion:LandTile>"
+            ],
+            "50": [
+              "<recursion:LandTile>"
+            ],
+            "51": [
+              "<recursion:LandTile>"
+            ]
+          },
+          "node_production": {
+            "<recursion:int>": {
+              "<recursion:str>": 0.08333333333333333
+            }
+          },
+          "tiles_by_id": {
+            "<recursion:int>": "<recursion:LandTile>"
+          },
+          "ports_by_id": {
+            "<recursion:int>": "<recursion:Port>"
+          }
+        },
+        "buildings": {
+          "<recursion:int>": [
+            "<recursion:Color>",
+            "<recursion:str>"
+          ]
+        },
+        "roads": {
+          "['<recursion:int>', '<recursion:int>']": "<recursion:Color>"
+        },
+        "connected_components": {
+          "<recursion:Color>": [
+            [
+              "<recursion:int>",
+              "<recursion:int>",
+              "<recursion:int>"
+            ],
+            [
+              "<recursion:int>",
+              "<recursion:int>",
+              "<recursion:int>"
+            ]
+          ]
+        },
+        "board_buildable_ids": [
+          "<recursion:int>",
+          "<recursion:int>",
+          "<recursion:int>",
+          "<recursion:int>",
+          "<recursion:int>",
+          "<recursion:int>",
+          "<recursion:int>",
+          "<recursion:int>",
+          "<recursion:int>",
+          "<recursion:int>",
+          "<recursion:int>",
+          "<recursion:int>",
+          "<recursion:int>",
+          "<recursion:int>",
+          "<recursion:int>",
+          "<recursion:int>",
+          "<recursion:int>",
+          "<recursion:int>",
+          "<recursion:int>",
+          "<recursion:int>",
+          "<recursion:int>",
+          "<recursion:int>",
+          "<recursion:int>",
+          "<recursion:int>",
+          "<recursion:int>",
+          "<recursion:int>",
+          "<recursion:int>",
+          "<recursion:int>",
+          "<recursion:int>",
+          "<recursion:int>",
+          "<recursion:int>",
+          "<recursion:int>"
+        ],
+        "road_lengths": {
+          "<recursion:Color>": "<recursion:int>"
+        },
+        "road_color": "<recursion:NoneType>",
+        "road_length": "<recursion:int>",
+        "robber_coordinate": "<recursion:tuple>"
+      },
+      "discard_limit": "<recursion:int>",
+      "player_state": {
+        "P0_VICTORY_POINTS": "<recursion:int>",
+        "P0_ROADS_AVAILABLE": "<recursion:int>",
+        "P0_SETTLEMENTS_AVAILABLE": "<recursion:int>",
+        "P0_CITIES_AVAILABLE": "<recursion:int>",
+        "P0_HAS_ROAD": "<recursion:bool>",
+        "P0_HAS_ARMY": "<recursion:bool>",
+        "P0_HAS_ROLLED": "<recursion:bool>",
+        "P0_HAS_PLAYED_DEVELOPMENT_CARD_IN_TURN": "<recursion:bool>",
+        "P0_ACTUAL_VICTORY_POINTS": "<recursion:int>",
+        "P0_LONGEST_ROAD_LENGTH": "<recursion:int>",
+        "P0_KNIGHT_OWNED_AT_START": "<recursion:bool>",
+        "P0_MONOPOLY_OWNED_AT_START": "<recursion:bool>",
+        "P0_YEAR_OF_PLENTY_OWNED_AT_START": "<recursion:bool>",
+        "P0_ROAD_BUILDING_OWNED_AT_START": "<recursion:bool>",
+        "P0_WOOD_IN_HAND": "<recursion:int>",
+        "P0_BRICK_IN_HAND": "<recursion:int>",
+        "P0_SHEEP_IN_HAND": "<recursion:int>",
+        "P0_WHEAT_IN_HAND": "<recursion:int>",
+        "P0_ORE_IN_HAND": "<recursion:int>",
+        "P0_KNIGHT_IN_HAND": "<recursion:int>",
+        "P0_PLAYED_KNIGHT": "<recursion:int>",
+        "P0_YEAR_OF_PLENTY_IN_HAND": "<recursion:int>",
+        "P0_PLAYED_YEAR_OF_PLENTY": "<recursion:int>",
+        "P0_MONOPOLY_IN_HAND": "<recursion:int>",
+        "P0_PLAYED_MONOPOLY": "<recursion:int>",
+        "P0_ROAD_BUILDING_IN_HAND": "<recursion:int>",
+        "P0_PLAYED_ROAD_BUILDING": "<recursion:int>",
+        "P0_VICTORY_POINT_IN_HAND": "<recursion:int>",
+        "P0_PLAYED_VICTORY_POINT": "<recursion:int>",
+        "P1_VICTORY_POINTS": "<recursion:int>",
+        "P1_ROADS_AVAILABLE": "<recursion:int>",
+        "P1_SETTLEMENTS_AVAILABLE": "<recursion:int>",
+        "P1_CITIES_AVAILABLE": "<recursion:int>",
+        "P1_HAS_ROAD": "<recursion:bool>",
+        "P1_HAS_ARMY": "<recursion:bool>",
+        "P1_HAS_ROLLED": "<recursion:bool>",
+        "P1_HAS_PLAYED_DEVELOPMENT_CARD_IN_TURN": "<recursion:bool>",
+        "P1_ACTUAL_VICTORY_POINTS": "<recursion:int>",
+        "P1_LONGEST_ROAD_LENGTH": "<recursion:int>",
+        "P1_KNIGHT_OWNED_AT_START": "<recursion:bool>",
+        "P1_MONOPOLY_OWNED_AT_START": "<recursion:bool>",
+        "P1_YEAR_OF_PLENTY_OWNED_AT_START": "<recursion:bool>",
+        "P1_ROAD_BUILDING_OWNED_AT_START": "<recursion:bool>",
+        "P1_WOOD_IN_HAND": "<recursion:int>",
+        "P1_BRICK_IN_HAND": "<recursion:int>",
+        "P1_SHEEP_IN_HAND": "<recursion:int>",
+        "P1_WHEAT_IN_HAND": "<recursion:int>",
+        "P1_ORE_IN_HAND": "<recursion:int>",
+        "P1_KNIGHT_IN_HAND": "<recursion:int>",
+        "P1_PLAYED_KNIGHT": "<recursion:int>",
+        "P1_YEAR_OF_PLENTY_IN_HAND": "<recursion:int>",
+        "P1_PLAYED_YEAR_OF_PLENTY": "<recursion:int>",
+        "P1_MONOPOLY_IN_HAND": "<recursion:int>",
+        "P1_PLAYED_MONOPOLY": "<recursion:int>",
+        "P1_ROAD_BUILDING_IN_HAND": "<recursion:int>",
+        "P1_PLAYED_ROAD_BUILDING": "<recursion:int>",
+        "P1_VICTORY_POINT_IN_HAND": "<recursion:int>",
+        "P1_PLAYED_VICTORY_POINT": "<recursion:int>"
+      },
+      "color_to_index": {
+        "<recursion:Color>": "<recursion:int>"
+      },
+      "resource_freqdeck": [
+        "<recursion:int>",
+        "<recursion:int>",
+        "<recursion:int>",
+        "<recursion:int>",
+        "<recursion:int>"
+      ],
+      "development_listdeck": [
+        "KNIGHT",
+        "<recursion:str>",
+        "<recursion:str>",
+        "ROAD_BUILDING",
+        "VICTORY_POINT",
+        "<recursion:str>",
+        "<recursion:str>",
+        "<recursion:str>",
+        "<recursion:str>",
+        "<recursion:str>",
+        "<recursion:str>",
+        "<recursion:str>",
+        "<recursion:str>",
+        "<recursion:str>",
+        "<recursion:str>",
+        "YEAR_OF_PLENTY",
+        "<recursion:str>",
+        "MONOPOLY",
+        "<recursion:str>",
+        "<recursion:str>",
+        "<recursion:str>",
+        "<recursion:str>",
+        "<recursion:str>",
+        "<recursion:str>",
+        "<recursion:str>"
+      ],
+      "buildings_by_color": {
+        "<recursion:Color>": {
+          "<recursion:str>": [
+            "<recursion:tuple>",
+            "<recursion:tuple>",
+            "<recursion:tuple>",
+            "<recursion:tuple>"
+          ]
+        }
+      },
+      "actions": [
+        [
+          "<recursion:Color>",
+          "BUILD_SETTLEMENT",
+          "<recursion:int>"
+        ],
+        [
+          "<recursion:Color>",
+          "BUILD_ROAD",
+          "<recursion:tuple>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:int>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:tuple>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:int>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:tuple>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:int>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:tuple>"
+        ],
+        [
+          "<recursion:Color>",
+          "ROLL",
+          [
+            "<recursion:int>",
+            "<recursion:int>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:tuple>"
+        ],
+        [
+          "<recursion:Color>",
+          "END_TURN",
+          "<recursion:NoneType>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:int>",
+            "<recursion:int>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:NoneType>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:int>",
+            "<recursion:int>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "MARITIME_TRADE",
+          [
+            "<recursion:str>",
+            "<recursion:str>",
+            "<recursion:str>",
+            "<recursion:str>",
+            "<recursion:str>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:tuple>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:NoneType>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:int>",
+            "<recursion:int>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:NoneType>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:int>",
+            "<recursion:int>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:NoneType>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:int>",
+            "<recursion:int>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:tuple>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:NoneType>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:int>",
+            "<recursion:int>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:int>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:NoneType>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:int>",
+            "<recursion:int>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:NoneType>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:int>",
+            "<recursion:int>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "MOVE_ROBBER",
+          [
+            "<recursion:tuple>",
+            "<recursion:Color>",
+            "<recursion:str>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:NoneType>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:int>",
+            "<recursion:int>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:int>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:NoneType>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:int>",
+            "<recursion:int>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:NoneType>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:int>",
+            "<recursion:int>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:NoneType>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:int>",
+            "<recursion:int>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:NoneType>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:int>",
+            "<recursion:int>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:tuple>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:NoneType>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:int>",
+            "<recursion:int>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:NoneType>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:int>",
+            "<recursion:int>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:NoneType>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:int>",
+            "<recursion:int>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:tuple>",
+            "<recursion:Color>",
+            "<recursion:str>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:NoneType>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:int>",
+            "<recursion:int>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:NoneType>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:int>",
+            "<recursion:int>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:NoneType>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:int>",
+            "<recursion:int>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:NoneType>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:int>",
+            "<recursion:int>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:tuple>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:NoneType>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:int>",
+            "<recursion:int>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:str>",
+            "<recursion:str>",
+            "<recursion:str>",
+            "<recursion:str>",
+            "<recursion:str>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:NoneType>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:int>",
+            "<recursion:int>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "DISCARD",
+          [
+            "<recursion:str>",
+            "<recursion:str>",
+            "<recursion:str>",
+            "<recursion:str>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:tuple>",
+            "<recursion:Color>",
+            "<recursion:str>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:NoneType>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:int>",
+            "<recursion:int>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:tuple>",
+            "<recursion:Color>",
+            "<recursion:str>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:NoneType>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:int>",
+            "<recursion:int>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:tuple>",
+            "<recursion:Color>",
+            "<recursion:str>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:NoneType>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:int>",
+            "<recursion:int>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:NoneType>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:int>",
+            "<recursion:int>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:NoneType>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:int>",
+            "<recursion:int>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:int>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:NoneType>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:int>",
+            "<recursion:int>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:str>",
+            "<recursion:str>",
+            "<recursion:str>",
+            "<recursion:str>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:tuple>",
+            "<recursion:Color>",
+            "<recursion:str>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:NoneType>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:int>",
+            "<recursion:int>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:tuple>",
+            "<recursion:Color>",
+            "<recursion:str>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:NoneType>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:int>",
+            "<recursion:int>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:tuple>",
+            "<recursion:Color>",
+            "<recursion:str>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:NoneType>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:int>",
+            "<recursion:int>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:NoneType>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:int>",
+            "<recursion:int>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:str>",
+            "<recursion:str>",
+            "<recursion:str>",
+            "<recursion:str>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:tuple>",
+            "<recursion:Color>",
+            "<recursion:str>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:NoneType>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:int>",
+            "<recursion:int>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:NoneType>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:int>",
+            "<recursion:int>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:NoneType>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:int>",
+            "<recursion:int>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:NoneType>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:int>",
+            "<recursion:int>"
+          ]
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:NoneType>"
+        ],
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          [
+            "<recursion:int>",
+            "<recursion:int>"
+          ]
+        ]
+      ],
+      "num_turns": "<recursion:int>",
+      "current_player_index": "<recursion:int>",
+      "current_turn_index": "<recursion:int>",
+      "current_prompt": "PLAY_TURN",
+      "is_initial_build_phase": "<recursion:bool>",
+      "is_discarding": "<recursion:bool>",
+      "is_moving_knight": "<recursion:bool>",
+      "is_road_building": "<recursion:bool>",
+      "free_roads_available": "<recursion:int>",
+      "is_resolving_trade": "<recursion:bool>",
+      "current_trade": [
+        "<recursion:int>",
+        "<recursion:int>",
+        "<recursion:int>",
+        "<recursion:int>",
+        "<recursion:int>",
+        "<recursion:int>",
+        "<recursion:int>",
+        "<recursion:int>",
+        "<recursion:int>",
+        "<recursion:int>",
+        "<recursion:int>"
+      ],
+      "acceptees": [
+        "<recursion:bool>",
+        "<recursion:bool>"
+      ],
+      "playable_actions": [
+        [
+          "<recursion:Color>",
+          "<recursion:ActionType>",
+          "<recursion:NoneType>"
+        ]
+      ]
+    }
+  }
+}

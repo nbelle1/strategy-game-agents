@@ -1,28 +1,20 @@
-import os
-from catanatron import Player
-from catanatron.game import Game
-from catanatron.models.player import Color
-from catanatron.models.actions import ActionType
-
-
+# Robust import that works both as a package and when run locally
+from .adapters import (
+    Game, Player, Color, Action, ActionType,
+    playable_actions, pruned_actions, chance_children,
+    make_value_fn, DEFAULT_WEIGHTS, value_production,
+    production_features_sampler, winning_color, copy_game
+)
+import random
 
 class FooPlayer(Player):
-    def __init__(self, name=None):
-        super().__init__(Color.BLUE, name)
+    def __init__(self, color, *_args, **_kwargs):
+        super().__init__(color)
 
-    def decide(self, game, playable_actions):
-        # Should return one of the playable_actions.
-
-        # Args:
-        #     game (Game): complete game state. read-only. 
-        #         Defined in in "catanatron/catanatron_core/catanatron/game.py"
-        #     playable_actions (Iterable[Action]): options to choose from
-        # Return:
-        #     action (Action): Chosen element of playable_actions
-        
-        # ===== YOUR CODE HERE =====
-        # As an example we simply return the first action:
-        print("Choosing First Action on Default")
-        return playable_actions[0]
-        # ===== END YOUR CODE =====
-
+    def decide(self, game, _playable):
+        acts = pruned_actions(game) or playable_actions(game)
+        if not acts:
+            return None  # no legal moves
+        if len(acts) == 1:
+            return acts[0]
+        return random.choice(acts)

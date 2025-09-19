@@ -1,0 +1,2105 @@
+{
+  "timestamp": "2025-09-18T17:38:59.536104",
+  "player_color": "BLUE",
+  "game_state": {
+    "__type__": "Game",
+    "seed": 5306526074649821858,
+    "id": "cb75148e-ddb9-439f-bb68-dc1cc1fa5156",
+    "vps_to_win": 5,
+    "state": {
+      "__type__": "State",
+      "players": [
+        {
+          "__type__": "FooPlayer",
+          "color": "BLUE",
+          "is_bot": true
+        },
+        {
+          "__type__": "AlphaBetaPlayer",
+          "color": "RED",
+          "is_bot": true,
+          "depth": 2,
+          "prunning": false,
+          "value_fn_builder_name": "base_fn",
+          "params": {
+            "public_vps": 300000000000000.0,
+            "production": 100000000.0,
+            "enemy_production": -100000000.0,
+            "num_tiles": 1,
+            "reachable_production_0": 0,
+            "reachable_production_1": 10000.0,
+            "buildable_nodes": 1000.0,
+            "longest_road": 10,
+            "hand_synergy": 100.0,
+            "hand_resources": 1,
+            "discard_penalty": -5,
+            "hand_devs": 10,
+            "army_size": 10.1
+          },
+          "use_value_function": null,
+          "epsilon": null
+        }
+      ],
+      "colors": [
+        "BLUE",
+        "RED"
+      ],
+      "board": {
+        "__type__": "Board",
+        "buildable_subgraph": {
+          "__type__": "Graph",
+          "graph": {},
+          "frozen": true
+        },
+        "buildable_edges_cache": {},
+        "player_port_resources_cache": {
+          "BLUE": [],
+          "RED": []
+        },
+        "map": {
+          "__type__": "CatanMap",
+          "tiles": {
+            "[0, 0, 0]": {
+              "id": 0,
+              "resource": "WOOD",
+              "number": 8,
+              "nodes": {
+                "NORTH": 0,
+                "NORTHEAST": 1,
+                "SOUTHEAST": 2,
+                "SOUTH": 3,
+                "SOUTHWEST": 4,
+                "NORTHWEST": 5
+              },
+              "edges": {
+                "EAST": [
+                  1,
+                  2
+                ],
+                "SOUTHEAST": [
+                  2,
+                  3
+                ],
+                "SOUTHWEST": [
+                  3,
+                  4
+                ],
+                "WEST": [
+                  4,
+                  5
+                ],
+                "NORTHWEST": [
+                  5,
+                  0
+                ],
+                "NORTHEAST": [
+                  0,
+                  1
+                ]
+              }
+            },
+            "[1, -1, 0]": {
+              "id": 1,
+              "resource": "ORE",
+              "number": 9,
+              "nodes": {
+                "NORTH": 6,
+                "NORTHEAST": 7,
+                "SOUTHEAST": 8,
+                "SOUTH": 9,
+                "SOUTHWEST": 2,
+                "NORTHWEST": 1
+              },
+              "edges": {
+                "EAST": [
+                  7,
+                  8
+                ],
+                "SOUTHEAST": [
+                  8,
+                  9
+                ],
+                "SOUTHWEST": [
+                  9,
+                  2
+                ],
+                "WEST": [
+                  1,
+                  2
+                ],
+                "NORTHWEST": [
+                  1,
+                  6
+                ],
+                "NORTHEAST": [
+                  6,
+                  7
+                ]
+              }
+            },
+            "[0, -1, 1]": {
+              "id": 2,
+              "resource": "SHEEP",
+              "number": 2,
+              "nodes": {
+                "NORTH": 2,
+                "NORTHEAST": 9,
+                "SOUTHEAST": 10,
+                "SOUTH": 11,
+                "SOUTHWEST": 12,
+                "NORTHWEST": 3
+              },
+              "edges": {
+                "EAST": [
+                  9,
+                  10
+                ],
+                "SOUTHEAST": [
+                  10,
+                  11
+                ],
+                "SOUTHWEST": [
+                  11,
+                  12
+                ],
+                "WEST": [
+                  12,
+                  3
+                ],
+                "NORTHWEST": [
+                  2,
+                  3
+                ],
+                "NORTHEAST": [
+                  9,
+                  2
+                ]
+              }
+            },
+            "[-1, 0, 1]": {
+              "id": 3,
+              "resource": "SHEEP",
+              "number": 6,
+              "nodes": "<recursion:dict>",
+              "edges": "<recursion:dict>"
+            },
+            "[-1, 1, 0]": {
+              "id": 4,
+              "resource": "BRICK",
+              "number": 5,
+              "nodes": {
+                "NORTH": 16,
+                "NORTHEAST": 5,
+                "SOUTHEAST": 4,
+                "SOUTH": 15,
+                "SOUTHWEST": 17,
+                "NORTHWEST": 18
+              },
+              "edges": {
+                "EAST": [
+                  4,
+                  5
+                ],
+                "SOUTHEAST": "<recursion:tuple>",
+                "SOUTHWEST": [
+                  15,
+                  17
+                ],
+                "WEST": [
+                  17,
+                  18
+                ],
+                "NORTHWEST": [
+                  18,
+                  16
+                ],
+                "NORTHEAST": [
+                  16,
+                  5
+                ]
+              }
+            },
+            "[0, 1, -1]": {
+              "id": 5,
+              "resource": "WHEAT",
+              "number": 11,
+              "nodes": "<recursion:dict>",
+              "edges": "<recursion:dict>"
+            },
+            "[1, 0, -1]": {
+              "id": 6,
+              "resource": "BRICK",
+              "number": 4,
+              "nodes": "<recursion:dict>",
+              "edges": {
+                "EAST": [
+                  23,
+                  6
+                ],
+                "SOUTHEAST": "<recursion:tuple>",
+                "SOUTHWEST": [
+                  0,
+                  1
+                ],
+                "WEST": [
+                  20,
+                  0
+                ],
+                "NORTHWEST": [
+                  20,
+                  22
+                ],
+                "NORTHEAST": [
+                  22,
+                  23
+                ]
+              }
+            },
+            "[2, -2, 0]": {
+              "id": 7,
+              "resource": "WOOD",
+              "number": 9,
+              "nodes": "<recursion:dict>",
+              "edges": "<recursion:dict>"
+            },
+            "[1, -2, 1]": {
+              "id": 8,
+              "resource": null,
+              "number": null,
+              "nodes": {
+                "NORTH": 8,
+                "NORTHEAST": 27,
+                "SOUTHEAST": 28,
+                "SOUTH": 29,
+                "SOUTHWEST": 10,
+                "NORTHWEST": 9
+              },
+              "edges": {
+                "EAST": [
+                  27,
+                  28
+                ],
+                "SOUTHEAST": "<recursion:tuple>",
+                "SOUTHWEST": [
+                  29,
+                  10
+                ],
+                "WEST": [
+                  9,
+                  10
+                ],
+                "NORTHWEST": [
+                  8,
+                  9
+                ],
+                "NORTHEAST": [
+                  27,
+                  8
+                ]
+              }
+            },
+            "[0, -2, 2]": {
+              "id": 9,
+              "resource": "WHEAT",
+              "number": 10,
+              "nodes": "<recursion:dict>",
+              "edges": "<recursion:dict>"
+            },
+            "[-1, -1, 2]": {
+              "id": 10,
+              "resource": "SHEEP",
+              "number": 6,
+              "nodes": {
+                "NORTH": 12,
+                "NORTHEAST": 11,
+                "SOUTHEAST": 32,
+                "SOUTH": 33,
+                "SOUTHWEST": 34,
+                "NORTHWEST": 13
+              },
+              "edges": {
+                "EAST": [
+                  32,
+                  11
+                ],
+                "SOUTHEAST": "<recursion:tuple>",
+                "SOUTHWEST": [
+                  33,
+                  34
+                ],
+                "WEST": [
+                  34,
+                  13
+                ],
+                "NORTHWEST": [
+                  12,
+                  13
+                ],
+                "NORTHEAST": [
+                  11,
+                  12
+                ]
+              }
+            },
+            "[-2, 0, 2]": {
+              "id": 11,
+              "resource": "ORE",
+              "number": 11,
+              "nodes": "<recursion:dict>",
+              "edges": "<recursion:dict>"
+            },
+            "[-2, 1, 1]": {
+              "id": 12,
+              "resource": "SHEEP",
+              "number": 3,
+              "nodes": {
+                "NORTH": 17,
+                "NORTHEAST": 15,
+                "SOUTHEAST": 14,
+                "SOUTH": 37,
+                "SOUTHWEST": 38,
+                "NORTHWEST": 39
+              },
+              "edges": {
+                "EAST": [
+                  14,
+                  15
+                ],
+                "SOUTHEAST": "<recursion:tuple>",
+                "SOUTHWEST": [
+                  37,
+                  38
+                ],
+                "WEST": [
+                  38,
+                  39
+                ],
+                "NORTHWEST": [
+                  39,
+                  17
+                ],
+                "NORTHEAST": [
+                  15,
+                  17
+                ]
+              }
+            },
+            "[-2, 2, 0]": {
+              "id": 13,
+              "resource": "WOOD",
+              "number": 4,
+              "nodes": "<recursion:dict>",
+              "edges": "<recursion:dict>"
+            },
+            "[-1, 2, -1]": {
+              "id": 14,
+              "resource": "WHEAT",
+              "number": 10,
+              "nodes": {
+                "NORTH": 43,
+                "NORTHEAST": 21,
+                "SOUTHEAST": 16,
+                "SOUTH": 18,
+                "SOUTHWEST": 40,
+                "NORTHWEST": 44
+              },
+              "edges": {
+                "EAST": [
+                  16,
+                  21
+                ],
+                "SOUTHEAST": "<recursion:tuple>",
+                "SOUTHWEST": [
+                  40,
+                  18
+                ],
+                "WEST": [
+                  40,
+                  44
+                ],
+                "NORTHWEST": [
+                  44,
+                  43
+                ],
+                "NORTHEAST": [
+                  43,
+                  21
+                ]
+              }
+            },
+            "[0, 2, -2]": {
+              "id": 15,
+              "resource": "BRICK",
+              "number": 5,
+              "nodes": "<recursion:dict>",
+              "edges": "<recursion:dict>"
+            },
+            "[1, 1, -2]": {
+              "id": 16,
+              "resource": "ORE",
+              "number": 12,
+              "nodes": {
+                "NORTH": 48,
+                "NORTHEAST": 49,
+                "SOUTHEAST": 22,
+                "SOUTH": 20,
+                "SOUTHWEST": 19,
+                "NORTHWEST": 46
+              },
+              "edges": {
+                "EAST": [
+                  49,
+                  22
+                ],
+                "SOUTHEAST": "<recursion:tuple>",
+                "SOUTHWEST": [
+                  19,
+                  20
+                ],
+                "WEST": [
+                  46,
+                  19
+                ],
+                "NORTHWEST": [
+                  46,
+                  48
+                ],
+                "NORTHEAST": [
+                  48,
+                  49
+                ]
+              }
+            },
+            "[2, 0, -2]": {
+              "id": 17,
+              "resource": "WOOD",
+              "number": 8,
+              "nodes": "<recursion:dict>",
+              "edges": "<recursion:dict>"
+            },
+            "[2, -1, -1]": {
+              "id": 18,
+              "resource": "WHEAT",
+              "number": 3,
+              "nodes": {
+                "NORTH": 52,
+                "NORTHEAST": 53,
+                "SOUTHEAST": 24,
+                "SOUTH": 7,
+                "SOUTHWEST": 6,
+                "NORTHWEST": 23
+              },
+              "edges": {
+                "EAST": [
+                  53,
+                  24
+                ],
+                "SOUTHEAST": "<recursion:tuple>",
+                "SOUTHWEST": [
+                  6,
+                  7
+                ],
+                "WEST": [
+                  23,
+                  6
+                ],
+                "NORTHWEST": [
+                  52,
+                  23
+                ],
+                "NORTHEAST": [
+                  52,
+                  53
+                ]
+              }
+            },
+            "[3, -3, 0]": {
+              "id": 0,
+              "resource": "WOOD",
+              "direction": "WEST",
+              "nodes": "<recursion:dict>",
+              "edges": "<recursion:dict>"
+            },
+            "[2, -3, 1]": {
+              "nodes": {
+                "NORTH": 26,
+                "NORTHEAST": 57,
+                "SOUTHEAST": 58,
+                "SOUTH": 59,
+                "SOUTHWEST": 28,
+                "NORTHWEST": 27
+              },
+              "edges": {
+                "EAST": "<recursion:tuple>",
+                "SOUTHEAST": [
+                  58,
+                  59
+                ],
+                "SOUTHWEST": [
+                  59,
+                  28
+                ],
+                "WEST": [
+                  27,
+                  28
+                ],
+                "NORTHWEST": [
+                  26,
+                  27
+                ],
+                "NORTHEAST": [
+                  57,
+                  26
+                ]
+              }
+            },
+            "[1, -3, 2]": {
+              "id": 1,
+              "resource": "WHEAT",
+              "direction": "NORTHWEST",
+              "nodes": "<recursion:dict>",
+              "edges": "<recursion:dict>"
+            },
+            "[0, -3, 3]": {
+              "nodes": "<recursion:dict>",
+              "edges": "<recursion:dict>"
+            },
+            "[-1, -2, 3]": {
+              "id": 2,
+              "resource": null,
+              "direction": "NORTHWEST",
+              "nodes": "<recursion:dict>",
+              "edges": "<recursion:dict>"
+            },
+            "[-2, -1, 3]": {
+              "nodes": {
+                "NORTH": 34,
+                "NORTHEAST": 33,
+                "SOUTHEAST": 66,
+                "SOUTH": 67,
+                "SOUTHWEST": 68,
+                "NORTHWEST": 35
+              },
+              "edges": {
+                "EAST": [
+                  66,
+                  33
+                ],
+                "SOUTHEAST": [
+                  66,
+                  67
+                ],
+                "SOUTHWEST": [
+                  67,
+                  68
+                ],
+                "WEST": [
+                  68,
+                  35
+                ],
+                "NORTHWEST": [
+                  34,
+                  35
+                ],
+                "NORTHEAST": [
+                  33,
+                  34
+                ]
+              }
+            },
+            "[-3, 0, 3]": {
+              "id": 3,
+              "resource": "BRICK",
+              "direction": "NORTHEAST",
+              "nodes": "<recursion:dict>",
+              "edges": "<recursion:dict>"
+            },
+            "[-3, 1, 2]": {
+              "nodes": {
+                "NORTH": 38,
+                "NORTHEAST": 37,
+                "SOUTHEAST": 36,
+                "SOUTH": 71,
+                "SOUTHWEST": 72,
+                "NORTHWEST": 73
+              },
+              "edges": {
+                "EAST": "<recursion:tuple>",
+                "SOUTHEAST": "<recursion:tuple>",
+                "SOUTHWEST": "<recursion:tuple>",
+                "WEST": [
+                  72,
+                  73
+                ],
+                "NORTHWEST": [
+                  73,
+                  38
+                ],
+                "NORTHEAST": [
+                  37,
+                  38
+                ]
+              }
+            },
+            "[-3, 2, 1]": {
+              "id": 4,
+              "resource": null,
+              "direction": "EAST",
+              "nodes": "<recursion:dict>",
+              "edges": "<recursion:dict>"
+            },
+            "[-3, 3, 0]": {
+              "nodes": {
+                "NORTH": 76,
+                "NORTHEAST": 42,
+                "SOUTHEAST": 41,
+                "SOUTH": 75,
+                "SOUTHWEST": 77,
+                "NORTHWEST": 78
+              },
+              "edges": {
+                "EAST": "<recursion:tuple>",
+                "SOUTHEAST": "<recursion:tuple>",
+                "SOUTHWEST": "<recursion:tuple>",
+                "WEST": [
+                  77,
+                  78
+                ],
+                "NORTHWEST": [
+                  78,
+                  76
+                ],
+                "NORTHEAST": [
+                  76,
+                  42
+                ]
+              }
+            },
+            "[-2, 3, -1]": {
+              "id": 5,
+              "resource": "SHEEP",
+              "direction": "EAST",
+              "nodes": "<recursion:dict>",
+              "edges": "<recursion:dict>"
+            },
+            "[-1, 3, -2]": {
+              "nodes": {
+                "NORTH": 81,
+                "NORTHEAST": 47,
+                "SOUTHEAST": 43,
+                "SOUTH": 44,
+                "SOUTHWEST": 79,
+                "NORTHWEST": 82
+              },
+              "edges": {
+                "EAST": [
+                  43,
+                  47
+                ],
+                "SOUTHEAST": "<recursion:tuple>",
+                "SOUTHWEST": "<recursion:tuple>",
+                "WEST": [
+                  79,
+                  82
+                ],
+                "NORTHWEST": [
+                  82,
+                  81
+                ],
+                "NORTHEAST": [
+                  81,
+                  47
+                ]
+              }
+            },
+            "[0, 3, -3]": {
+              "id": 6,
+              "resource": null,
+              "direction": "SOUTHEAST",
+              "nodes": "<recursion:dict>",
+              "edges": "<recursion:dict>"
+            },
+            "[1, 2, -3]": {
+              "nodes": {
+                "NORTH": 86,
+                "NORTHEAST": 87,
+                "SOUTHEAST": 48,
+                "SOUTH": 46,
+                "SOUTHWEST": 45,
+                "NORTHWEST": 84
+              },
+              "edges": {
+                "EAST": [
+                  87,
+                  48
+                ],
+                "SOUTHEAST": "<recursion:tuple>",
+                "SOUTHWEST": "<recursion:tuple>",
+                "WEST": [
+                  84,
+                  45
+                ],
+                "NORTHWEST": [
+                  84,
+                  86
+                ],
+                "NORTHEAST": [
+                  86,
+                  87
+                ]
+              }
+            },
+            "[2, 1, -3]": {
+              "id": 7,
+              "resource": "ORE",
+              "direction": "SOUTHWEST",
+              "nodes": "<recursion:dict>",
+              "edges": "<recursion:dict>"
+            },
+            "[3, 0, -3]": {
+              "nodes": {
+                "NORTH": 90,
+                "NORTHEAST": 91,
+                "SOUTHEAST": 92,
+                "SOUTH": 51,
+                "SOUTHWEST": 50,
+                "NORTHWEST": 89
+              },
+              "edges": {
+                "EAST": [
+                  91,
+                  92
+                ],
+                "SOUTHEAST": "<recursion:tuple>",
+                "SOUTHWEST": "<recursion:tuple>",
+                "WEST": [
+                  89,
+                  50
+                ],
+                "NORTHWEST": [
+                  89,
+                  90
+                ],
+                "NORTHEAST": [
+                  90,
+                  91
+                ]
+              }
+            },
+            "[3, -1, -2]": {
+              "id": 8,
+              "resource": null,
+              "direction": "SOUTHWEST",
+              "nodes": "<recursion:dict>",
+              "edges": "<recursion:dict>"
+            },
+            "[3, -2, -1]": {
+              "nodes": {
+                "NORTH": 94,
+                "NORTHEAST": 95,
+                "SOUTHEAST": 54,
+                "SOUTH": 25,
+                "SOUTHWEST": 24,
+                "NORTHWEST": 53
+              },
+              "edges": {
+                "EAST": [
+                  95,
+                  54
+                ],
+                "SOUTHEAST": "<recursion:tuple>",
+                "SOUTHWEST": "<recursion:tuple>",
+                "WEST": [
+                  53,
+                  24
+                ],
+                "NORTHWEST": [
+                  94,
+                  53
+                ],
+                "NORTHEAST": [
+                  94,
+                  95
+                ]
+              }
+            }
+          },
+          "land_tiles": {
+            "<recursion:tuple>": "<recursion:LandTile>"
+          },
+          "port_nodes": {
+            "WOOD": [
+              25,
+              26
+            ],
+            "WHEAT": [
+              28,
+              29
+            ],
+            "None": [
+              32,
+              33,
+              38,
+              39,
+              45,
+              47,
+              52,
+              53
+            ],
+            "BRICK": [
+              35,
+              36
+            ],
+            "SHEEP": [
+              40,
+              44
+            ],
+            "ORE": [
+              48,
+              49
+            ]
+          },
+          "land_nodes": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            28,
+            29,
+            30,
+            31,
+            32,
+            33,
+            34,
+            35,
+            36,
+            37,
+            38,
+            39,
+            40,
+            41,
+            42,
+            43,
+            44,
+            45,
+            46,
+            47,
+            48,
+            49,
+            50,
+            51,
+            52,
+            53
+          ],
+          "adjacent_tiles": {
+            "0": [
+              "<recursion:LandTile>",
+              "<recursion:LandTile>",
+              "<recursion:LandTile>"
+            ],
+            "1": [
+              "<recursion:LandTile>",
+              "<recursion:LandTile>",
+              "<recursion:LandTile>"
+            ],
+            "2": [
+              "<recursion:LandTile>",
+              "<recursion:LandTile>",
+              "<recursion:LandTile>"
+            ],
+            "3": [
+              "<recursion:LandTile>",
+              "<recursion:LandTile>",
+              "<recursion:LandTile>"
+            ],
+            "4": [
+              "<recursion:LandTile>",
+              "<recursion:LandTile>",
+              "<recursion:LandTile>"
+            ],
+            "5": [
+              "<recursion:LandTile>",
+              "<recursion:LandTile>",
+              "<recursion:LandTile>"
+            ],
+            "6": [
+              "<recursion:LandTile>",
+              "<recursion:LandTile>",
+              "<recursion:LandTile>"
+            ],
+            "7": [
+              "<recursion:LandTile>",
+              "<recursion:LandTile>",
+              "<recursion:LandTile>"
+            ],
+            "8": [
+              "<recursion:LandTile>",
+              "<recursion:LandTile>",
+              "<recursion:LandTile>"
+            ],
+            "9": [
+              "<recursion:LandTile>",
+              "<recursion:LandTile>",
+              "<recursion:LandTile>"
+            ],
+            "10": [
+              "<recursion:LandTile>",
+              "<recursion:LandTile>",
+              "<recursion:LandTile>"
+            ],
+            "11": [
+              "<recursion:LandTile>",
+              "<recursion:LandTile>",
+              "<recursion:LandTile>"
+            ],
+            "12": [
+              "<recursion:LandTile>",
+              "<recursion:LandTile>",
+              "<recursion:LandTile>"
+            ],
+            "13": [
+              "<recursion:LandTile>",
+              "<recursion:LandTile>",
+              "<recursion:LandTile>"
+            ],
+            "14": [
+              "<recursion:LandTile>",
+              "<recursion:LandTile>",
+              "<recursion:LandTile>"
+            ],
+            "15": [
+              "<recursion:LandTile>",
+              "<recursion:LandTile>",
+              "<recursion:LandTile>"
+            ],
+            "16": [
+              "<recursion:LandTile>",
+              "<recursion:LandTile>",
+              "<recursion:LandTile>"
+            ],
+            "17": [
+              "<recursion:LandTile>",
+              "<recursion:LandTile>",
+              "<recursion:LandTile>"
+            ],
+            "18": [
+              "<recursion:LandTile>",
+              "<recursion:LandTile>",
+              "<recursion:LandTile>"
+            ],
+            "19": [
+              "<recursion:LandTile>",
+              "<recursion:LandTile>",
+              "<recursion:LandTile>"
+            ],
+            "20": [
+              "<recursion:LandTile>",
+              "<recursion:LandTile>",
+              "<recursion:LandTile>"
+            ],
+            "21": [
+              "<recursion:LandTile>",
+              "<recursion:LandTile>",
+              "<recursion:LandTile>"
+            ],
+            "22": [
+              "<recursion:LandTile>",
+              "<recursion:LandTile>",
+              "<recursion:LandTile>"
+            ],
+            "23": [
+              "<recursion:LandTile>",
+              "<recursion:LandTile>",
+              "<recursion:LandTile>"
+            ],
+            "24": [
+              "<recursion:LandTile>",
+              "<recursion:LandTile>"
+            ],
+            "25": [
+              "<recursion:LandTile>"
+            ],
+            "26": [
+              "<recursion:LandTile>"
+            ],
+            "27": [
+              "<recursion:LandTile>",
+              "<recursion:LandTile>"
+            ],
+            "28": [
+              "<recursion:LandTile>"
+            ],
+            "29": [
+              "<recursion:LandTile>",
+              "<recursion:LandTile>"
+            ],
+            "30": [
+              "<recursion:LandTile>"
+            ],
+            "31": [
+              "<recursion:LandTile>"
+            ],
+            "32": [
+              "<recursion:LandTile>",
+              "<recursion:LandTile>"
+            ],
+            "33": [
+              "<recursion:LandTile>"
+            ],
+            "34": [
+              "<recursion:LandTile>",
+              "<recursion:LandTile>"
+            ],
+            "35": [
+              "<recursion:LandTile>"
+            ],
+            "36": [
+              "<recursion:LandTile>"
+            ],
+            "37": [
+              "<recursion:LandTile>",
+              "<recursion:LandTile>"
+            ],
+            "38": [
+              "<recursion:LandTile>"
+            ],
+            "39": [
+              "<recursion:LandTile>",
+              "<recursion:LandTile>"
+            ],
+            "40": [
+              "<recursion:LandTile>",
+              "<recursion:LandTile>"
+            ],
+            "41": [
+              "<recursion:LandTile>"
+            ],
+            "42": [
+              "<recursion:LandTile>"
+            ],
+            "43": [
+              "<recursion:LandTile>",
+              "<recursion:LandTile>"
+            ],
+            "44": [
+              "<recursion:LandTile>"
+            ],
+            "45": [
+              "<recursion:LandTile>"
+            ],
+            "46": [
+              "<recursion:LandTile>",
+              "<recursion:LandTile>"
+            ],
+            "47": [
+              "<recursion:LandTile>"
+            ],
+            "48": [
+              "<recursion:LandTile>"
+            ],
+            "49": [
+              "<recursion:LandTile>",
+              "<recursion:LandTile>"
+            ],
+            "50": [
+              "<recursion:LandTile>"
+            ],
+            "51": [
+              "<recursion:LandTile>"
+            ],
+            "52": [
+              "<recursion:LandTile>",
+              "<recursion:LandTile>"
+            ],
+            "53": [
+              "<recursion:LandTile>"
+            ]
+          },
+          "node_production": {
+            "0": {
+              "WOOD": 0.1388888888888889,
+              "WHEAT": 0.05555555555555555,
+              "BRICK": 0.08333333333333333
+            },
+            "1": {
+              "WOOD": 0.1388888888888889,
+              "ORE": 0.1111111111111111,
+              "BRICK": 0.08333333333333333
+            },
+            "2": {
+              "WOOD": 0.1388888888888889,
+              "ORE": 0.1111111111111111,
+              "SHEEP": 0.027777777777777776
+            },
+            "3": {
+              "WOOD": 0.1388888888888889,
+              "SHEEP": 0.16666666666666669
+            },
+            "4": {
+              "WOOD": 0.1388888888888889,
+              "SHEEP": 0.1388888888888889,
+              "BRICK": 0.1111111111111111
+            },
+            "5": {
+              "WOOD": 0.1388888888888889,
+              "BRICK": 0.1111111111111111,
+              "WHEAT": 0.05555555555555555
+            },
+            "6": {
+              "ORE": 0.1111111111111111,
+              "BRICK": 0.08333333333333333,
+              "WHEAT": 0.05555555555555555
+            },
+            "7": {
+              "ORE": 0.1111111111111111,
+              "WOOD": 0.1111111111111111,
+              "WHEAT": 0.05555555555555555
+            },
+            "8": {
+              "ORE": 0.1111111111111111,
+              "WOOD": 0.1111111111111111
+            },
+            "9": {
+              "ORE": 0.1111111111111111,
+              "SHEEP": 0.027777777777777776
+            },
+            "10": {
+              "SHEEP": 0.027777777777777776,
+              "WHEAT": 0.08333333333333333
+            },
+            "11": {
+              "SHEEP": 0.16666666666666669,
+              "WHEAT": 0.08333333333333333
+            },
+            "12": {
+              "SHEEP": 0.3055555555555556
+            },
+            "13": {
+              "SHEEP": 0.2777777777777778,
+              "ORE": 0.05555555555555555
+            },
+            "14": {
+              "SHEEP": 0.19444444444444445,
+              "ORE": 0.05555555555555555
+            },
+            "15": {
+              "SHEEP": 0.19444444444444445,
+              "BRICK": 0.1111111111111111
+            },
+            "16": {
+              "BRICK": 0.1111111111111111,
+              "WHEAT": 0.1388888888888889
+            },
+            "17": {
+              "BRICK": 0.1111111111111111,
+              "SHEEP": 0.05555555555555555,
+              "WOOD": 0.08333333333333333
+            },
+            "18": {
+              "BRICK": 0.1111111111111111,
+              "WOOD": 0.08333333333333333,
+              "WHEAT": 0.08333333333333333
+            },
+            "19": {
+              "WHEAT": 0.05555555555555555,
+              "BRICK": 0.1111111111111111,
+              "ORE": 0.027777777777777776
+            },
+            "20": {
+              "WHEAT": 0.05555555555555555,
+              "BRICK": 0.08333333333333333,
+              "ORE": 0.027777777777777776
+            },
+            "21": {
+              "WHEAT": 0.1388888888888889,
+              "BRICK": 0.1111111111111111
+            },
+            "22": {
+              "BRICK": 0.08333333333333333,
+              "ORE": 0.027777777777777776,
+              "WOOD": 0.1388888888888889
+            },
+            "23": {
+              "BRICK": 0.08333333333333333,
+              "WOOD": 0.1388888888888889,
+              "WHEAT": 0.05555555555555555
+            },
+            "24": {
+              "WOOD": 0.1111111111111111,
+              "WHEAT": 0.05555555555555555
+            },
+            "25": {
+              "WOOD": 0.1111111111111111
+            },
+            "26": {
+              "WOOD": 0.1111111111111111
+            },
+            "27": {
+              "WOOD": 0.1111111111111111
+            },
+            "28": {},
+            "29": {
+              "WHEAT": 0.08333333333333333
+            },
+            "30": {
+              "WHEAT": 0.08333333333333333
+            },
+            "31": {
+              "WHEAT": 0.08333333333333333
+            },
+            "32": {
+              "WHEAT": 0.08333333333333333,
+              "SHEEP": 0.1388888888888889
+            },
+            "33": {
+              "SHEEP": 0.1388888888888889
+            },
+            "34": {
+              "SHEEP": 0.1388888888888889,
+              "ORE": 0.05555555555555555
+            },
+            "35": {
+              "ORE": 0.05555555555555555
+            },
+            "36": {
+              "ORE": 0.05555555555555555
+            },
+            "37": {
+              "ORE": 0.05555555555555555,
+              "SHEEP": 0.05555555555555555
+            },
+            "38": {
+              "SHEEP": 0.05555555555555555
+            },
+            "39": {
+              "SHEEP": 0.05555555555555555,
+              "WOOD": 0.08333333333333333
+            },
+            "40": {
+              "WOOD": 0.08333333333333333,
+              "WHEAT": 0.08333333333333333
+            },
+            "41": {
+              "WOOD": 0.08333333333333333
+            },
+            "42": {
+              "WOOD": 0.08333333333333333
+            },
+            "43": {
+              "WHEAT": 0.08333333333333333,
+              "BRICK": 0.1111111111111111
+            },
+            "44": {
+              "WHEAT": 0.08333333333333333
+            },
+            "45": {
+              "BRICK": 0.1111111111111111
+            },
+            "46": {
+              "BRICK": 0.1111111111111111,
+              "ORE": 0.027777777777777776
+            },
+            "47": {
+              "BRICK": 0.1111111111111111
+            },
+            "48": {
+              "ORE": 0.027777777777777776
+            },
+            "49": {
+              "ORE": 0.027777777777777776,
+              "WOOD": 0.1388888888888889
+            },
+            "50": {
+              "WOOD": 0.1388888888888889
+            },
+            "51": {
+              "WOOD": 0.1388888888888889
+            },
+            "52": {
+              "WOOD": 0.1388888888888889,
+              "WHEAT": 0.05555555555555555
+            },
+            "53": {
+              "WHEAT": 0.05555555555555555
+            }
+          },
+          "tiles_by_id": {
+            "0": "<recursion:LandTile>",
+            "1": "<recursion:LandTile>",
+            "2": "<recursion:LandTile>",
+            "3": "<recursion:LandTile>",
+            "4": "<recursion:LandTile>",
+            "5": "<recursion:LandTile>",
+            "6": "<recursion:LandTile>",
+            "7": "<recursion:LandTile>",
+            "8": "<recursion:LandTile>",
+            "9": "<recursion:LandTile>",
+            "10": "<recursion:LandTile>",
+            "11": "<recursion:LandTile>",
+            "12": "<recursion:LandTile>",
+            "13": "<recursion:LandTile>",
+            "14": "<recursion:LandTile>",
+            "15": "<recursion:LandTile>",
+            "16": "<recursion:LandTile>",
+            "17": "<recursion:LandTile>",
+            "18": "<recursion:LandTile>"
+          },
+          "ports_by_id": {
+            "0": "<recursion:Port>",
+            "1": "<recursion:Port>",
+            "2": "<recursion:Port>",
+            "3": "<recursion:Port>",
+            "4": "<recursion:Port>",
+            "5": "<recursion:Port>",
+            "6": "<recursion:Port>",
+            "7": "<recursion:Port>",
+            "8": "<recursion:Port>"
+          }
+        },
+        "buildings": {
+          "4": [
+            "BLUE",
+            "SETTLEMENT"
+          ],
+          "1": [
+            "RED",
+            "SETTLEMENT"
+          ],
+          "11": [
+            "RED",
+            "SETTLEMENT"
+          ],
+          "7": [
+            "BLUE",
+            "SETTLEMENT"
+          ],
+          "23": [
+            "BLUE",
+            "SETTLEMENT"
+          ]
+        },
+        "roads": {
+          "[3, 4]": "BLUE",
+          "[4, 3]": "BLUE",
+          "[1, 6]": "RED",
+          "[6, 1]": "RED",
+          "[10, 11]": "RED",
+          "[11, 10]": "RED",
+          "[6, 7]": "BLUE",
+          "[7, 6]": "BLUE",
+          "[6, 23]": "BLUE",
+          "[23, 6]": "BLUE",
+          "[4, 15]": "BLUE",
+          "[15, 4]": "BLUE",
+          "[11, 12]": "RED",
+          "[12, 11]": "RED"
+        },
+        "connected_components": {
+          "BLUE": [
+            [
+              3,
+              4,
+              15
+            ],
+            [
+              23,
+              6,
+              7
+            ]
+          ],
+          "RED": [
+            [
+              1,
+              6
+            ],
+            [
+              10,
+              11,
+              12
+            ]
+          ]
+        },
+        "board_buildable_ids": [
+          9,
+          13,
+          14,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44,
+          45,
+          46,
+          47,
+          48,
+          49,
+          50,
+          51,
+          53
+        ],
+        "road_lengths": {
+          "BLUE": 2,
+          "RED": 2
+        },
+        "road_color": null,
+        "road_length": 0,
+        "robber_coordinate": "<recursion:tuple>"
+      },
+      "discard_limit": 7,
+      "player_state": {
+        "P0_VICTORY_POINTS": 3,
+        "P0_ROADS_AVAILABLE": 11,
+        "P0_SETTLEMENTS_AVAILABLE": 2,
+        "P0_CITIES_AVAILABLE": 4,
+        "P0_HAS_ROAD": false,
+        "P0_HAS_ARMY": false,
+        "P0_HAS_ROLLED": true,
+        "P0_HAS_PLAYED_DEVELOPMENT_CARD_IN_TURN": false,
+        "P0_ACTUAL_VICTORY_POINTS": 3,
+        "P0_LONGEST_ROAD_LENGTH": 2,
+        "P0_KNIGHT_OWNED_AT_START": false,
+        "P0_MONOPOLY_OWNED_AT_START": false,
+        "P0_YEAR_OF_PLENTY_OWNED_AT_START": false,
+        "P0_ROAD_BUILDING_OWNED_AT_START": false,
+        "P0_WOOD_IN_HAND": 0,
+        "P0_BRICK_IN_HAND": 0,
+        "P0_SHEEP_IN_HAND": 2,
+        "P0_WHEAT_IN_HAND": 0,
+        "P0_ORE_IN_HAND": 1,
+        "P0_KNIGHT_IN_HAND": 0,
+        "P0_PLAYED_KNIGHT": 0,
+        "P0_YEAR_OF_PLENTY_IN_HAND": 0,
+        "P0_PLAYED_YEAR_OF_PLENTY": 0,
+        "P0_MONOPOLY_IN_HAND": 0,
+        "P0_PLAYED_MONOPOLY": 0,
+        "P0_ROAD_BUILDING_IN_HAND": 0,
+        "P0_PLAYED_ROAD_BUILDING": 0,
+        "P0_VICTORY_POINT_IN_HAND": 0,
+        "P0_PLAYED_VICTORY_POINT": 0,
+        "P1_VICTORY_POINTS": 2,
+        "P1_ROADS_AVAILABLE": 12,
+        "P1_SETTLEMENTS_AVAILABLE": 3,
+        "P1_CITIES_AVAILABLE": 4,
+        "P1_HAS_ROAD": false,
+        "P1_HAS_ARMY": false,
+        "P1_HAS_ROLLED": false,
+        "P1_HAS_PLAYED_DEVELOPMENT_CARD_IN_TURN": false,
+        "P1_ACTUAL_VICTORY_POINTS": 2,
+        "P1_LONGEST_ROAD_LENGTH": 2,
+        "P1_KNIGHT_OWNED_AT_START": false,
+        "P1_MONOPOLY_OWNED_AT_START": false,
+        "P1_YEAR_OF_PLENTY_OWNED_AT_START": false,
+        "P1_ROAD_BUILDING_OWNED_AT_START": false,
+        "P1_WOOD_IN_HAND": 2,
+        "P1_BRICK_IN_HAND": 0,
+        "P1_SHEEP_IN_HAND": 3,
+        "P1_WHEAT_IN_HAND": 1,
+        "P1_ORE_IN_HAND": 0,
+        "P1_KNIGHT_IN_HAND": 0,
+        "P1_PLAYED_KNIGHT": 0,
+        "P1_YEAR_OF_PLENTY_IN_HAND": 0,
+        "P1_PLAYED_YEAR_OF_PLENTY": 0,
+        "P1_MONOPOLY_IN_HAND": 0,
+        "P1_PLAYED_MONOPOLY": 0,
+        "P1_ROAD_BUILDING_IN_HAND": 0,
+        "P1_PLAYED_ROAD_BUILDING": 0,
+        "P1_VICTORY_POINT_IN_HAND": 0,
+        "P1_PLAYED_VICTORY_POINT": 0
+      },
+      "color_to_index": {
+        "BLUE": 0,
+        "RED": 1
+      },
+      "resource_freqdeck": [
+        17,
+        19,
+        14,
+        18,
+        18
+      ],
+      "development_listdeck": [
+        "KNIGHT",
+        "YEAR_OF_PLENTY",
+        "KNIGHT",
+        "VICTORY_POINT",
+        "ROAD_BUILDING",
+        "MONOPOLY",
+        "VICTORY_POINT",
+        "KNIGHT",
+        "KNIGHT",
+        "KNIGHT",
+        "MONOPOLY",
+        "VICTORY_POINT",
+        "VICTORY_POINT",
+        "ROAD_BUILDING",
+        "KNIGHT",
+        "YEAR_OF_PLENTY",
+        "KNIGHT",
+        "KNIGHT",
+        "KNIGHT",
+        "KNIGHT",
+        "VICTORY_POINT",
+        "KNIGHT",
+        "KNIGHT",
+        "KNIGHT",
+        "KNIGHT"
+      ],
+      "buildings_by_color": {
+        "RED": {
+          "SETTLEMENT": [
+            1,
+            11
+          ],
+          "ROAD": [
+            "<recursion:tuple>",
+            "<recursion:tuple>",
+            "<recursion:tuple>"
+          ],
+          "CITY": []
+        },
+        "BLUE": {
+          "SETTLEMENT": [
+            4,
+            7,
+            23
+          ],
+          "ROAD": [
+            "<recursion:tuple>",
+            "<recursion:tuple>",
+            "<recursion:tuple>",
+            "<recursion:tuple>"
+          ]
+        }
+      },
+      "actions": [
+        [
+          "BLUE",
+          "BUILD_SETTLEMENT",
+          4
+        ],
+        [
+          "BLUE",
+          "BUILD_ROAD",
+          "<recursion:tuple>"
+        ],
+        [
+          "RED",
+          "BUILD_SETTLEMENT",
+          1
+        ],
+        [
+          "RED",
+          "BUILD_ROAD",
+          "<recursion:tuple>"
+        ],
+        [
+          "RED",
+          "BUILD_SETTLEMENT",
+          11
+        ],
+        [
+          "RED",
+          "BUILD_ROAD",
+          "<recursion:tuple>"
+        ],
+        [
+          "BLUE",
+          "BUILD_SETTLEMENT",
+          7
+        ],
+        [
+          "BLUE",
+          "BUILD_ROAD",
+          "<recursion:tuple>"
+        ],
+        [
+          "BLUE",
+          "ROLL",
+          [
+            3,
+            4
+          ]
+        ],
+        [
+          "BLUE",
+          "MOVE_ROBBER",
+          [
+            "<recursion:tuple>",
+            "RED",
+            "SHEEP"
+          ]
+        ],
+        [
+          "BLUE",
+          "END_TURN",
+          null
+        ],
+        [
+          "RED",
+          "ROLL",
+          [
+            6,
+            2
+          ]
+        ],
+        [
+          "RED",
+          "END_TURN",
+          null
+        ],
+        [
+          "BLUE",
+          "ROLL",
+          [
+            6,
+            6
+          ]
+        ],
+        [
+          "BLUE",
+          "END_TURN",
+          null
+        ],
+        [
+          "RED",
+          "ROLL",
+          [
+            5,
+            3
+          ]
+        ],
+        [
+          "RED",
+          "END_TURN",
+          null
+        ],
+        [
+          "BLUE",
+          "ROLL",
+          [
+            2,
+            4
+          ]
+        ],
+        [
+          "BLUE",
+          "END_TURN",
+          null
+        ],
+        [
+          "RED",
+          "ROLL",
+          [
+            6,
+            2
+          ]
+        ],
+        [
+          "RED",
+          "END_TURN",
+          null
+        ],
+        [
+          "BLUE",
+          "ROLL",
+          [
+            6,
+            4
+          ]
+        ],
+        [
+          "BLUE",
+          "END_TURN",
+          null
+        ],
+        [
+          "RED",
+          "ROLL",
+          [
+            6,
+            4
+          ]
+        ],
+        [
+          "RED",
+          "END_TURN",
+          null
+        ],
+        [
+          "BLUE",
+          "ROLL",
+          [
+            1,
+            6
+          ]
+        ],
+        [
+          "BLUE",
+          "MOVE_ROBBER",
+          [
+            "<recursion:tuple>",
+            "RED",
+            "SHEEP"
+          ]
+        ],
+        [
+          "BLUE",
+          "END_TURN",
+          null
+        ],
+        [
+          "RED",
+          "ROLL",
+          [
+            3,
+            2
+          ]
+        ],
+        [
+          "RED",
+          "END_TURN",
+          null
+        ],
+        [
+          "BLUE",
+          "ROLL",
+          [
+            4,
+            4
+          ]
+        ],
+        [
+          "BLUE",
+          "BUILD_ROAD",
+          "<recursion:tuple>"
+        ],
+        [
+          "BLUE",
+          "END_TURN",
+          null
+        ],
+        [
+          "RED",
+          "ROLL",
+          [
+            4,
+            2
+          ]
+        ],
+        [
+          "RED",
+          "END_TURN",
+          null
+        ],
+        [
+          "BLUE",
+          "ROLL",
+          [
+            5,
+            2
+          ]
+        ],
+        [
+          "BLUE",
+          "MOVE_ROBBER",
+          [
+            "<recursion:tuple>",
+            "RED",
+            "WOOD"
+          ]
+        ],
+        [
+          "BLUE",
+          "MARITIME_TRADE",
+          [
+            "SHEEP",
+            "SHEEP",
+            "SHEEP",
+            "SHEEP",
+            "BRICK"
+          ]
+        ],
+        [
+          "BLUE",
+          "BUILD_ROAD",
+          "<recursion:tuple>"
+        ],
+        [
+          "BLUE",
+          "END_TURN",
+          null
+        ],
+        [
+          "RED",
+          "ROLL",
+          [
+            4,
+            2
+          ]
+        ],
+        [
+          "RED",
+          "END_TURN",
+          null
+        ],
+        [
+          "BLUE",
+          "ROLL",
+          [
+            1,
+            1
+          ]
+        ],
+        [
+          "BLUE",
+          "END_TURN",
+          null
+        ],
+        [
+          "RED",
+          "ROLL",
+          [
+            4,
+            2
+          ]
+        ],
+        [
+          "RED",
+          "MARITIME_TRADE",
+          [
+            "SHEEP",
+            "SHEEP",
+            "SHEEP",
+            "SHEEP",
+            "WOOD"
+          ]
+        ],
+        [
+          "RED",
+          "END_TURN",
+          null
+        ],
+        [
+          "BLUE",
+          "ROLL",
+          [
+            4,
+            2
+          ]
+        ],
+        [
+          "BLUE",
+          "END_TURN",
+          null
+        ],
+        [
+          "RED",
+          "ROLL",
+          [
+            3,
+            4
+          ]
+        ],
+        [
+          "RED",
+          "MOVE_ROBBER",
+          [
+            "<recursion:tuple>",
+            "BLUE",
+            "WOOD"
+          ]
+        ],
+        [
+          "RED",
+          "END_TURN",
+          null
+        ],
+        [
+          "BLUE",
+          "ROLL",
+          [
+            4,
+            1
+          ]
+        ],
+        [
+          "BLUE",
+          "END_TURN",
+          null
+        ],
+        [
+          "RED",
+          "ROLL",
+          [
+            5,
+            5
+          ]
+        ],
+        [
+          "RED",
+          "MARITIME_TRADE",
+          [
+            "WHEAT",
+            "WHEAT",
+            "WHEAT",
+            "WHEAT",
+            "BRICK"
+          ]
+        ],
+        [
+          "RED",
+          "BUILD_ROAD",
+          "<recursion:tuple>"
+        ],
+        [
+          "RED",
+          "END_TURN",
+          null
+        ],
+        [
+          "BLUE",
+          "ROLL",
+          [
+            5,
+            6
+          ]
+        ],
+        [
+          "BLUE",
+          "END_TURN",
+          null
+        ],
+        [
+          "RED",
+          "ROLL",
+          [
+            2,
+            6
+          ]
+        ],
+        [
+          "RED",
+          "END_TURN",
+          null
+        ],
+        [
+          "BLUE",
+          "ROLL",
+          [
+            6,
+            4
+          ]
+        ],
+        [
+          "BLUE",
+          "BUILD_SETTLEMENT",
+          23
+        ],
+        [
+          "BLUE",
+          "END_TURN",
+          null
+        ],
+        [
+          "RED",
+          "ROLL",
+          [
+            5,
+            1
+          ]
+        ],
+        [
+          "RED",
+          "END_TURN",
+          null
+        ],
+        [
+          "BLUE",
+          "ROLL",
+          [
+            6,
+            6
+          ]
+        ]
+      ],
+      "num_turns": 26,
+      "current_player_index": 0,
+      "current_turn_index": 0,
+      "current_prompt": "PLAY_TURN",
+      "is_initial_build_phase": false,
+      "is_discarding": false,
+      "is_moving_knight": true,
+      "is_road_building": false,
+      "free_roads_available": 0,
+      "is_resolving_trade": false,
+      "current_trade": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "acceptees": [
+        false,
+        false
+      ],
+      "playable_actions": [
+        [
+          "BLUE",
+          "END_TURN",
+          null
+        ]
+      ]
+    }
+  }
+}

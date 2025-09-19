@@ -1,0 +1,31 @@
+Traceback (most recent call last):
+  File "/Users/nik/miniconda3/envs/strategy-game-agents/bin/catanatron-play", line 33, in <module>
+    sys.exit(load_entry_point('catanatron-experimental', 'console_scripts', 'catanatron-play')())
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nik/miniconda3/envs/strategy-game-agents/bin/catanatron-play", line 25, in importlib_load_entry_point
+    return next(matches).load()
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nik/miniconda3/envs/strategy-game-agents/lib/python3.11/importlib/metadata/__init__.py", line 202, in load
+    module = import_module(match.group('module'))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nik/miniconda3/envs/strategy-game-agents/lib/python3.11/importlib/__init__.py", line 126, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1126, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+  File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 940, in exec_module
+  File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+  File "/Users/nik/Library/Mobile Documents/com~apple~CloudDocs/Develop/NLP/strategy-game-agents/catanatron/catanatron_experimental/catanatron_experimental/__init__.py", line 2, in <module>
+    from catanatron_experimental.cli.cli_players import (
+  File "/Users/nik/Library/Mobile Documents/com~apple~CloudDocs/Develop/NLP/strategy-game-agents/catanatron/catanatron_experimental/catanatron_experimental/cli/cli_players.py", line 34, in <module>
+    from agents.agentEvolver_v2.foo_player import FooPlayer as AgentEvolverFooPlayerV2
+  File "/Users/nik/Library/Mobile Documents/com~apple~CloudDocs/Develop/NLP/strategy-game-agents/agents/agentEvolver_v2/foo_player.py", line 302
+    This is the current adapters.py file (YOU MUST USE THIS INTERFACE)
+                ^^^^^^^
+SyntaxError: invalid syntax
