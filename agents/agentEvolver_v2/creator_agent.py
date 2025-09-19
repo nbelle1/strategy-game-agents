@@ -48,6 +48,8 @@ PRINT_LLM = "LOG" # "NONE", "LOG", "LOG_FULL"
 # Coder LLM
 CODER_LLM_BACKEND = "mistral"
 CODER_LLM_MODEL = "codestral-latest"
+# CODER_LLM_BACKEND = "openai"
+# CODER_LLM_MODEL = "gpt-5-mini"
 
 # Analyzer LLM
 ANALYZER_LLM_BACKEND = "mistral"
@@ -64,6 +66,8 @@ STRATEGIZER_LLM_MODEL = "mistral-large-latest"
 # Meta LLM
 META_LLM_BACKEND = "mistral"
 META_LLM_MODEL = "mistral-large-latest"
+# META_LLM_BACKEND = "openai"
+# META_LLM_MODEL = "gpt-5-mini"
 
 FOO_MAX_BYTES   = 64_000      # context-friendly cap
 CREATOR_LANGRAPH_RECURSION_LIMIT = 200  # max depth of graph recursion
@@ -74,8 +78,11 @@ MAX_META_MESSAGES_GIVEN_TO_CODER = 6
 MAX_MESSAGES_IN_AGENT = 20
 
 # Catanatron
-FOO_RUN_COMMAND = "catanatron-play --players=AB,AE2 --num=10 --config-map=MINI --config-vps-to-win=10"
+FOO_RUN_COMMAND = "catanatron-play --players=AB,AE2 --num=30 --config-map=MINI --config-vps-to-win=10"
 
+# Adapter
+ADAPTER_TARGET_FILENAME = "adapters.py"
+ADAPTER_TARGET_FILE = Path(__file__).parent / ADAPTER_TARGET_FILENAME
 
 # CONSTANTS
 LOCAL_CATANATRON_BASE_DIR = (Path(__file__).parent.parent.parent / "catanatron").resolve()
@@ -392,17 +399,18 @@ class CreatorAgent():
             )
         )
 
-        tools = [read_local_file, think_tool]
+        tools = [read_local_file, think_tool, read_adapter]
 
         performance_msg = HumanMessage(content=f"This is the current performance history\n\n{read_full_performance_history()}")
         game_output_msg = HumanMessage(content=f"This is the current game_output.txt file\n\n{read_game_output_file()}")
         game_results_msg = HumanMessage(content=f"This is the current game_results json file\n\n{read_game_results_file()}")
         current_foo_msg = HumanMessage(content=f"This is the current foo_player.py file\n\n{read_foo()}")
+        adapter_msg = HumanMessage(content=f"This is the current adapters.py file\n\n{read_adapter()}")
 
 
         # Call the LLM with the provided tools
         #base_len = len(state["analyzer_messages"][-MAX_MESSAGES_IN_AGENT:])
-        msgs = state["analyzer_messages"][-MAX_MESSAGES_IN_AGENT:] + [performance_msg, game_output_msg, game_results_msg, current_foo_msg, state["recent_meta_message"]]
+        msgs = state["analyzer_messages"][-MAX_MESSAGES_IN_AGENT:] + [performance_msg, game_output_msg, game_results_msg, current_foo_msg, adapter_msg, state["recent_meta_message"]]
         log_path = self.agent_log_input(ANALYZER_NAME, msgs)
         output = self._tool_calling_state_graph(self.analyzer_llm, sys_msg, msgs, tools)
         self.agent_log_output(ANALYZER_NAME, output["messages"][len(msgs):], log_path)
@@ -436,15 +444,16 @@ class CreatorAgent():
             )
         )
 
-        tools = [read_local_file, read_game_results_file, read_older_foo_file, web_search_tool_call, think_tool]
+        tools = [read_local_file, read_game_results_file, read_older_foo_file, web_search_tool_call, think_tool, read_adapter]
 
         # Call the LLM with the provided tools
         #base_len = len(state["strategizer_messages"][-MAX_MESSAGES_IN_AGENT:])
 
         performance_msg = HumanMessage(content=f"This is the current performance history\n\n{read_full_performance_history()}")
         current_foo_msg = HumanMessage(content=f"This is the current foo_player.py file\n\n{read_foo()}")
+        adapter_msg = HumanMessage(content=f"This is the current adapters.py file\n\n{read_adapter()}")
 
-        msgs = state["strategizer_messages"][-MAX_MESSAGES_IN_AGENT:] + [performance_msg, current_foo_msg, state["recent_meta_message"]]
+        msgs = state["strategizer_messages"][-MAX_MESSAGES_IN_AGENT:] + [performance_msg, current_foo_msg, adapter_msg, state["recent_meta_message"]]
         log_path = self.agent_log_input(STRATEGIZER_NAME, msgs)
         output = self._tool_calling_state_graph(self.strategizer_llm, sys_msg, msgs, tools)
         self.agent_log_output(STRATEGIZER_NAME, output["messages"][len(msgs):], log_path)
@@ -478,7 +487,7 @@ class CreatorAgent():
             )
         )
 
-        tools = [read_local_file, web_search_tool_call, think_tool]
+        tools = [read_local_file, web_search_tool_call, think_tool, read_adapter]
 
         catanatron_files_msg = HumanMessage(content=f"This is the list of catanatron files\n\n{list_catanatron_files()}")
         # Call the LLM with the provided tools (Add 1 because no need to summarize catanatron files)
@@ -517,7 +526,7 @@ class CreatorAgent():
             )
         )
 
-        tools = [write_foo, replace_code_in_foo, think_tool]
+        tools = [write_foo, replace_code_in_foo, think_tool, read_adapter]
 
         # # Give Coder The Last Number of Meta Messages
         if len(state["meta_messages"]) > MAX_META_MESSAGES_GIVEN_TO_CODER:
@@ -527,8 +536,10 @@ class CreatorAgent():
 
         # Call the LLM with the provided tools
         current_foo_msg = HumanMessage(content=f"This is the old foo_player.py file\nNow It is your turn to update it with the new recommendations from META\n\n{read_foo()}")
+        adapter_msg = HumanMessage(content=f"This is the current adapters.py file that you must use to interact with the Catanatron API\n\n{read_adapter()}")
+
         #base_len = len(state["coder_messages"][-MAX_MESSAGES_IN_AGENT:])
-        msgs = state["coder_messages"][-MAX_MESSAGES_IN_AGENT:] + meta_msgs + [current_foo_msg]
+        msgs = state["coder_messages"][-MAX_MESSAGES_IN_AGENT:] + meta_msgs + [current_foo_msg, adapter_msg]
         log_path = self.agent_log_input(CODER_NAME, msgs)
         output = self._tool_calling_state_graph(self.coder_llm, sys_msg, msgs, tools)
         self.agent_log_output(CODER_NAME, output["messages"][len(msgs):], log_path)
@@ -1006,3 +1017,15 @@ def _get_evolution_entry(num: int) -> Tuple[Dict[str, Any], str]:
         return None, f"{key} not found in performance history."
 
     return perf[key], ""
+
+
+
+# Adapter
+
+def read_adapter(_: str = "") -> str:
+    """Return the UTF-8 content of adapters.py (≤64 kB), or a sentinel string if missing."""
+    if not ADAPTER_TARGET_FILE.exists():
+        return "(adapters.py not found)"
+    if ADAPTER_TARGET_FILE.stat().st_size > 64_000:
+        raise ValueError("adapters.py too large")
+    return ADAPTER_TARGET_FILE.read_text(encoding="utf-8", errors="ignore")

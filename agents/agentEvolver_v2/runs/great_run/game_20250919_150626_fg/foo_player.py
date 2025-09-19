@@ -1,4 +1,3 @@
-### DON'T TOUCH THESE IMPORTS BELOW THIS LINE ###
 import os
 from .adapters import (
     Game, Player, Color, Action, ActionType,
@@ -6,7 +5,6 @@ from .adapters import (
     make_value_fn, DEFAULT_WEIGHTS, value_production,
     production_features_sampler, winning_color, copy_game
 )
-### DON'T TOUCH THESE IMPORTS ABOVE THIS LINE ###
 
 
 
