@@ -1,0 +1,2558 @@
+--- Input for META at 20250920_184405 ---
+================================ Human Message =================================
+
+GAME RESULTS:
+
+{
+  "Player Summary": {
+    "AlphaBetaPlayer:RED(depth=2,value_fn=base_fn,prunning=False)": {
+      "WINS": 12,
+      "AVG VP": 7.966666666666667,
+      "AVG SETTLES": 2.7666666666666666,
+      "AVG CITIES": 1.9666666666666666,
+      "AVG ROAD": 0.5666666666666667,
+      "AVG ARMY": 0.0,
+      "AVG DEV VP": 0.13333333333333333
+    },
+    "FooPlayer:BLUE": {
+      "WINS": 18,
+      "AVG VP": 8.566666666666666,
+      "AVG SETTLES": 1.8333333333333333,
+      "AVG CITIES": 2.8333333333333335,
+      "AVG ROAD": 0.43333333333333335,
+      "AVG ARMY": 0.06666666666666667,
+      "AVG DEV VP": 0.06666666666666667
+    }
+  },
+  "Game Summary": {
+    "AVG TICKS": 324.23333333333335,
+    "AVG TURNS": 121.83333333333333,
+    "AVG DURATION": 1.187642502784729
+  }
+}
+================================ Human Message =================================
+
+### After Running The New foo_player.py Player, Here is my analysis and findings:
+
+---
+### **PERFORMANCE SUMMARY**
+- **Outcome**: **Good** (18 wins, 12 losses).
+- **VP**: FooPlayer (BLUE) **8.57 VP** vs. AlphaBetaPlayer (RED) **7.97 VP**.
+- **VP Diff**: **+0.6** (Good).
+- **Key Counts**:
+  - **Cities**: 2.83 (FooPlayer) vs. 2.0 (Opponent).
+  - **Settlements**: 1.83 (FooPlayer) vs. 2.77 (Opponent).
+  - **Roads**: 0.43 (FooPlayer) vs. 0.57 (Opponent).
+  - **Dev Cards**: 0.07 (FooPlayer) vs. 0.13 (Opponent).
+  - **Total Turns**: 121.83.
+
+---
+### **VERDICT**
+**Good**: FooPlayer wins **60% of games** with a **VP diff of +0.6**, demonstrating a clear advantage over the opponent.
+
+---
+### **LIKELY REASONS FOR SUCCESS**
+1. **Effective City Building**:
+   - FooPlayer builds **more cities** (2.83) than the opponent (2.0), indicating the `CITY_BONUS` heuristic is working.
+   - **Log Corroboration**: `BUILD_CITY` actions are chosen, and the `CITY_BONUS` heuristic is applied (e.g., `"Heuristic applied: Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_CITY: 'BUILD_CITY'>, value=17) base=3000000113901150.50 bonus=1.50 => 3000000113901152.00"`).
+
+2. **Chance-Aware Evaluation**:
+   - Uses `chance_children_for_action` to handle stochastic outcomes (e.g., dice rolls, dev cards, robber).
+   - **Log Corroboration**: Simulations are performed for chance actions (e.g., `"evaluated: 6/6, simulations: 6"` for `MOVE_ROBBER`).
+
+3. **Resource Mapping Fixes**:
+   - The `_can_afford_build` method now correctly handles **list-based resources** (e.g., `[wood, brick, sheep, wheat, ore]`).
+   - **Log Corroboration**: `"Detected list-resource shape -> mapped to {...}"` appears in logs.
+
+4. **Road Heuristics**:
+   - Road bonuses are applied, but **road counts remain low** (0.43 avg).
+   - **Log Corroboration**: Road bonuses are applied (e.g., `"Heuristic applied: Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(0, 1)) base=2700000166680774.50 bonus=1.00 => 2700000166680775.50"`).
+
+---
+### **AREAS FOR IMPROVEMENT**
+1. **Road Expansion**:
+   - FooPlayer builds **fewer roads** (0.43) than the opponent (0.57), limiting board control and settlement opportunities.
+   - **Log Corroboration**: Road bonuses are applied, but the player may not prioritize long-term road strategies.
+   - **Code Issue**: The `road_extends_toward_open_spot` helper may not be selecting optimal road placements due to incorrect board API usage.
+
+2. **Settlement Building**:
+   - FooPlayer builds **fewer settlements** (1.83) than the opponent (2.77), potentially due to resource constraints or prioritization.
+
+3. **Dev Card Utilization**:
+   - FooPlayer buys **fewer dev cards** (0.07 avg) than the opponent (0.13), missing opportunities for VP and disruption.
+
+---
+### **STRATEGIC FLAW**
+The player **lacks aggressive road expansion and settlement prioritization**, limiting its ability to maximize board control and VP.
+
+---
+### **NEXT STEP**
+Send to **Strategizer** to refine the **road expansion and settlement prioritization logic**, ensuring roads are prioritized for long-term expansion and settlements are built when resources allow.
+
+---
+**Let me know if you need anything else.** END ANALYZER
+================================== Ai Message ==================================
+
+- META THOUGHTS:
+  - Recent fixes recovered performance: FooPlayer now wins 60% and builds many more cities, but still under-invests in roads and settlements. The failure is strategic (priority weights/heuristics), not API. We must propose small, targeted strategy changes (not large rewrites) so CODER can implement quickly and we can test the impact in the next experiment.
+  - Changes should be incremental, measurable, and safe: (A) strengthen road-chain valuation so roads that enable a settlement are prioritized, (B) prefer building settlements when the target node's pip-sum and connectivity exceed a threshold, (C) add a lightweight resource-reservation heuristic that favors roads that reduce distance to high-value nodes, and (D) small dev-card policy nudges to capture missed VP opportunities.
+
+- META GOAL:
+  - Produce a concise, prioritized set of concrete strategy modifications with copy-paste code snippets that CODER can implement immediately. Each proposal must include where to insert it (function / approximate location), parameters to expose for tuning, and a short test/diagnostic to validate the change. Goal metrics: raise avg roads >= 0.6 and settlements >= 2.3 while maintaining or improving win rate (target > 60% wins / VP diff +0.6 -> +1.0).
+
+- CHOSEN AGENT: STRATEGIZER
+
+- AGENT OBJECTIVE:
+You are the STRATEGIZER. Propose a focused set of strategy changes (no API work) to increase road expansion and settlement building. For each change, provide:
+
+1) A short rationale (1–2 lines).
+2) A minimal copy-paste code snippet (ready to insert into foo_player.py) with:
+   - function name(s) or decision patch location (e.g., inside decide() where playable_actions are scored),
+   - parameter names and default values for tuning,
+   - defensive coding (getattr/try/except) to avoid new crashes.
+3) Where to insert (function + approximate line or logical place).
+4) A one-line test to run after implementation and the expected log output that demonstrates the change worked.
+
+Provide three prioritized proposals (Primary, Secondary, Tertiary). Prioritize minimal surface changes so CODER can implement and we can run the next 30-game experiment quickly.
+
+Specifically include:
+
+Primary (highest priority):
+- road_chain_score(edge): compute a composite score that favors edges that (A) extend player road chains, (B) decrease distance to a nearest open high-pip node (use existing _edge_to_nearest_open_info), and (C) prefer edges that block opponents (optional small bonus if adjacent node owned by opponent). Provide code snippet for road_chain_score and a small change to the road bonus application: multiply/add ROAD_CHAIN_WEIGHT * road_chain_score to the existing heuristic bonus. Provide default weights (e.g., ROAD_CHAIN_WEIGHT = 2.0, PIP_WEIGHT = 1.0, DIST_PENALTY = 0.7, OPP_BLOCK_BONUS = 0.5).
+
+Secondary:
+- settlement_node_score(node): compute node value = pip_sum + connectivity_bonus - proximity_penalty (if too close to own settlements or blocked). If affordable settlement exists and node_score >= SETTLEMENT_BUILD_THRESHOLD (e.g., 3.5), prefer BUILD_SETTLEMENT over END_TURN and over BUILD_ROAD (unless road_score shows immediate enabling value). Provide code snippet to compute node_score and to apply a BUILD_SETTLEMENT bonus.
+
+Tertiary:
+- dev_card_policy: simple rule to buy dev cards when (no affordable settlement and resources allow dev card) AND (current VP deficit or few settlements) — implement as a small additive bonus on BUY_DEVELOPMENT_CARD actions. Default small probability/weight to avoid over-buying.
+
+Also include:
+- One-line diagnostics to print average road & settlement counts for first 10 games or immediate log lines to confirm increases.
+- Success criteria lines to detect in logs.
+
+Be concise but concrete — each snippet must be ready to paste and include only a few lines of code where possible.
+================================ Human Message =================================
+
+STRATEGIZER
+**Prioritized Strategy Changes for Road/Settlement Expansion**
+
+---
+### **Primary: Road Chain Scoring**
+**Rationale**: Prefer roads that extend chains, reach high-pip nodes, and block opponents.
+
+**Code Snippet**:
+Add this **helper method** to `FooPlayer`:
+```python
+def _road_chain_score(self, game, edge_id):
+    """Score road edges by chain extension, reach, and opponent blocking."""
+    try:
+        board = game.state.board
+        score = 0.0
+
+        # 1. Chain extension: Does this edge connect to my existing roads?
+        try:
+            nodes = board.edge_nodes(edge_id)
+            for n in nodes:
+                try:
+                    incident_edges = board.node_edges(n)
+                except Exception:
+                    incident_edges = [e for e in getattr(board, 'edges', {}) if n in getattr(getattr(board.edges, e, {}), 'nodes', [])]
+                for e in incident_edges:
+                    try:
+                        owner = board.edge_owner(e)
+                    except Exception:
+                        owner = getattr(getattr(board.edges, e, {}), 'owner', None)
+                    if owner == self.color:
+                        score += self.ROAD_CHAIN_WEIGHT
+                        break
+        except Exception:
+            pass
+
+        # 2. Distance to high-pip open node
+        try:
+            dist, pip_sum = self._edge_to_nearest_open_info(game, edge_id)
+            if dist is not None:
+                score += self.PIP_WEIGHT * (pip_sum / self.ROAD_PIP_NORMALIZER) - self.DIST_PENALTY * dist
+        except Exception:
+            pass
+
+        # 3. Opponent blocking: Small bonus if adjacent node is owned by opponent
+        try:
+            for n in nodes:
+                try:
+                    owner = board.node_owner(n)
+                except Exception:
+                    owner = getattr(getattr(board.nodes, n, {}), 'owner', None)
+                if owner and owner != self.color:
+                    score += self.OPP_BLOCK_BONUS
+        except Exception:
+            pass
+
+        return score
+    except Exception as e:
+        print(f"[foo_player] _road_chain_score error: {e}")
+        return 0.0
+```
+
+**Insertion**:
+In `decide()`, replace the **road bonus calculation** with:
+```python
+# BUILD_ROAD: Use _road_chain_score
+if atype == AT_BUILD_ROAD:
+    edge = getattr(action, 'value', None)
+    if edge is not None:
+        chain_score = self._road_chain_score(game, edge)
+        score += self.ROAD_CHAIN_WEIGHT * chain_score
+        print(f"[foo_player] Road chain score for {edge}: {chain_score:.2f}")
+```
+
+**Parameters**:
+```python
+ROAD_CHAIN_WEIGHT = 2.0
+PIP_WEIGHT = 1.0
+DIST_PENALTY = 0.7
+OPP_BLOCK_BONUS = 0.5
+```
+
+**Test**:
+Run 1 game and check logs for:
+```
+[foo_player] Road chain score for (0,1): 2.50
+```
+**Success**: Avg roads ≥ 0.6 higher than baseline.
+
+---
+### **Secondary: Settlement Node Scoring**
+**Rationale**: Prefer settlements on high-pip, well-connected nodes.
+
+**Code Snippet**:
+Add this **helper method** to `FooPlayer`:
+```python
+def _settlement_node_score(self, game, node_id):
+    """Score settlement nodes by pip-sum and connectivity."""
+    try:
+        pip_sum = self.estimate_settlement_node_value(game, node_id, self.color)
+        connectivity = 0.0
+        try:
+            board = game.state.board
+            edges = board.node_edges(node_id)
+            for e in edges:
+                try:
+                    owner = board.edge_owner(e)
+                except Exception:
+                    owner = getattr(getattr(board.edges, e, {}), 'owner', None)
+                if owner == self.color:
+                    connectivity += 1.0
+        except Exception:
+            pass
+        return pip_sum + self.SETTLEMENT_CONNECTIVITY_WEIGHT * connectivity
+    except Exception as e:
+        print(f"[foo_player] _settlement_node_score error: {e}")
+        return 0.0
+```
+
+**Insertion**:
+In `decide()`, replace the **settlement bonus calculation** with:
+```python
+# BUILD_SETTLEMENT: Use _settlement_node_score
+if atype == AT_BUILD_SETTLEMENT:
+    node = getattr(action, 'value', None)
+    if node is not None:
+        node_score = self._settlement_node_score(game, node)
+        if node_score >= self.SETTLEMENT_BUILD_THRESHOLD:
+            score += self.SETTLEMENT_HIGH_PIP_BONUS * (node_score / self.SETTLEMENT_PIP_NORMALIZER)
+            print(f"[foo_player] Settlement node score for {node}: {node_score:.2f}")
+```
+
+**Parameters**:
+```python
+SETTLEMENT_CONNECTIVITY_WEIGHT = 1.5
+SETTLEMENT_BUILD_THRESHOLD = 3.5
+```
+
+**Test**:
+Run 1 game and check logs for:
+```
+[foo_player] Settlement node score for 5: 4.20
+```
+**Success**: Avg settlements ≥ 2.3.
+
+---
+### **Tertiary: Dev Card Policy**
+**Rationale**: Buy dev cards when resources are idle and VP deficit exists.
+
+**Code Snippet**:
+In `decide()`, add this **dev card bonus** after the settlement block:
+```python
+# BUY_DEVELOPMENT_CARD: Prefer when resources are idle and VP deficit exists
+if atype == AT_BUY_DEV:
+    try:
+        pstate = game.state.players.get(self.color)
+        res = self._resources_from_pstate(pstate)
+        if (res['wheat'] >= 1 and res['sheep'] >= 1 and res['ore'] >= 1) and not any(
+            self._can_afford_build(game, self.color, at) for at in (AT_BUILD_SETTLEMENT, AT_BUILD_ROAD, AT_BUILD_CITY)
+        ):
+            score += self.DEV_CARD_BONUS
+            print(f"[foo_player] Dev card bonus applied: {self.DEV_CARD_BONUS:.2f}")
+    except Exception as e:
+        print(f"[foo_player] Dev card bonus error: {e}")
+```
+
+**Parameters**:
+```python
+DEV_CARD_BONUS = 1.0
+```
+
+**Test**:
+Run 1 game and check logs for:
+```
+[foo_player] Dev card bonus applied: 1.00
+```
+**Success**: Dev cards bought when no builds are affordable.
+
+---
+### **Diagnostics**
+Add this **one-liner** at the end of `decide()`:
+```python
+print(f"[foo_player] Avg roads: {sum(1 for a in playable_actions if getattr(a, 'action_type', None) == AT_BUILD_ROAD) / max(1, len(playable_actions)):.2f}, Avg settlements: {sum(1 for a in playable_actions if getattr(a, 'action_type', None) == AT_BUILD_SETTLEMENT) / max(1, len(playable_actions)):.2f}")
+```
+
+**Success Criteria**:
+- **Primary**: Logs show `Road chain score` and avg roads ≥ 0.6.
+- **Secondary**: Logs show `Settlement node score` and avg settlements ≥ 2.3.
+- **Tertiary**: Logs show `Dev card bonus applied` and no resource waste.
+
+---
+END STRATEGIZER
+================================== Ai Message ==================================
+
+- META THOUGHTS:
+  - The recent adapter fixes restored performance (FooPlayer now wins 60%, +0.6 VP). Remaining shortfall is strategic: under-investment in roads and settlements. We should make narrow, measurable strategy edits that increase road-chain valuation and settlement prioritization without touching the API or large decision-flow changes. Changes must be defensive, are limited-scope, and include diagnostics so we can validate impact quickly.
+
+- META GOAL:
+  - Instruct CODER to implement three prioritized strategy edits (Primary: road_chain_score; Secondary: settlement_node_score; Tertiary: dev-card bias), add required parameters and diagnostics, run a single debug game to check for errors and basic behavior, then run a 30-game experiment and return the game_output and JSON results.
+
+- CHOSEN AGENT: CODER
+
+- AGENT OBJECTIVE:
+Implement the following minimal, copy-paste changes in game_20250919_174409_fg/foo_player.py, run one deterministic debug game, and — if clean — run a 30-game experiment. Capture and return logs/JSON as below.
+
+1) Add tunable parameters near the top of FooPlayer (class attributes or constants):
+```python
+# Road/settlement tuning parameters
+ROAD_CHAIN_WEIGHT = 2.0
+PIP_WEIGHT = 1.0
+DIST_PENALTY = 0.7
+OPP_BLOCK_BONUS = 0.5
+ROAD_PIP_NORMALIZER = 6.0   # to scale pip_sum
+SETTLEMENT_CONNECTIVITY_WEIGHT = 1.5
+SETTLEMENT_BUILD_THRESHOLD = 3.5
+SETTLEMENT_PIP_NORMALIZER = 6.0
+SETTLEMENT_HIGH_PIP_BONUS = 2.0
+DEV_CARD_BONUS = 1.0
+```
+Place these alongside other constants in the class.
+
+2) Primary: Implement _road_chain_score helper exactly as below (copy/paste into the class):
+```python
+def _road_chain_score(self, game, edge_id):
+    """Score road edges by chain extension, reach, and opponent blocking."""
+    try:
+        board = game.state.board
+        score = 0.0
+        nodes = []
+        # 1. Chain extension: Does this edge connect to my existing roads?
+        try:
+            nodes = board.edge_nodes(edge_id)
+        except Exception:
+            try:
+                nodes = getattr(board.edges.get(edge_id, {}), 'nodes', None) or []
+            except Exception:
+                nodes = []
+        for n in nodes or []:
+            try:
+                incident_edges = board.node_edges(n)
+            except Exception:
+                incident_edges = [e for e in getattr(board, 'edges', {}) if n in getattr(getattr(board.edges, e, {}), 'nodes', [])]
+            for e in incident_edges:
+                try:
+                    owner = board.edge_owner(e)
+                except Exception:
+                    owner = getattr(getattr(board.edges, e, {}), 'owner', None)
+                if owner == self.color:
+                    score += getattr(self, 'ROAD_CHAIN_WEIGHT', 2.0)
+                    break
+
+        # 2. Distance to high-pip open node
+        try:
+            dist, pip_sum = self._edge_to_nearest_open_info(game, edge_id)
+            if dist is not None:
+                score += getattr(self, 'PIP_WEIGHT', 1.0) * (float(pip_sum) / getattr(self, 'ROAD_PIP_NORMALIZER', 6.0))
+                score -= getattr(self, 'DIST_PENALTY', 0.7) * float(dist)
+        except Exception:
+            pass
+
+        # 3. Opponent blocking: Small bonus if adjacent node is owned by opponent
+        try:
+            for n in nodes or []:
+                try:
+                    owner = board.node_owner(n)
+                except Exception:
+                    owner = getattr(getattr(board.nodes, n, {}), 'owner', None)
+                if owner and owner != self.color:
+                    score += getattr(self, 'OPP_BLOCK_BONUS', 0.5)
+        except Exception:
+            pass
+
+        return float(score)
+    except Exception as e:
+        print(f"[foo_player] _road_chain_score error: {e}")
+        return 0.0
+```
+
+3) Apply road bonus in decide() where BUILD_ROAD is scored:
+Find the road scoring section and change/add:
+```python
+if atype == AT_BUILD_ROAD:
+    edge = getattr(action, 'value', None)
+    if edge is not None:
+        try:
+            chain_score = self._road_chain_score(game, edge)
+            score += chain_score  # chain_score already accounts for ROAD_CHAIN_WEIGHT etc.
+            print(f"[foo_player] Road chain score for {edge}: {chain_score:.2f}")
+        except Exception as e:
+            print(f"[foo_player] road bonus error for {edge}: {e}")
+```
+(If your existing code multiplies by a ROAD bonus constant, you can instead add chain_score to that heuristic -- ensure not to double-apply ROAD_CHAIN_WEIGHT.)
+
+4) Secondary: Implement _settlement_node_score helper:
+```python
+def _settlement_node_score(self, game, node_id):
+    """Score settlement nodes by pip-sum and connectivity."""
+    try:
+        pip_sum = float(self.estimate_settlement_node_value(game, node_id, self.color) or 0.0)
+        connectivity = 0.0
+        try:
+            board = game.state.board
+            try:
+                edges = board.node_edges(node_id)
+            except Exception:
+                # fallback: iterate board.edges
+                edges = [e for e in getattr(board, 'edges', {}) if node_id in getattr(getattr(board.edges, e, {}), 'nodes', [])]
+            for e in edges:
+                try:
+                    owner = board.edge_owner(e)
+                except Exception:
+                    owner = getattr(getattr(board.edges, e, {}), 'owner', None)
+                if owner == self.color:
+                    connectivity += 1.0
+        except Exception:
+            pass
+        score = pip_sum + getattr(self, 'SETTLEMENT_CONNECTIVITY_WEIGHT', 1.5) * connectivity
+        return float(score)
+    except Exception as e:
+        print(f"[foo_player] _settlement_node_score error: {e}")
+        return 0.0
+```
+
+5) Apply settlement bonus in decide() where BUILD_SETTLEMENT is scored:
+Replace or augment the settlement scoring:
+```python
+if atype == AT_BUILD_SETTLEMENT:
+    node = getattr(action, 'value', None)
+    if node is not None:
+        try:
+            node_score = self._settlement_node_score(game, node)
+            if node_score >= getattr(self, 'SETTLEMENT_BUILD_THRESHOLD', 3.5):
+                add = getattr(self, 'SETTLEMENT_HIGH_PIP_BONUS', 2.0) * (node_score / getattr(self, 'SETTLEMENT_PIP_NORMALIZER', 6.0))
+                score += add
+                print(f"[foo_player] Settlement node score for {node}: {node_score:.2f} added {add:.2f}")
+        except Exception as e:
+            print(f"[foo_player] settlement bonus error for {node}: {e}")
+```
+
+6) Tertiary: Dev-card purchase bias:
+Add in decide() where BUY_DEVELOPMENT_CARD is scored:
+```python
+if atype == AT_BUY_DEV:
+    try:
+        pstate = game.state.players.get(self.color)
+        res = self._resources_from_pstate(pstate) if hasattr(self, '_resources_from_pstate') else {}
+        enough = res.get('wheat',0) >= 1 and res.get('sheep',0) >= 1 and res.get('ore',0) >= 1
+        # Prefer dev card when no builds affordable
+        can_build = any(self._can_afford_build(game, self.color, a_type) for a_type in (AT_BUILD_SETTLEMENT, AT_BUILD_ROAD, AT_BUILD_CITY))
+        if enough and not can_build:
+            score += getattr(self, 'DEV_CARD_BONUS', 1.0)
+            print(f"[foo_player] Dev card bonus applied: {getattr(self,'DEV_CARD_BONUS',1.0):.2f}")
+    except Exception as e:
+        print(f"[foo_player] dev-card bias error: {e}")
+```
+
+7) Diagnostics and counters:
+- At the end of decide() (or end of game hook if available), add per-game logging:
+```python
+# Per-decision diagnostic print (one-liner)
+print(f"[foo_player] Decision diagnostics: roads_weight={getattr(self,'ROAD_CHAIN_WEIGHT',None)}, settlement_threshold={getattr(self,'SETTLEMENT_BUILD_THRESHOLD',None)}")
+```
+- Keep the earlier prints for Road/Settlement score lines. Also track per-game counters for number of BUILD_ROAD and BUILD_SETTLEMENT actions taken by this player (increment counters when such actions are chosen) and print at end of each game:
+```python
+# initialize in __init__:
+self._game_road_count = 0
+self._game_settle_count = 0
+
+# when selecting a BUILD_ROAD action:
+self._game_road_count += 1
+
+# when selecting a BUILD_SETTLEMENT action:
+self._game_settle_count += 1
+
+# at end of game (or in decide when game over), print:
+print(f"[foo_player] Game end: roads_built={self._game_road_count}, settlements_built={self._game_settle_count}")
+```
+(If no game-end hook is present, print counters when victory/loss or when decide sees a terminal state.)
+
+8) Safety and defensive coding:
+- Wrap all new helper calls in try/except and default to 0.0/False as shown.
+- Use getattr/hasattr for board methods to avoid AttributeError.
+- Avoid changing decision flow other than adjusting score accumulation.
+
+9) Test plan:
+Step A — Sanity single debug run
+- Run 1 deterministic debug game.
+- Capture stdout and confirm:
+  - No new exceptions or tracebacks.
+  - Lines showing: "[foo_player] Road chain score for ..." and "[foo_player] Settlement node score for ...", and optional "[foo_player] Dev card bonus applied: ...".
+  - Per-game counters printed at game end.
+
+Step B — 30-game experiment
+- If Step A is clean, run the 30-game experiment (same opponent: AlphaBetaPlayer depth=2) using the usual harness.
+- Collect game_output.txt and the JSON results, and return them.
+
+10) Success criteria (for CODER to report back):
+- Average ROAD count increases toward >= 0.6 (target increase from current 0.433 to ≥0.6).
+- Average SETTLEMENT count increases toward ≥ 2.3.
+- Win rate maintains or improves (≥ 60% wins) and VP diff does not drop below current baseline (+0.6).
+- Logs show Road/Settlement score prints in a majority of games.
+
+Deliverables:
+- After implementing patches, paste the single debug-game stdout excerpt (including the Road/Settlement score prints and any exceptions).
+- If clean, run 30 games and deliver:
+  - game_output.txt
+  - JSON results file (the same structure as earlier runs)
+  - A short summary of achieved metrics vs success criteria.
+
+If any error or unexpected API shape appears in the debug run, paste the relevant dir() or repr() outputs and I will produce a targeted fix.
+
+Implement these edits now, run the single debug game, and return the requested artifacts.
+================================ Human Message =================================
+
+CODER
+
+I updated game_20250919_174409_fg/foo_player.py with the Strategizer's prioritized strategy changes and the defensive adapter fixes you requested. Summary of what I changed and added:
+
+- Implemented resource normalization and robust detection for list-shaped pstate.resources.
+- Fixed edge handling for BUILD_ROAD actions (tuple/list edge values supported).
+- Replaced execute-based affordability checks with deterministic _can_afford_build that handles list and dict resource shapes.
+- Added primary _road_chain_score helper and integrated it into BUILD_ROAD scoring.
+- Added secondary _settlement_node_score and integrated it into BUILD_SETTLEMENT scoring.
+- Added tertiary dev-card bias when builds are not affordable.
+- Added per-game counters for roads and settlements and printed game counters when returning a chosen action.
+- Left all new code defensive (getattr/try/except) and included requested debug/diagnostic prints.
+- Kept existing chance-aware 1-ply lookahead and Monte Carlo fallbacks.
+
+What I added (high-level):
+- New class constants for tuning: ROAD_CHAIN_WEIGHT, PIP_WEIGHT, DIST_PENALTY, OPP_BLOCK_BONUS, ROAD_PIP_NORMALIZER, SETTLEMENT_CONNECTIVITY_WEIGHT, SETTLEMENT_BUILD_THRESHOLD, SETTLEMENT_PIP_NORMALIZER, SETTLEMENT_HIGH_PIP_BONUS, DEV_CARD_BONUS.
+- Helpers: _road_chain_score, _settlement_node_score.
+- Diagnostic prints for road chain scoring, settlement scoring, dev-card bonus, resource mapping detection, and per-game counters.
+
+Next steps you should run:
+1. Single deterministic debug game to verify no exceptions and inspect the diagnostic prints:
+   - Look for lines like:
+     - "[foo_player] Detected list-resource shape -> mapped to {...}"
+     - "[foo_player] Road chain score for (x,y): ..."
+     - "[foo_player] Settlement node score for N: ..."
+     - "[foo_player] Dev card bonus applied: 1.00"
+     - "[foo_player] Game build counters: roads_built=..., settlements_built=..."
+
+2. If the debug game is clean, run the 30-game City-Bias experiment (CITY_BONUS_AGGRESSIVE = 6.0 is already set in the file) and collect game_output.txt and JSON results.
+
+If you hit any exceptions or unexpected adapter shapes in the debug run, paste the full stdout/traces and any dir() outputs from the introspection prints and I will provide a quick targeted patch.
+
+END CODER
+================================ Human Message =================================
+
+GAME RESULTS:
+
+{
+  "Player Summary": {
+    "AlphaBetaPlayer:RED(depth=2,value_fn=base_fn,prunning=False)": {
+      "WINS": 19,
+      "AVG VP": 8.533333333333333,
+      "AVG SETTLES": 2.4,
+      "AVG CITIES": 2.4,
+      "AVG ROAD": 0.6,
+      "AVG ARMY": 0.03333333333333333,
+      "AVG DEV VP": 0.06666666666666667
+    },
+    "FooPlayer:BLUE": {
+      "WINS": 11,
+      "AVG VP": 7.833333333333333,
+      "AVG SETTLES": 1.7,
+      "AVG CITIES": 2.5,
+      "AVG ROAD": 0.4,
+      "AVG ARMY": 0.06666666666666667,
+      "AVG DEV VP": 0.2
+    }
+  },
+  "Game Summary": {
+    "AVG TICKS": 366.7,
+    "AVG TURNS": 138.23333333333332,
+    "AVG DURATION": 1.621788001060486
+  }
+}
+================================ Human Message =================================
+
+### After Running The New foo_player.py Player, Here is my analysis and findings:
+
+---
+### **PERFORMANCE SUMMARY**
+- **Outcome**: **Poor** (11 wins, 19 losses).
+- **VP**: FooPlayer (BLUE) **7.83 VP** vs. AlphaBetaPlayer (RED) **8.53 VP**.
+- **VP Diff**: **-0.7** (Poor).
+- **Key Counts**:
+  - **Cities**: 2.5 (FooPlayer) vs. 2.4 (Opponent).
+  - **Settlements**: 1.7 (FooPlayer) vs. 2.4 (Opponent).
+  - **Roads**: 0.4 (FooPlayer) vs. 0.6 (Opponent).
+  - **Dev Cards**: 0.2 (FooPlayer) vs. 0.07 (Opponent).
+  - **Total Turns**: 138.23.
+
+---
+### **VERDICT**
+**Poor**: FooPlayer loses **63% of games** with a **VP diff of -0.7**, underperforming the opponent.
+
+---
+### **LIKELY REASONS**
+1. **Resource Mapping Errors**:
+   - **Evidence**: Repeated `'list' object has no attribute 'get'` errors in logs.
+   - **Cause**: The `_can_afford_build` method fails to handle **list-based resources** correctly.
+   - **Code Issue**: The fallback logic in `_can_afford_build` (lines 150–170) does not account for all possible resource shapes.
+   - **Log Excerpt**:
+     ```
+     [foo_player] _can_afford_build error: 'list' object has no attribute 'get'
+     ```
+
+2. **Road Chain Detection Fails**:
+   - **Evidence**: Logs show `No start_nodes found for edge (X, Y)` for all `BUILD_ROAD` actions.
+   - **Cause**: The `_edge_to_nearest_open_info` method fails to resolve edge nodes due to API mismatches.
+   - **Code Issue**: The fallback logic for tuple-based edge identifiers (e.g., `(0, 1)`) is insufficient.
+   - **Log Excerpt**:
+     ```
+     [foo_player] No start_nodes found for edge (13, 14) (after fallbacks)
+     ```
+
+3. **Settlement Heuristic Ineffective**:
+   - **Evidence**: FooPlayer builds **fewer settlements** (1.7) than the opponent (2.4).
+   - **Cause**: The `estimate_settlement_node_value` method may not be scoring nodes correctly due to API mismatches.
+   - **Code Issue**: The `board.node_tiles(node_id)` and `tile.pip` attribute access may fail silently.
+   - **Log Excerpt**:
+     ```
+     [foo_player] estimate_settlement_node_value error: ...
+     ```
+
+4. **END_TURN Gating Ineffective**:
+   - **Evidence**: `END_TURN` is chosen frequently despite available build actions.
+   - **Cause**: The `affordable_build_exists` check fails due to resource mapping errors.
+   - **Log Excerpt**:
+     ```
+     [foo_player] Chosen action: Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None)
+     ```
+
+---
+### **STRATEGIC FLAW**
+The player **fails to build settlements and roads** due to **broken resource detection** and **incorrect board API usage**, leading to premature `END_TURN` actions and missed opportunities.
+
+---
+### **NEXT STEP**
+Send to **Coder** to fix the **resource mapping logic** in `_can_afford_build` and **edge node resolution** in `_edge_to_nearest_open_info`.
+
+---
+**Let me know if you need anything else.** END ANALYZER
+================================== Ai Message ==================================
+
+- META THOUGHTS:
+  - Analyzer confirms the regressions are now adapter-level again: persistent "'list' object has no attribute 'get'" from _can_afford_build and repeated "No start_nodes found for edge (X, Y) (after fallbacks)". That means the previous patches did not fully normalize all resource shapes or fully resolve all edge encodings. We must stop changing strategy and fix the adapter/normalization logic robustly and log precisely why an edge or resource shape failed so we can adapt in one more quick iteration.
+  - Plan: (A) provide an exhaustive, defensive resource normalization routine and replace any remaining `.get` access with canonical dict access; (B) provide a comprehensive edge->nodes resolver that tries many fallbacks (including scanning board.edges for matching nodes or id fields and trying reversed tuples); (C) hard-instrument a small set of one-time diagnostics and counters so we can see exact shapes when a failure occurs; (D) keep changes minimal and safe.
+
+- META GOAL:
+  - Produce a concrete, minimal set of copy-paste patches and diagnostics to (1) eliminate all "'list' object has no attribute 'get'" errors by canonicalizing every resource access, and (2) make _edge_to_nearest_open_info always resolve nodes for the common encodings (tuple/list of nodes, integer id, Edge object, or keys in board.edges), including a fallback scanning step. Also add logging counters to confirm fixes. After applying, run one debug game and paste the diagnostic lines.
+
+- CHOSEN AGENT: STRATEGIZER
+
+- AGENT OBJECTIVE:
+You are the STRATEGIZER. Provide precise, copy-paste changes and a short diagnostic plan for CODER to implement now. Focus only on adapter fixes (no strategy tuning). Deliverables below:
+
+1) Robust Resource Normalizer (replace any previous helpers; ensure every call to resource data uses this)
+- Insert into FooPlayer class:
+```python
+def _normalize_resources_strict(self, pstate):
+    """
+    Return canonical dict {'wheat','ore','wood','brick','sheep'}.
+    Handles:
+      - dict-like {k: v}
+      - list/tuple of (k,v) pairs
+      - list/tuple of 5 ints (empirical ordering [wood,brick,sheep,wheat,ore])
+      - object with attributes (res.wheat)
+      - other unexpected shapes => zeros
+    Also logs once per-game when an unusual shape is detected.
+    """
+    norm = {'wheat': 0, 'ore': 0, 'wood': 0, 'brick': 0, 'sheep': 0}
+    try:
+        raw = getattr(pstate, 'resources', None)
+        # None -> zeros
+        if raw is None:
+            return norm
+
+        # Case A: dict-like
+        if hasattr(raw, 'items'):
+            for k, v in raw.items():
+                k2 = str(k).upper()
+                try:
+                    val = int(v)
+                except Exception:
+                    continue
+                if k2 in ('WHEAT','GRAIN'): norm['wheat'] = val
+                elif k2 == 'ORE': norm['ore'] = val
+                elif k2 == 'WOOD': norm['wood'] = val
+                elif k2 in ('BRICK','CLAY'): norm['brick'] = val
+                elif k2 in ('SHEEP','WOOL'): norm['sheep'] = val
+            return norm
+
+        # Case B: list/tuple of (key,val) pairs
+        if isinstance(raw, (list,tuple)) and len(raw) and isinstance(raw[0], (list,tuple)) and len(raw[0])==2:
+            for k, v in raw:
+                k2 = str(k).upper()
+                try:
+                    val = int(v)
+                except Exception:
+                    continue
+                if k2 in ('WHEAT','GRAIN'): norm['wheat'] = val
+                elif k2 == 'ORE': norm['ore'] = val
+                elif k2 == 'WOOD': norm['wood'] = val
+                elif k2 in ('BRICK','CLAY'): norm['brick'] = val
+                elif k2 in ('SHEEP','WOOL'): norm['sheep'] = val
+            return norm
+
+        # Case C: list/tuple of 5 ints (empirical ordering)
+        if isinstance(raw, (list,tuple)) and len(raw) == 5 and all(isinstance(x, int) for x in raw):
+            # Empirically observed mapping:
+            # [wood, brick, sheep, wheat, ore]
+            norm['wood']  = int(raw[0])
+            norm['brick'] = int(raw[1])
+            norm['sheep'] = int(raw[2])
+            norm['wheat'] = int(raw[3])
+            norm['ore']   = int(raw[4])
+            # Log once per game (guarded)
+            key = '_did_log_res_map'
+            if not getattr(self, key, False):
+                print(f"[foo_player] Detected list-resource shape -> mapped to {norm}")
+                setattr(self, key, True)
+            return norm
+
+        # Case D: object with attributes
+        for k in ('wheat','ore','wood','brick','sheep'):
+            try:
+                v = getattr(raw, k, None)
+                if v is not None:
+                    norm[k] = int(v)
+            except Exception:
+                pass
+        # If none of above matched, log once for debugging
+        key = '_did_log_unknown_res_shape'
+        if not getattr(self, key, False):
+            print(f"[foo_player] Unknown pstate.resources shape: type={type(raw)} repr={repr(raw)[:200]}")
+            setattr(self, key, True)
+        return norm
+    except Exception as e:
+        print(f"[foo_player] _normalize_resources_strict error: {e}")
+        return norm
+```
+
+2) Replace all resource accesses inside _can_afford_build and anywhere affordability is computed
+- Replace top of _can_afford_build (copy/paste full function body) so it exclusively uses the new normalizer and never assumes dict-like raw:
+```python
+def _can_afford_build(self, game, color, action_type):
+    try:
+        pstate = game.state.players.get(color)
+        if not pstate:
+            return False
+        res = self._normalize_resources_strict(pstate)
+        # Build checks (unchanged)
+        if action_type == getattr(ActionType, 'BUILD_CITY', None):
+            return res['wheat'] >= 3 and res['ore'] >= 2
+        if action_type == getattr(ActionType, 'BUILD_SETTLEMENT', None):
+            return (res['wood'] >= 1 and res['brick'] >= 1 and res['wheat'] >= 1 and res['sheep'] >= 1)
+        if action_type == getattr(ActionType, 'BUILD_ROAD', None):
+            return res['wood'] >= 1 and res['brick'] >= 1
+        if action_type == getattr(ActionType, 'BUY_DEVELOPMENT_CARD', None):
+            return res['wheat'] >= 1 and res['sheep'] >= 1 and res['ore'] >= 1
+    except Exception as e:
+        print(f"[foo_player] _can_afford_build error: {e}")
+    return False
+```
+- Important: Search file for any direct usages like pstate.resources.get(...) or pstate.resources[...] and replace with calling the normalizer first, then use res['...'].
+
+3) Comprehensive Edge->Nodes Resolver
+- Add helper in FooPlayer:
+```python
+def _resolve_edge_nodes(self, board, start_edge):
+    """
+    Return list of two node ids for an edge or None.
+    Tries, in order:
+      - board.edge_nodes(start_edge)
+      - board.edges[start_edge].nodes
+      - if start_edge is tuple/list of length 2 -> list(start_edge)
+      - try reversed tuple (start_edge[::-1]) to match key ordering
+      - scan board.edges items and match by .nodes equality (order-insensitive)
+      - scan board.edges items and match by .id or .index field equal to start_edge
+    Logs first N failures to help debugging.
+    """
+    try:
+        # 1: direct board.edge_nodes
+        if hasattr(board, 'edge_nodes'):
+            try:
+                nodes = board.edge_nodes(start_edge)
+                if nodes:
+                    return list(nodes)
+            except Exception:
+                pass
+
+        # 2: board.edges[start_edge].nodes
+        try:
+            edges_attr = getattr(board, 'edges', None)
+            if edges_attr is not None and start_edge in edges_attr:
+                edge_obj = edges_attr[start_edge]
+                nodes = getattr(edge_obj, 'nodes', None)
+                if nodes:
+                    return list(nodes)
+        except Exception:
+            pass
+
+        # 3: start_edge is tuple/list
+        if isinstance(start_edge, (tuple, list)) and len(start_edge) == 2:
+            return list(start_edge)
+
+        # 4: reversed tuple (some boards store edges as reversed keys)
+        try:
+            if isinstance(start_edge, (tuple, list)) and len(start_edge) == 2:
+                rev = (start_edge[1], start_edge[0])
+                edges_attr = getattr(board, 'edges', None)
+                if edges_attr is not None and rev in edges_attr:
+                    edge_obj = edges_attr[rev]
+                    nodes = getattr(edge_obj, 'nodes', None)
+                    if nodes:
+                        return list(nodes)
+        except Exception:
+            pass
+
+        # 5: scan board.edges to match by nodes (order-insensitive) or by id/index
+        try:
+            edges_attr = getattr(board, 'edges', None)
+            if edges_attr:
+                for key, edge_obj in getattr(edges_attr, 'items', edges_attr.__iter__ and [])():
+                    try:
+                        nodes = getattr(edge_obj, 'nodes', None)
+                        if nodes:
+                            if set(nodes) == set(start_edge if isinstance(start_edge, (list,tuple)) else nodes):
+                                return list(nodes)
+                    except Exception:
+                        pass
+                    # match by id/index if present
+                    for attr in ('id','index'):
+                        try:
+                            if getattr(edge_obj, attr, None) == start_edge:
+                                nodes = getattr(edge_obj, 'nodes', None)
+                                if nodes:
+                                    return list(nodes)
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+
+        # nothing matched
+        key = '_edge_resolve_log_count'
+        c = getattr(self, key, 0)
+        if c < 20:
+            print(f"[foo_player] _resolve_edge_nodes failed for {repr(start_edge)}; board.edges type={type(getattr(board,'edges',None))}")
+            setattr(self, key, c+1)
+        return None
+    except Exception as e:
+        print(f"[foo_player] _resolve_edge_nodes exception for {repr(start_edge)}: {e}")
+        return None
+```
+
+4) Use _resolve_edge_nodes in _edge_to_nearest_open_info
+- Replace the start_nodes resolution with:
+```python
+start_nodes = self._resolve_edge_nodes(board, start_edge)
+if not start_nodes:
+    print(f"[foo_player] No start_nodes found for edge {start_edge} (after fallbacks)")
+    return (None, 0.0)
+```
+- Also ensure later code uses `start_nodes` variable consistently.
+
+5) Harden estimate_settlement_node_value
+- Provide a defensive version (copy/paste inside class or replace existing call) that tolerates different board APIs:
+```python
+def _safe_estimate_settlement_node_value(self, game, node_id):
+    try:
+        board = game.state.board
+        pip_sum = 0.0
+        tiles = []
+        # Try board.node_tiles
+        try:
+            tiles = board.node_tiles(node_id)
+        except Exception:
+            # fallback: scan board.tiles and pick ones that include node_id (if accessible)
+            tiles_map = getattr(board, 'tiles', None)
+            if tiles_map:
+                try:
+                    for t in getattr(tiles_map, 'values', lambda: [])():
+                        try:
+                            adj = getattr(t, 'nodes', None) or getattr(t, 'adjacent_nodes', None) or []
+                            if adj and node_id in adj:
+                                tiles.append(t)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+        for t in tiles:
+            try:
+                pip = getattr(t, 'pip', None)
+                if pip is not None:
+                    pip_sum += float(pip)
+            except Exception:
+                pass
+        return pip_sum
+    except Exception as e:
+        print(f"[foo_player] _safe_estimate_settlement_node_value error: {e}")
+        return 0.0
+```
+- Replace calls to estimate_settlement_node_value(...) with this helper to avoid attribute errors.
+
+6) Add focused diagnostics (one-time) to capture exact failing shapes
+- Ensure these prints exist and are triggered only once (use flags):
+```python
+# in decide() guarded by self._did_log_shapes
+if not getattr(self, '_did_log_shapes', False):
+    pstate = game.state.players.get(self.color)
+    print(f"[foo_player] DEBUG resources type={type(getattr(pstate,'resources',None))} repr={repr(getattr(pstate,'resources',None))[:300]}")
+    # print first 10 board.edges keys and types if present
+    be = getattr(game.state.board, 'edges', None)
+    print(f"[foo_player] DEBUG board.edges type={type(be)}")
+    try:
+        if be:
+            keys = list(getattr(be,'keys', lambda: [])())[:20]
+            print(f"[foo_player] DEBUG board.edges sample keys/types: {[ (k, type(be[k])) for k in keys ]}")
+    except Exception as e:
+        print(f"[foo_player] DEBUG board.edges sample error: {e}")
+    # print some BUILD_ROAD action values
+    try:
+        sample = [(getattr(a,'value',None), type(getattr(a,'value',None))) for a in playable_actions if getattr(a,'action_type',None)==getattr(ActionType,'BUILD_ROAD',None)][:10]
+        print(f"[foo_player] DEBUG sample BUILD_ROAD actions: {sample}")
+    except Exception as e:
+        print(f"[foo_player] DEBUG sample BUILD_ROAD error: {e}")
+    self._did_log_shapes = True
+```
+
+7) Counters for failures
+- Add counters to the class:
+```python
+self._edge_resolve_failures = 0
+self._resource_shape_failures = 0
+```
+- Increment when normalization falls into unknown shape or when _resolve_edge_nodes returns None.
+
+8) Tests to run (order)
+- A) Run one deterministic debug game. Capture and paste only these lines:
+  - Any lines starting with: "[foo_player] DEBUG resources type=" and repr
+  - Any lines starting with: "[foo_player] Detected list-resource shape -> mapped to"
+  - Any lines starting with: "[foo_player] _resolve_edge_nodes failed for" (if present) and their counts
+  - Any lines starting with: "[foo_player] No start_nodes found for edge"
+  - Any lines starting with: "[foo_player] _safe_estimate_settlement_node_value error" or estimate errors
+  - Any lines starting with: "[foo_player] _can_afford_build error"
+  - Final per-game counters: "[foo_player] Game build counters: roads_built=..., settlements_built=..."
+
+- B) If debug run shows no resolve failures and no resource errors, run 30-game experiment and return JSON + logs.
+
+9) If debug outputs show ambiguous resource ordering (e.g., list-of-ints but different ordering) or board.edges keys are complex (strings, custom objects), paste the printed reprs and sample keys exactly — I will produce a precise mapping or key-matching adapter.
+
+10) Priority for CODER:
+- Apply (1) & (2) immediately (normalizer & resolver).
+- Ensure every affordability check uses normalizer, not raw pstate.resources.
+- Add the diagnostics and counters.
+- Run one debug game and paste the exact diagnostic lines requested.
+
+Keep changes minimal, defensive, and instrumented. Once you paste the debug outputs I will provide the final precise adapter mapping and 30-game experiment plan.
+================================ Human Message =================================
+
+STRATEGIZER
+**Final Adapter Fixes for Resource/Edge API Mismatches**
+
+---
+### **1. Replace Resource Normalization**
+Replace the **entire** `_resources_of` and `_resources_from_pstate` methods with this **unified, exhaustive normalizer**:
+```python
+def _normalize_resources(self, pstate):
+    """
+    Return canonical dict {'wheat','ore','wood','brick','sheep'}.
+    Handles all observed shapes: dict, list-of-pairs, list-of-ints, objects.
+    Logs first occurrence of each shape for debugging.
+    """
+    norm = {'wheat': 0, 'ore': 0, 'wood': 0, 'brick': 0, 'sheep': 0}
+    try:
+        raw = getattr(pstate, 'resources', None)
+        if raw is None:
+            return norm
+
+        # Case 1: dict-like (e.g., {'wheat': 2, 'ore': 1})
+        if hasattr(raw, 'items'):
+            for k, v in raw.items():
+                k2 = str(k).upper()
+                try:
+                    val = int(v)
+                except Exception:
+                    continue
+                if k2 in ('WHEAT', 'GRAIN'):
+                    norm['wheat'] = val
+                elif k2 == 'ORE':
+                    norm['ore'] = val
+                elif k2 == 'WOOD':
+                    norm['wood'] = val
+                elif k2 in ('BRICK', 'CLAY'):
+                    norm['brick'] = val
+                elif k2 in ('SHEEP', 'WOOL'):
+                    norm['sheep'] = val
+            return norm
+
+        # Case 2: list/tuple of (key, val) pairs (e.g., [('wheat', 2), ('ore', 1)])
+        if isinstance(raw, (list, tuple)) and len(raw) and isinstance(raw[0], (list, tuple)) and len(raw[0]) == 2:
+            for k, v in raw:
+                k2 = str(k).upper()
+                try:
+                    val = int(v)
+                except Exception:
+                    continue
+                if k2 in ('WHEAT', 'GRAIN'):
+                    norm['wheat'] = val
+                elif k2 == 'ORE':
+                    norm['ore'] = val
+                elif k2 == 'WOOD':
+                    norm['wood'] = val
+                elif k2 in ('BRICK', 'CLAY'):
+                    norm['brick'] = val
+                elif k2 in ('SHEEP', 'WOOL'):
+                    norm['sheep'] = val
+            return norm
+
+        # Case 3: list/tuple of 5 ints (empirical: [wood, brick, sheep, wheat, ore])
+        if isinstance(raw, (list, tuple)) and len(raw) == 5 and all(isinstance(x, int) for x in raw):
+            norm['wood'] = int(raw[0])
+            norm['brick'] = int(raw[1])
+            norm['sheep'] = int(raw[2])
+            norm['wheat'] = int(raw[3])
+            norm['ore'] = int(raw[4])
+            if not getattr(self, '_logged_list_resources', False):
+                print(f"[foo_player] Detected list-resource shape -> mapped to {norm}")
+                self._logged_list_resources = True
+            return norm
+
+        # Case 4: object with attributes (e.g., res.wheat = 2)
+        for k in ('wheat', 'ore', 'wood', 'brick', 'sheep'):
+            try:
+                norm[k] = int(getattr(raw, k, 0))
+            except Exception:
+                pass
+        return norm
+    except Exception as e:
+        print(f"[foo_player] _normalize_resources error: {e}")
+        return norm
+```
+
+---
+### **2. Replace `_can_afford_build`**
+Replace the **entire** method with this **simplified, robust version**:
+```python
+def _can_afford_build(self, game, color, action_type):
+    """Deterministic affordability check using _normalize_resources."""
+    try:
+        pstate = game.state.players.get(color)
+        if not pstate:
+            return False
+        res = self._normalize_resources(pstate)
+        if action_type == getattr(ActionType, 'BUILD_CITY', None):
+            return res['wheat'] >= 3 and res['ore'] >= 2
+        if action_type == getattr(ActionType, 'BUILD_SETTLEMENT', None):
+            return res['wood'] >= 1 and res['brick'] >= 1 and res['wheat'] >= 1 and res['sheep'] >= 1
+        if action_type == getattr(ActionType, 'BUILD_ROAD', None):
+            return res['wood'] >= 1 and res['brick'] >= 1
+        if action_type == getattr(ActionType, 'BUY_DEVELOPMENT_CARD', None):
+            return res['wheat'] >= 1 and res['sheep'] >= 1 and res['ore'] >= 1
+    except Exception as e:
+        print(f"[foo_player] _can_afford_build error: {e}")
+    return False
+```
+
+---
+### **3. Replace Edge-to-Nodes Resolution**
+Replace the **entire** `_edge_to_nearest_open_info` method with this **exhaustive resolver**:
+```python
+def _edge_to_nearest_open_info(self, game, start_edge):
+    """Return (distance, pip_sum) for nearest open node reachable from start_edge."""
+    try:
+        board = game.state.board
+        start_nodes = None
+
+        # Try all possible ways to resolve edge -> nodes
+        try:
+            start_nodes = board.edge_nodes(start_edge)
+        except Exception:
+            try:
+                start_nodes = board.edges[start_edge].nodes
+            except Exception:
+                try:
+                    if isinstance(start_edge, (tuple, list)) and len(start_edge) == 2:
+                        start_nodes = list(start_edge)
+                    elif hasattr(start_edge, 'nodes'):
+                        start_nodes = list(getattr(start_edge, 'nodes', []))
+                    elif hasattr(board, 'edges') and start_edge in board.edges:
+                        edge_obj = board.edges[start_edge]
+                        start_nodes = getattr(edge_obj, 'nodes', None) or getattr(edge_obj, 'nodes', [])
+                except Exception:
+                    pass
+
+        if not start_nodes:
+            print(f"[foo_player] No start_nodes found for edge {start_edge}")
+            return (None, 0.0)
+
+        from collections import deque
+        visited_edges = set()
+        visited_nodes = set()
+        q = deque([(n, 0) for n in start_nodes])
+        visited_nodes.update(start_nodes)
+
+        best_dist = None
+        best_pip = 0.0
+
+        while q:
+            node, dist = q.popleft()
+            if dist > self.ROAD_MAX_DISTANCE:
+                continue
+            owner = None
+            try:
+                owner = board.node_owner(node)
+            except Exception:
+                try:
+                    owner = board.nodes[node].owner
+                except Exception:
+                    owner = getattr(board.nodes.get(node, {}), 'owner', None)
+            if owner is None:
+                pip_sum = 0.0
+                try:
+                    tiles = board.node_tiles(node)
+                    for t in tiles:
+                        pip = getattr(t, 'pip_probability', getattr(t, 'pip', 1.0))
+                        pip_sum += float(pip)
+                except Exception:
+                    pip_sum = 0.0
+                if best_dist is None or dist < best_dist or (dist == best_dist and pip_sum > best_pip):
+                    best_dist = dist
+                    best_pip = pip_sum
+            try:
+                incident_edges = board.node_edges(node)
+            except Exception:
+                incident_edges = [e for e in getattr(board, 'edges', {}) if node in getattr(getattr(board.edges, e, {}), 'nodes', [])]
+            for e in incident_edges:
+                if e in visited_edges:
+                    continue
+                visited_edges.add(e)
+                try:
+                    neigh_nodes = board.edge_nodes(e)
+                except Exception:
+                    neigh_nodes = getattr(getattr(board.edges, e, {}), 'nodes', [])
+                for nn in neigh_nodes:
+                    if nn not in visited_nodes:
+                        visited_nodes.add(nn)
+                        q.append((nn, dist + 1))
+        return (best_dist, best_pip)
+    except Exception as e:
+        print(f"[foo_player] _edge_to_nearest_open_info error: {e}")
+        return (None, 0.0)
+```
+
+---
+### **4. Update Resource Access in `decide()`**
+Replace **all** direct `pstate.resources` accesses in the `BUILD_CITY` block with:
+```python
+pstate = game.state.players.get(self.color, None)
+res = self._normalize_resources(pstate)
+wheat, ore = res['wheat'], res['ore']
+```
+
+---
+### **5. Add Focused Diagnostics**
+Add this **one-time diagnostic block** at the start of `decide()` (after introspection):
+```python
+if not getattr(self, '_did_log_shapes', False):
+    pstate = game.state.players.get(self.color)
+    print(f"[foo_player] DEBUG resources type={type(getattr(pstate, 'resources', None))} repr={repr(getattr(pstate, 'resources', None))}")
+    for a in playable_actions:
+        if getattr(a, 'action_type', None) == getattr(ActionType, 'BUILD_ROAD', None):
+            edge = getattr(a, 'value', None)
+            print(f"[foo_player] DEBUG BUILD_ROAD edge type={type(edge)} repr={repr(edge)}")
+            break
+    self._did_log_shapes = True
+```
+
+---
+### **6. Implementation Steps**
+1. **Replace** `_resources_of` and `_resources_from_pstate` with the unified `_normalize_resources`.
+2. **Replace** `_can_afford_build` with the simplified version.
+3. **Replace** `_edge_to_nearest_open_info` with the exhaustive resolver.
+4. **Update** resource access in `decide()` to use `_normalize_resources`.
+5. **Add** the diagnostic block.
+6. **Run** 1 debug game and paste:
+   - `[foo_player] DEBUG resources type=...`
+   - `[foo_player] DEBUG BUILD_ROAD edge type=...`
+   - Any `[foo_player] No start_nodes found for edge...` lines.
+   - Final `[foo_player] City bonuses applied this game: X`.
+
+---
+END STRATEGIZER
+================================== Ai Message ==================================
+
+- META THOUGHTS:
+  - We're at the adapter-fix stage. The Strategizer's exhaustive normalizer and resolver are the right next step. The critical requirement is that CODER must replace all remaining direct uses of pstate.resources with the new normalizer and ensure _edge_to_nearest_open_info uses the exhaustive resolution so road/settlement heuristics can function. After applying, we must run a single debug game and capture the precise diagnostic lines to confirm no remaining adapter mismatches. If any errors persist, we will use the diagnostic outputs to create a tiny targeted patch.
+
+- META GOAL:
+  - Have CODER apply the final adapter patches (copy-paste provided), run one deterministic debug game, and paste back the requested diagnostic stdout lines so we can confirm fixes and proceed to the next experiment.
+
+- CHOSEN AGENT: CODER
+
+- AGENT OBJECTIVE:
+Apply the following exact copy-paste edits to game_20250919_174409_fg/foo_player.py, then run one deterministic debug game and return the specified diagnostic lines.
+
+1) Replace resource helpers with this unified normalizer (copy into the FooPlayer class):
+```python
+def _normalize_resources(self, pstate):
+    """
+    Return canonical dict {'wheat','ore','wood','brick','sheep'}.
+    Handles all observed shapes: dict, list-of-pairs, list-of-ints, objects.
+    Logs first occurrence of list-shaped mapping.
+    """
+    norm = {'wheat': 0, 'ore': 0, 'wood': 0, 'brick': 0, 'sheep': 0}
+    try:
+        raw = getattr(pstate, 'resources', None)
+        if raw is None:
+            return norm
+
+        # Case 1: dict-like
+        if hasattr(raw, 'items'):
+            for k, v in raw.items():
+                k2 = str(k).upper()
+                try:
+                    val = int(v)
+                except Exception:
+                    continue
+                if k2 in ('WHEAT', 'GRAIN'):
+                    norm['wheat'] = val
+                elif k2 == 'ORE':
+                    norm['ore'] = val
+                elif k2 == 'WOOD':
+                    norm['wood'] = val
+                elif k2 in ('BRICK', 'CLAY'):
+                    norm['brick'] = val
+                elif k2 in ('SHEEP', 'WOOL'):
+                    norm['sheep'] = val
+            return norm
+
+        # Case 2: list/tuple of (key, val) pairs
+        if isinstance(raw, (list, tuple)) and len(raw) and isinstance(raw[0], (list, tuple)) and len(raw[0]) == 2:
+            for k, v in raw:
+                k2 = str(k).upper()
+                try:
+                    val = int(v)
+                except Exception:
+                    continue
+                if k2 in ('WHEAT', 'GRAIN'):
+                    norm['wheat'] = val
+                elif k2 == 'ORE':
+                    norm['ore'] = val
+                elif k2 == 'WOOD':
+                    norm['wood'] = val
+                elif k2 in ('BRICK', 'CLAY'):
+                    norm['brick'] = val
+                elif k2 in ('SHEEP', 'WOOL'):
+                    norm['sheep'] = val
+            return norm
+
+        # Case 3: list/tuple of 5 ints (empirical: [wood, brick, sheep, wheat, ore])
+        if isinstance(raw, (list, tuple)) and len(raw) == 5 and all(isinstance(x, int) for x in raw):
+            norm['wood'] = int(raw[0])
+            norm['brick'] = int(raw[1])
+            norm['sheep'] = int(raw[2])
+            norm['wheat'] = int(raw[3])
+            norm['ore'] = int(raw[4])
+            if not getattr(self, '_logged_list_resources', False):
+                print(f"[foo_player] Detected list-resource shape -> mapped to {norm}")
+                self._logged_list_resources = True
+            return norm
+
+        # Case 4: object with attributes
+        for k in ('wheat', 'ore', 'wood', 'brick', 'sheep'):
+            try:
+                norm[k] = int(getattr(raw, k, 0))
+            except Exception:
+                pass
+        return norm
+    except Exception as e:
+        print(f"[foo_player] _normalize_resources error: {e}")
+        return norm
+```
+
+2) Replace _can_afford_build with this (copy-paste entire function):
+```python
+def _can_afford_build(self, game, color, action_type):
+    """Deterministic affordability check using _normalize_resources."""
+    try:
+        pstate = game.state.players.get(color)
+        if not pstate:
+            return False
+        res = self._normalize_resources(pstate)
+        if action_type == getattr(ActionType, 'BUILD_CITY', None):
+            return res['wheat'] >= 3 and res['ore'] >= 2
+        if action_type == getattr(ActionType, 'BUILD_SETTLEMENT', None):
+            return res['wood'] >= 1 and res['brick'] >= 1 and res['wheat'] >= 1 and res['sheep'] >= 1
+        if action_type == getattr(ActionType, 'BUILD_ROAD', None):
+            return res['wood'] >= 1 and res['brick'] >= 1
+        if action_type == getattr(ActionType, 'BUY_DEVELOPMENT_CARD', None):
+            return res['wheat'] >= 1 and res['sheep'] >= 1 and res['ore'] >= 1
+    except Exception as e:
+        print(f"[foo_player] _can_afford_build error: {e}")
+    return False
+```
+
+3) Replace _edge_to_nearest_open_info with the exhaustive resolver (copy-paste entire function):
+```python
+def _edge_to_nearest_open_info(self, game, start_edge):
+    """Return (distance, pip_sum) for nearest open node reachable from start_edge."""
+    try:
+        board = game.state.board
+        start_nodes = None
+
+        # Try all possible ways to resolve edge -> nodes
+        try:
+            start_nodes = board.edge_nodes(start_edge)
+        except Exception:
+            try:
+                start_nodes = board.edges[start_edge].nodes
+            except Exception:
+                try:
+                    if isinstance(start_edge, (tuple, list)) and len(start_edge) == 2:
+                        start_nodes = list(start_edge)
+                    elif hasattr(start_edge, 'nodes'):
+                        start_nodes = list(getattr(start_edge, 'nodes', []))
+                    elif hasattr(board, 'edges') and start_edge in board.edges:
+                        edge_obj = board.edges[start_edge]
+                        start_nodes = getattr(edge_obj, 'nodes', None) or getattr(edge_obj, 'nodes', [])
+                except Exception:
+                    pass
+
+        if not start_nodes:
+            print(f"[foo_player] No start_nodes found for edge {start_edge}")
+            return (None, 0.0)
+
+        from collections import deque
+        visited_edges = set()
+        visited_nodes = set()
+        q = deque([(n, 0) for n in start_nodes])
+        visited_nodes.update(start_nodes)
+
+        best_dist = None
+        best_pip = 0.0
+
+        while q:
+            node, dist = q.popleft()
+            if dist > getattr(self, 'ROAD_MAX_DISTANCE', 6):
+                continue
+            owner = None
+            try:
+                owner = board.node_owner(node)
+            except Exception:
+                try:
+                    owner = board.nodes[node].owner
+                except Exception:
+                    owner = getattr(board.nodes.get(node, {}), 'owner', None)
+            if owner is None:
+                pip_sum = 0.0
+                try:
+                    tiles = board.node_tiles(node)
+                    for t in tiles:
+                        pip = getattr(t, 'pip_probability', getattr(t, 'pip', 1.0))
+                        pip_sum += float(pip)
+                except Exception:
+                    pip_sum = 0.0
+                if best_dist is None or dist < best_dist or (dist == best_dist and pip_sum > best_pip):
+                    best_dist = dist
+                    best_pip = pip_sum
+            try:
+                incident_edges = board.node_edges(node)
+            except Exception:
+                incident_edges = [e for e in getattr(board, 'edges', {}) if node in getattr(getattr(board.edges, e, {}), 'nodes', [])]
+            for e in incident_edges:
+                if e in visited_edges:
+                    continue
+                visited_edges.add(e)
+                try:
+                    neigh_nodes = board.edge_nodes(e)
+                except Exception:
+                    neigh_nodes = getattr(getattr(board.edges, e, {}), 'nodes', [])
+                for nn in neigh_nodes:
+                    if nn not in visited_nodes:
+                        visited_nodes.add(nn)
+                        q.append((nn, dist + 1))
+        return (best_dist, best_pip)
+    except Exception as e:
+        print(f"[foo_player] _edge_to_nearest_open_info error: {e}")
+        return (None, 0.0)
+```
+
+4) Replace direct resource accesses in BUILD_CITY block in decide():
+```python
+pstate = game.state.players.get(self.color, None)
+res = self._normalize_resources(pstate)
+wheat, ore = res['wheat'], res['ore']
+```
+
+5) Add one-time diagnostics at the start of decide() (after playable_actions is defined):
+```python
+if not getattr(self, '_did_log_shapes', False):
+    pstate = game.state.players.get(self.color)
+    print(f"[foo_player] DEBUG resources type={type(getattr(pstate, 'resources', None))} repr={repr(getattr(pstate, 'resources', None))}")
+    for a in playable_actions:
+        if getattr(a, 'action_type', None) == getattr(ActionType, 'BUILD_ROAD', None):
+            edge = getattr(a, 'value', None)
+            print(f"[foo_player] DEBUG BUILD_ROAD edge type={type(edge)} repr={repr(edge)}")
+            break
+    self._did_log_shapes = True
+```
+
+6) Grep/patch: Ensure there are no remaining occurrences in the file of raw uses like `pstate.resources.get(` or `pstate.resources[` — replace them to use `_normalize_resources`.
+
+7) Run 1 deterministic debug game and capture the following lines from stdout (paste them exactly):
+- Any lines starting with: "[foo_player] DEBUG resources type="
+- Any lines starting with: "[foo_player] DEBUG BUILD_ROAD edge type="
+- Any lines starting with: "[foo_player] Detected list-resource shape -> mapped to"
+- Any lines starting with: "[foo_player] No start_nodes found for edge"
+- Any lines starting with: "[foo_player] _can_afford_build error"
+- Final per-game build counters: "[foo_player] Game build counters: roads_built=..., settlements_built=..."
+
+If any of these lines show unexpected shapes (e.g., resources as list but in a different ordering, board.edges keys are strings or custom objects), paste the printed reprs/keys and I will provide a targeted mapping or key-matching adapter.
+
+Do not change strategy code. Only apply these adapter patches and diagnostics, run the debug game, and paste the requested stdout excerpts. After you paste them I will provide the final tiny mapping if needed and then we will run the 30-game experiment.
+================================ Human Message =================================
+
+CODER
+
+I updated game_20250919_174409_fg/foo_player.py with the final adapter fixes and strategy helpers per the Strategizer's instructions.
+
+What I changed (summary):
+- Replaced previous resource helpers with a unified, exhaustive _normalize_resources method that handles dicts, list-of-pairs, list-of-ints ([wood,brick,sheep,wheat,ore]), and objects. It logs the first detected list-shaped mapping and unknown shapes once.
+- Replaced _can_afford_build to use _normalize_resources exclusively—this removes all raw .get or direct list assumptions.
+- Replaced _edge_to_nearest_open_info with the exhaustive resolver that tries board.edge_nodes, board.edges lookup, tuple/list edge ids, and fallbacks. It logs when it cannot resolve start_nodes.
+- Ensured BUILD_CITY uses _normalize_resources for resource checks.
+- Added focused one-time diagnostics in decide() printing pstate.resources type/repr and a sample BUILD_ROAD action value/type.
+- Added counters for edge/resource failures and a flag _did_log_shapes.
+- Kept all previous heuristics, road/settlement scoring, chance-aware lookahead, and defensive coding.
+
+What I need from you:
+- Run one deterministic debug game and paste the exact stdout lines (these are produced by the new diagnostics):
+  - Lines beginning with: "[foo_player] DEBUG resources type="
+  - Lines beginning with: "[foo_player] DEBUG BUILD_ROAD edge type="
+  - Any "[foo_player] Detected list-resource shape -> mapped to ..." line
+  - Any "[foo_player] No start_nodes found for edge ..." line
+  - Any "[foo_player] _can_afford_build error" line (should no longer occur)
+  - Final per-game counters: "[foo_player] Game build counters: roads_built=..., settlements_built=..."
+- If the debug run shows resource shapes or edge keys that still don't match, paste the printed reprs/keys and I will provide a tiny specific mapping patch.
+
+Notes and next steps:
+- After you paste the debug outputs and we confirm shapes are now normalized and edges resolve, I will instruct running the 30-game City-Bias experiment and collecting the game_output.txt and JSON results.
+- If any tracebacks occur during the debug run, include the full traceback and I'll patch immediately.
+
+END CODER
+================================ Human Message =================================
+
+GAME RESULTS:
+
+{
+  "Player Summary": {
+    "AlphaBetaPlayer:RED(depth=2,value_fn=base_fn,prunning=False)": {
+      "WINS": 11,
+      "AVG VP": 7.133333333333334,
+      "AVG SETTLES": 2.2666666666666666,
+      "AVG CITIES": 2.066666666666667,
+      "AVG ROAD": 0.36666666666666664,
+      "AVG ARMY": 0.0,
+      "AVG DEV VP": 0.0
+    },
+    "FooPlayer:BLUE": {
+      "WINS": 19,
+      "AVG VP": 8.5,
+      "AVG SETTLES": 1.9,
+      "AVG CITIES": 2.5,
+      "AVG ROAD": 0.6333333333333333,
+      "AVG ARMY": 0.0,
+      "AVG DEV VP": 0.3333333333333333
+    }
+  },
+  "Game Summary": {
+    "AVG TICKS": 314.1,
+    "AVG TURNS": 120.1,
+    "AVG DURATION": 1.1302636782328288
+  }
+}
+================================ Human Message =================================
+
+### After Running The New foo_player.py Player, Here is my analysis and findings:
+
+---
+### **PERFORMANCE SUMMARY**
+- **Outcome**: **Good** (19 wins, 11 losses).
+- **VP**: FooPlayer (BLUE) **8.5 VP** vs. AlphaBetaPlayer (RED) **7.13 VP**.
+- **VP Diff**: **+1.37** (Good).
+- **Key Counts**:
+  - **Cities**: 2.5 (FooPlayer) vs. 2.07 (Opponent).
+  - **Settlements**: 1.9 (FooPlayer) vs. 2.27 (Opponent).
+  - **Roads**: 0.63 (FooPlayer) vs. 0.37 (Opponent).
+  - **Dev Cards**: 0.33 (FooPlayer) vs. 0.0 (Opponent).
+  - **Total Turns**: 120.1.
+
+---
+### **VERDICT**
+**Good**: FooPlayer wins **63% of games** with a **VP diff of +1.37**, demonstrating a strong advantage over the opponent.
+
+---
+### **LIKELY REASONS FOR SUCCESS**
+1. **Effective City Building**:
+   - FooPlayer builds **more cities** (2.5) than the opponent (2.07), indicating the `CITY_BONUS` heuristic is working.
+   - **Log Corroboration**: `BUILD_CITY` actions are chosen, and the `CITY_BONUS` heuristic is applied.
+
+2. **Road Expansion**:
+   - FooPlayer builds **more roads** (0.63) than the opponent (0.37), improving board control.
+   - **Log Corroboration**: Road bonuses are applied, and the `_edge_to_nearest_open_info` method resolves edge nodes correctly.
+
+3. **Dev Card Utilization**:
+   - FooPlayer buys and plays **more dev cards** (0.33 avg) than the opponent (0.0), leveraging them for VP and disruption.
+
+4. **Resource Mapping Fixes**:
+   - The `_can_afford_build` method now correctly handles **list-based resources** (e.g., `[wood, brick, sheep, wheat, ore]`).
+   - **Log Corroboration**: `"Detected list-resource shape -> mapped to {...}"` appears in logs.
+
+---
+### **AREAS FOR IMPROVEMENT**
+1. **Settlement Building**:
+   - FooPlayer builds **fewer settlements** (1.9) than the opponent (2.27), potentially due to resource constraints or prioritization.
+   - **Log Corroboration**: Settlement bonuses are applied, but the player may not prioritize settlements aggressively enough.
+
+2. **Road Chain Detection**:
+   - While road expansion is better, the `_road_chain_score` method could be optimized further to prioritize long-term road strategies.
+
+---
+### **STRATEGIC FLAW**
+The player **lacks aggressive settlement prioritization**, limiting its ability to maximize early-game board control and VP.
+
+---
+### **NEXT STEP**
+Send to **Strategizer** to refine the **settlement prioritization logic**, ensuring settlements are built when resources allow.
+
+---
+**Let me know if you need anything else.** END ANALYZER
+================================== Ai Message ==================================
+
+- META THOUGHTS:
+  - Analyzer confirms adapter fixes succeeded and performance improved (19–11, +1.37 VP). Remaining weakness is strategic: FooPlayer still builds fewer settlements than the opponent. We must now propose small, focused strategy changes (no API work) to increase settlement building early and opportunistically without breaking what is working (city-building, roads, dev cards).
+  - Changes must be minimal, defensive, and measurable: introduce a settlement-urgency modifier that boosts settlement scores in early/mid game when doing so is viable; bias END_TURN gating to avoid passing when near-affordable settlement exists; slightly reduce dev-card bias when settlement is affordable.
+
+- META GOAL:
+  - Provide three prioritized, copy-paste strategy edits (Primary, Secondary, Tertiary) with exact code snippets, insertion points, tunable parameters, and a one-line test/expected log for each. These should be safe to apply and quick to validate in a 30-game experiment.
+
+- CHOSEN AGENT: STRATEGIZER
+
+- AGENT OBJECTIVE:
+You are the STRATEGIZER. Produce three concrete, minimal strategy patches to increase settlements. For each patch include:
+  1) Short rationale (1 line).
+  2) Copy-paste code ready to insert (helper + decide() patch).
+  3) Exact insertion location (function + approximate place in file).
+  4) Tunable parameter names + default values.
+  5) One-line test to run and expected log line that confirms the change worked.
+
+Proposals (Primary → Tertiary):
+
+Primary: Settlement Urgency (highest priority)
+1) Rationale:
+   - Boost settlement scoring early and when the player is close to being able to place a settlement; this nudges the agent to convert roads/resources into settlements rather than postponing.
+
+2) Code (add to FooPlayer class near other helpers/constants):
+```python
+# Tunables
+SETTLEMENT_URGENCY_WEIGHT = 2.5      # multiplies urgency into settlement score
+SETTLEMENT_URGENCY_TURN_WINDOW = 12  # early-game window (turn count) where urgency is stronger
+SETTLEMENT_NEAR_AFFORD_TURNS = 2     # if settlement can be afforded within this many turns, treat as urgent
+
+def _settlement_urgency(self, game, node_id):
+    """
+    Compute urgency score (0..1+) for building settlement at node_id.
+    Factors:
+      - Early game bonus if current turn <= window
+      - Proximity to being able to afford (resources + expected income heuristic)
+      - Connectivity (if a road will enable this soon)
+    Defensive: uses _normalize_resources and existing helpers; never throws.
+    """
+    try:
+        # Early-game baseline urgency
+        turn = getattr(game.state, 'turn_count', None) or getattr(game.state, 'tick', 0)
+        early_factor = 1.0 if turn <= getattr(self, 'SETTLEMENT_URGENCY_TURN_WINDOW', 12) else 0.5
+
+        # Resource closeness: estimate how many turns to afford settlement
+        pstate = game.state.players.get(self.color)
+        res = self._normalize_resources(pstate)
+        need_wood = max(0, 1 - res['wood'])
+        need_brick = max(0, 1 - res['brick'])
+        need_wheat = max(0, 1 - res['wheat'])
+        need_sheep = max(0, 1 - res['sheep'])
+        resources_missing = need_wood + need_brick + need_wheat + need_sheep
+
+        # crude expected income: count adjacent tiles pip sum normalized
+        try:
+            pip_sum = float(self._safe_estimate_settlement_node_value(game, node_id))
+        except Exception:
+            pip_sum = 0.0
+        # Expected turns ≈ resources_missing / (pip_sum_normalized)
+        denom = (pip_sum / getattr(self, 'SETTLEMENT_PIP_NORMALIZER', 6.0)) + 0.1
+        est_turns_to_afford = resources_missing / denom
+
+        near_afford_bonus = 1.5 if est_turns_to_afford <= getattr(self, 'SETTLEMENT_NEAR_AFFORD_TURNS', 2) else 1.0
+
+        # connectivity bonus: if we already have a road adjacent, higher urgency
+        conn = 0.0
+        try:
+            board = game.state.board
+            edges = board.node_edges(node_id)
+            for e in edges:
+                try:
+                    if board.edge_owner(e) == self.color:
+                        conn += 1.0
+                except Exception:
+                    if getattr(getattr(board.edges, e, {}), 'owner', None) == self.color:
+                        conn += 1.0
+        except Exception:
+            pass
+
+        conn_factor = 1.0 + 0.25 * conn
+        urgency = early_factor * near_afford_bonus * conn_factor * max(0.0, (1.0 / (1.0 + est_turns_to_afford)))
+        return float(urgency)
+    except Exception as e:
+        print(f"[foo_player] _settlement_urgency error: {e}")
+        return 0.0
+```
+
+3) Integrate into settlement scoring (inside decide(), where BUILD_SETTLEMENT is scored — augment existing settlement block):
+```python
+if atype == AT_BUILD_SETTLEMENT:
+    node = getattr(action, 'value', None)
+    if node is not None:
+        try:
+            node_score = self._settlement_node_score(game, node)   # existing helper
+            urgency = self._settlement_urgency(game, node)
+            # apply existing node_score logic (threshold) then add urgency-weighted bonus
+            if node_score >= getattr(self, 'SETTLEMENT_BUILD_THRESHOLD', 3.5):
+                score += self.SETTLEMENT_HIGH_PIP_BONUS * (node_score / getattr(self, 'SETTLEMENT_PIP_NORMALIZER', 6.0))
+            # Urgency additive
+            add = getattr(self, 'SETTLEMENT_URGENCY_WEIGHT', 2.5) * urgency
+            score += add
+            print(f"[foo_player] Settlement node score for {node}: {node_score:.2f}, urgency={urgency:.3f} added={add:.2f}")
+        except Exception as e:
+            print(f"[foo_player] settlement scoring error for {node}: {e}")
+```
+
+4) Tunable parameters:
+- SETTLEMENT_URGENCY_WEIGHT = 2.5
+- SETTLEMENT_URGENCY_TURN_WINDOW = 12
+- SETTLEMENT_NEAR_AFFORD_TURNS = 2
+
+5) Test:
+- Run 1 debug game. Look for lines like:
+  - "[foo_player] Settlement node score for 5: 4.20, urgency=0.423 added=1.06"
+- Expected: settlement logs with urgency > 0 appear often in early turns. In a 30-game run, avg settlements should increase toward >= 2.2.
+
+Secondary: End-Turn Gating Bias for Near-Affordable Settlements
+1) Rationale:
+   - Prevent ending the turn when a near-affordable settlement exists; force attempt to build or prioritize road enabling it.
+
+2) Code (patch decide() END_TURN gating; replace or augment affordable_build_exists logic):
+```python
+# Prior to allowing END_TURN, compute near-affordable settlement flag
+near_affordable_settlement = False
+try:
+    pstate = game.state.players.get(self.color)
+    res = self._normalize_resources(pstate)
+    # If missing at most 2 resources total for a settlement, treat as near-affordable
+    missing = max(0, 1 - res['wood']) + max(0, 1 - res['brick']) + max(0, 1 - res['wheat']) + max(0, 1 - res['sheep'])
+    if missing <= 2:
+        # confirm at least one candidate settlement node with reasonable node_score
+        for a in playable_actions:
+            if getattr(a, 'action_type', None) == getattr(ActionType, 'BUILD_SETTLEMENT', None):
+                node = getattr(a, 'value', None)
+                if node is not None:
+                    try:
+                        ns = self._settlement_node_score(game, node)
+                        if ns >= (getattr(self, 'SETTLEMENT_BUILD_THRESHOLD', 3.5) - 1.0):
+                            near_affordable_settlement = True
+                            break
+                    except Exception:
+                        continue
+except Exception as e:
+    print(f"[foo_player] near-afford settlement check error: {e}")
+
+# if near-affordable, be conservative about END_TURN: prefer build actions
+if near_affordable_settlement:
+    # increase weight of BUILD_SETTLEMENT options by a small fixed bonus to avoid END_TURN
+    for a in playable_actions:
+        if getattr(a, 'action_type', None) == getattr(ActionType, 'BUILD_SETTLEMENT', None):
+            # attach a tag so scoring block adds small bias (or when choosing action, prefer these)
+            setattr(a, '_near_afford_boost', True)
+```
+
+Then in BUILD_SETTLEMENT scoring block, add:
+```python
+if getattr(action, '_near_afford_boost', False):
+    boost = 1.5
+    score += boost
+    print(f"[foo_player] Near-afford boost applied for settlement {node}: +{boost:.2f}")
+```
+
+3) Tunables:
+- NEAR_AFFORD_MISSING_MAX = 2 (implicit)
+- NEAR_AFFORD_BOOST = 1.5
+
+4) Test:
+- Run 1 debug game. Expect log:
+  - "[foo_player] Near-afford boost applied for settlement 5: +1.50"
+- Expected effect: fewer early END_TURN choices; more settlements built in early/mid game.
+
+Tertiary: Dev-card Bias Reduction When Settlement Possible
+1) Rationale:
+   - If settlement is affordable or near-affordable, reduce dev-card bonus so resources go to physical expansion.
+
+2) Code (adjust dev-card scoring block already present):
+```python
+if atype == AT_BUY_DEV:
+    try:
+        pstate = game.state.players.get(self.color)
+        res = self._normalize_resources(pstate)
+        can_settle = any(self._can_afford_build(game, self.color, at) for at in (getattr(ActionType,'BUILD_SETTLEMENT',None),))
+        if can_settle:
+            # reduce dev bonus (or skip)
+            dev_bonus = getattr(self, 'DEV_CARD_BONUS', 1.0) * 0.25
+        else:
+            dev_bonus = getattr(self, 'DEV_CARD_BONUS', 1.0)
+        score += dev_bonus
+        if dev_bonus < getattr(self, 'DEV_CARD_BONUS', 1.0):
+            print(f"[foo_player] Dev card bonus reduced to {dev_bonus:.2f} due to settlement possibility")
+    except Exception as e:
+        print(f"[foo_player] dev-card adjust error: {e}")
+```
+
+3) Tunables:
+- DEV_CARD_BIAS_REDUCTION_FACTOR = 0.25 (used above)
+
+4) Test:
+- Run 1 debug game. Expect log:
+  - "[foo_player] Dev card bonus reduced to 0.25 due to settlement possibility"
+- Expected effect: more resource allocation toward settlements/roads when feasible.
+
+Diagnostics & Validation
+- Add these one-line diagnostics (if not already present) to the end of decide() or per-game print:
+```python
+print(f"[foo_player] Diagnostics: settlements_built={getattr(self,'_game_settle_count',0)}, roads_built={getattr(self,'_game_road_count',0)}")
+```
+- Run a 30-game experiment after implementing patches.
+- Success criteria (30-game):
+  - Avg settlements increases toward >= 2.2 (from 1.9).
+  - Avg roads remain >= 0.6 or stable.
+  - Win rate stays >= 60% and VP diff remains positive (does not drop below previous +1.37 much).
+
+Notes and safety
+- All snippets use getattr/try/except for safety.
+- Keep all changes additive to scoring — do not change decision flow (only adjust scores & small END_TURN gating boost).
+- Parameters above should be added to class constants for easy tuning.
+
+Proceed to implement these three patches (primary first). After CODER runs a 1-game debug and a 30-game experiment, paste the game_output and JSON. If settlement rate does not increase, we will iterate on SETTLEMENT_URGENCY_WEIGHT, TURN_WINDOW, and NEAR_AFFORD_BOOST.
+
+End of STRATEGIZER instructions.
+================================ Human Message =================================
+
+STRATEGIZER
+**Prioritized Settlement Strategy Patches**
+
+---
+### **Primary: Settlement Urgency**
+**Rationale**: Boost settlement scoring early and when near-affordable to convert roads/resources into settlements.
+
+**Code**:
+1. Add this **helper method** to `FooPlayer` (near other helpers):
+```python
+def _settlement_urgency(self, game, node_id):
+    """Compute urgency score (0..1+) for building settlement at node_id."""
+    try:
+        turn = getattr(game.state, 'turn_count', getattr(game.state, 'tick', 0))
+        early_factor = 1.0 if turn <= self.SETTLEMENT_URGENCY_TURN_WINDOW else 0.5
+
+        pstate = game.state.players.get(self.color)
+        res = self._normalize_resources(pstate)
+        need_wood = max(0, 1 - res['wood'])
+        need_brick = max(0, 1 - res['brick'])
+        need_wheat = max(0, 1 - res['wheat'])
+        need_sheep = max(0, 1 - res['sheep'])
+        resources_missing = need_wood + need_brick + need_wheat + need_sheep
+
+        pip_sum = self._safe_estimate_settlement_node_value(game, node_id)
+        denom = (pip_sum / self.SETTLEMENT_PIP_NORMALIZER) + 0.1
+        est_turns_to_afford = resources_missing / denom
+        near_afford_bonus = 1.5 if est_turns_to_afford <= self.SETTLEMENT_NEAR_AFFORD_TURNS else 1.0
+
+        conn = 0.0
+        try:
+            board = game.state.board
+            edges = board.node_edges(node_id)
+            for e in edges:
+                try:
+                    owner = board.edge_owner(e)
+                except Exception:
+                    owner = getattr(getattr(board.edges, e, {}), 'owner', None)
+                if owner == self.color:
+                    conn += 1.0
+        except Exception:
+            pass
+        conn_factor = 1.0 + 0.25 * conn
+
+        urgency = early_factor * near_afford_bonus * conn_factor * max(0.0, (1.0 / (1.0 + est_turns_to_afford)))
+        return float(urgency)
+    except Exception as e:
+        print(f"[foo_player] _settlement_urgency error: {e}")
+        return 0.0
+```
+
+2. **Patch the `BUILD_SETTLEMENT` block** in `decide()` (after `node_score` calculation):
+```python
+urgency = self._settlement_urgency(game, node)
+add = self.SETTLEMENT_URGENCY_WEIGHT * urgency
+score += add
+print(f"[foo_player] Settlement urgency for {node}: {urgency:.3f} added={add:.2f}")
+```
+
+**Parameters**:
+```python
+SETTLEMENT_URGENCY_WEIGHT = 2.5
+SETTLEMENT_URGENCY_TURN_WINDOW = 12
+SETTLEMENT_NEAR_AFFORD_TURNS = 2
+```
+
+**Test**:
+Run 1 debug game. Look for:
+```
+[foo_player] Settlement urgency for 5: 0.423 added=1.06
+```
+**Success**: Avg settlements ≥ 2.2 in 30-game run.
+
+---
+### **Secondary: END_TURN Gating for Near-Affordable Settlements**
+**Rationale**: Avoid ending turns when a near-affordable settlement exists.
+
+**Code**:
+1. **Patch `decide()`** before `affordable_build_exists` logic:
+```python
+near_affordable_settlement = False
+try:
+    pstate = game.state.players.get(self.color)
+    res = self._normalize_resources(pstate)
+    missing = max(0, 1 - res['wood']) + max(0, 1 - res['brick']) + max(0, 1 - res['wheat']) + max(0, 1 - res['sheep'])
+    if missing <= 2:
+        for a in playable_actions:
+            if getattr(a, 'action_type', None) == getattr(ActionType, 'BUILD_SETTLEMENT', None):
+                node = getattr(a, 'value', None)
+                if node is not None:
+                    try:
+                        ns = self._settlement_node_score(game, node)
+                        if ns >= (self.SETTLEMENT_BUILD_THRESHOLD - 1.0):
+                            near_affordable_settlement = True
+                            break
+                    except Exception:
+                        continue
+except Exception as e:
+    print(f"[foo_player] near-afford settlement check error: {e}")
+
+if near_affordable_settlement:
+    for a in playable_actions:
+        if getattr(a, 'action_type', None) == getattr(ActionType, 'BUILD_SETTLEMENT', None):
+            setattr(a, '_near_afford_boost', True)
+```
+
+2. **Patch `BUILD_SETTLEMENT` block** in `decide()`:
+```python
+if getattr(action, '_near_afford_boost', False):
+    boost = 1.5
+    score += boost
+    print(f"[foo_player] Near-afford boost applied for settlement {node}: +{boost:.2f}")
+```
+
+**Parameters**:
+```python
+NEAR_AFFORD_BOOST = 1.5
+```
+
+**Test**:
+Run 1 debug game. Look for:
+```
+[foo_player] Near-afford boost applied for settlement 5: +1.50
+```
+**Success**: Fewer early `END_TURN` choices; avg settlements ≥ 2.2.
+
+---
+### **Tertiary: Dev-Card Bias Reduction**
+**Rationale**: Reduce dev-card purchases when settlements are affordable.
+
+**Code**:
+**Patch `BUY_DEVELOPMENT_CARD` block** in `decide()`:
+```python
+can_settle = any(self._can_afford_build(game, self.color, getattr(ActionType, 'BUILD_SETTLEMENT', None)))
+if can_settle:
+    dev_bonus = self.DEV_CARD_BONUS * 0.25
+else:
+    dev_bonus = self.DEV_CARD_BONUS
+score += dev_bonus
+print(f"[foo_player] Dev card bonus {'reduced' if can_settle else 'applied'}: {dev_bonus:.2f}")
+```
+
+**Parameters**:
+```python
+DEV_CARD_BIAS_REDUCTION_FACTOR = 0.25
+```
+
+**Test**:
+Run 1 debug game. Look for:
+```
+[foo_player] Dev card bonus reduced: 0.25
+```
+**Success**: More resources allocated to settlements/roads.
+
+---
+### **Diagnostics**
+Add this **one-liner** to the end of `decide()`:
+```python
+print(f"[foo_player] Diagnostics: settlements_built={getattr(self,'_game_settle_count',0)}, roads_built={getattr(self,'_game_road_count',0)}")
+```
+
+**Validation**:
+Run 30-game experiment. **Success Criteria**:
+- Avg settlements ≥ 2.2.
+- Avg roads ≥ 0.6.
+- Win rate ≥ 60%.
+
+---
+END STRATEGIZER
+================================== Ai Message ==================================
+
+- META THOUGHTS:
+  - Recent adapter fixes recovered and improved performance (19–11, +1.37 VP). Remaining weakness is strategic: too few settlements. We must now implement minimal, safe strategy nudges to increase settlement building early and when near-affordable, without breaking the adapters or existing city/road strengths.
+  - Plan: have CODER implement three incremental patches (Primary: settlement urgency score; Secondary: near-afford END_TURN gating + boost; Tertiary: reduce dev-card bias when settlement possible), add tunables and diagnostics, run 1 debug game to validate logs, then run a 30-game experiment and return results.
+
+- META GOAL:
+  - Implement the three settlement-focused patches, add diagnostic prints and counters, run a deterministic debug game and then a 30-game run. Return the debug stdout lines (settlement urgency/near-afford/dev-card logs and per-game counters) and the 30-game game_output + JSON.
+
+- CHOSEN AGENT: CODER
+
+- AGENT OBJECTIVE:
+Implement the Strategizer's three settlement-priority patches now in game_20250919_174409_fg/foo_player.py. Make only the minimal, safe edits described below. After implementing, run one deterministic debug game and then, if the debug is clean, run the 30-game experiment. Return the requested outputs.
+
+1) Add tunables (class-level constants near other weights):
+```
+SETTLEMENT_URGENCY_WEIGHT = 2.5
+SETTLEMENT_URGENCY_TURN_WINDOW = 12
+SETTLEMENT_NEAR_AFFORD_TURNS = 2
+NEAR_AFFORD_BOOST = 1.5
+DEV_CARD_BIAS_REDUCTION_FACTOR = 0.25
+```
+
+2) Primary — settlement urgency helper
+- Add this method to FooPlayer (near other helpers):
+```
+def _settlement_urgency(self, game, node_id):
+    """Compute urgency score (0..1+) for building settlement at node_id."""
+    try:
+        turn = getattr(game.state, 'turn_count', getattr(game.state, 'tick', 0))
+        early_factor = 1.0 if turn <= self.SETTLEMENT_URGENCY_TURN_WINDOW else 0.5
+
+        pstate = game.state.players.get(self.color)
+        res = self._normalize_resources(pstate)
+        need_wood = max(0, 1 - res['wood'])
+        need_brick = max(0, 1 - res['brick'])
+        need_wheat = max(0, 1 - res['wheat'])
+        need_sheep = max(0, 1 - res['sheep'])
+        resources_missing = need_wood + need_brick + need_wheat + need_sheep
+
+        pip_sum = 0.0
+        try:
+            pip_sum = float(self._safe_estimate_settlement_node_value(game, node_id))
+        except Exception:
+            pip_sum = 0.0
+        denom = (pip_sum / getattr(self, 'SETTLEMENT_PIP_NORMALIZER', 6.0)) + 0.1
+        est_turns_to_afford = resources_missing / denom
+        near_afford_bonus = 1.5 if est_turns_to_afford <= self.SETTLEMENT_NEAR_AFFORD_TURNS else 1.0
+
+        conn = 0.0
+        try:
+            board = game.state.board
+            edges = board.node_edges(node_id)
+            for e in edges:
+                try:
+                    owner = board.edge_owner(e)
+                except Exception:
+                    owner = getattr(getattr(board.edges, e, {}), 'owner', None)
+                if owner == self.color:
+                    conn += 1.0
+        except Exception:
+            pass
+        conn_factor = 1.0 + 0.25 * conn
+
+        urgency = early_factor * near_afford_bonus * conn_factor * max(0.0, (1.0 / (1.0 + est_turns_to_afford)))
+        return float(urgency)
+    except Exception as e:
+        print(f"[foo_player] _settlement_urgency error: {e}")
+        return 0.0
+```
+
+- Integration: In decide() inside BUILD_SETTLEMENT scoring block, after node_score calculation add:
+```
+urgency = self._settlement_urgency(game, node)
+add = self.SETTLEMENT_URGENCY_WEIGHT * urgency
+score += add
+print(f"[foo_player] Settlement urgency for {node}: {urgency:.3f} added={add:.2f}")
+```
+
+3) Secondary — near-afford END_TURN gating and boost
+- Before the affordability/END_TURN gating logic in decide(), insert:
+```
+near_affordable_settlement = False
+try:
+    pstate = game.state.players.get(self.color)
+    res = self._normalize_resources(pstate)
+    missing = max(0, 1 - res['wood']) + max(0, 1 - res['brick']) + max(0, 1 - res['wheat']) + max(0, 1 - res['sheep'])
+    if missing <= 2:
+        for a in playable_actions:
+            if getattr(a, 'action_type', None) == getattr(ActionType, 'BUILD_SETTLEMENT', None):
+                node = getattr(a, 'value', None)
+                if node is not None:
+                    try:
+                        ns = self._settlement_node_score(game, node)
+                        if ns >= (self.SETTLEMENT_BUILD_THRESHOLD - 1.0):
+                            near_affordable_settlement = True
+                            break
+                    except Exception:
+                        continue
+except Exception as e:
+    print(f"[foo_player] near-afford settlement check error: {e}")
+
+if near_affordable_settlement:
+    for a in playable_actions:
+        if getattr(a, 'action_type', None) == getattr(ActionType, 'BUILD_SETTLEMENT', None):
+            setattr(a, '_near_afford_boost', True)
+```
+
+- Integration: In BUILD_SETTLEMENT scoring block, add:
+```
+if getattr(action, '_near_afford_boost', False):
+    boost = getattr(self, 'NEAR_AFFORD_BOOST', 1.5)
+    score += boost
+    print(f"[foo_player] Near-afford boost applied for settlement {node}: +{boost:.2f}")
+```
+
+4) Tertiary — reduce dev-card bias when settlement possible
+- In BUY_DEVELOPMENT_CARD scoring block, replace additive bonus logic to:
+```
+try:
+    can_settle = self._can_afford_build(game, self.color, getattr(ActionType, 'BUILD_SETTLEMENT', None))
+    if can_settle:
+        dev_bonus = getattr(self, 'DEV_CARD_BONUS', 1.0) * getattr(self, 'DEV_CARD_BIAS_REDUCTION_FACTOR', 0.25)
+    else:
+        dev_bonus = getattr(self, 'DEV_CARD_BONUS', 1.0)
+    score += dev_bonus
+    if dev_bonus < getattr(self, 'DEV_CARD_BONUS', 1.0):
+        print(f"[foo_player] Dev card bonus reduced to {dev_bonus:.2f} due to settlement possibility")
+except Exception as e:
+    print(f"[foo_player] dev-card adjust error: {e}")
+```
+
+5) Diagnostics & counters
+- Ensure per-game counters exist and are incremented when actions are chosen:
+```
+# in __init__:
+self._game_road_count = 0
+self._game_settle_count = 0
+
+# where selecting BUILD_ROAD action:
+self._game_road_count += 1
+
+# where selecting BUILD_SETTLEMENT action:
+self._game_settle_count += 1
+
+# at end of decide() or on terminal:
+print(f"[foo_player] Diagnostics: settlements_built={getattr(self,'_game_settle_count',0)}, roads_built={getattr(self,'_game_road_count',0)}")
+```
+
+6) Safety / defensive coding
+- Wrap all new calls in try/except and use getattr for attributes.
+- Do not alter other heuristics or control flow beyond adding these score modifiers and the END_TURN tagging.
+
+7) Tests to run, in order:
+A) Single deterministic debug game. Capture and paste the exact stdout lines (copy/paste) that include:
+  - Any lines like: "[foo_player] Settlement urgency for ..."
+  - "[foo_player] Near-afford boost applied for settlement ..."
+  - "[foo_player] Dev card bonus reduced to ..."
+  - "[foo_player] Diagnostics: settlements_built=..., roads_built=..."
+  - Any exceptions or tracebacks (paste full traceback).
+
+B) If debug run is clean (no exceptions), run the 30-game experiment (same harness/opponent). Return:
+  - game_output.txt (full log)
+  - JSON results (summary)
+  - A brief summary: wins, avg VP, avg settlements, avg roads, VP diff.
+
+8) Success criteria to report:
+- Avg settlements increases to ≈ ≥ 2.2 (target).
+- Avg roads remains ≥ 0.6 (or not significantly degraded).
+- Win rate remains ≥ ~60% and VP diff stays positive (not worse than current +1.37 by more than ~0.5).
+
+Implement these patches now, run the debug game and paste the requested stdout excerpt. If any traceback or unexpected adapter shapes occur, include them and I will produce a targeted fix.
+================================ Human Message =================================
+
+CODER
+
+I updated game_20250919_174409_fg/foo_player.py with the Strategizer's settlement-priority patches and the final adapter-normalizer fixes. Changes made:
+
+- Added new tunables:
+  - SETTLEMENT_URGENCY_WEIGHT = 2.5
+  - SETTLEMENT_URGENCY_TURN_WINDOW = 12
+  - SETTLEMENT_NEAR_AFFORD_TURNS = 2
+  - NEAR_AFFORD_BOOST = 1.5
+  - DEV_CARD_BIAS_REDUCTION_FACTOR = 0.25
+
+- Implemented helper _settlement_urgency and integrated it into BUILD_SETTLEMENT scoring, including debug prints.
+
+- Implemented near-afford END_TURN gating (tagging actions with _near_afford_boost) and applied NEAR_AFFORD_BOOST in settlement scoring.
+
+- Adjusted BUY_DEVELOPMENT_CARD scoring to reduce dev-card bias when settlement is affordable (using DEV_CARD_BIAS_REDUCTION_FACTOR).
+
+- Ensured all direct uses of pstate.resources were replaced by _normalize_resources and added robust diagnostics to capture resource shapes and edge representations.
+
+- Kept all adapter-safe coding (getattr/try/except) and retained chance-aware 1-ply simulation behavior and earlier heuristics.
+
+Files written:
+- Updated game_20250919_174409_fg/foo_player.py (full rewrite applied).
+
+What I ran:
+- I did not run games in this environment. Please run:
+  1) One deterministic debug game and paste the debug stdout excerpt (settlement urgency, near-afford boost, dev-card reduction, and per-game counters).
+  2) If clean, run 30-game experiment and provide game_output.txt and JSON results.
+
+Report items (for next iteration):
+- If any tracebacks or unexpected resource/edge shapes appear in the debug logs, paste them and I will provide a rapid, targeted patch.
+- If settlements do not increase sufficiently after the 30-game run, we can iterate on SETTLEMENT_URGENCY_WEIGHT and NEAR_AFFORD_BOOST.
+
+END CODER
+================================ Human Message =================================
+
+GAME RESULTS:
+
+{
+  "Player Summary": {
+    "AlphaBetaPlayer:RED(depth=2,value_fn=base_fn,prunning=False)": {
+      "WINS": 16,
+      "AVG VP": 8.1,
+      "AVG SETTLES": 2.533333333333333,
+      "AVG CITIES": 2.066666666666667,
+      "AVG ROAD": 0.6,
+      "AVG ARMY": 0.03333333333333333,
+      "AVG DEV VP": 0.16666666666666666
+    },
+    "FooPlayer:BLUE": {
+      "WINS": 14,
+      "AVG VP": 7.533333333333333,
+      "AVG SETTLES": 2.0,
+      "AVG CITIES": 2.2666666666666666,
+      "AVG ROAD": 0.4,
+      "AVG ARMY": 0.06666666666666667,
+      "AVG DEV VP": 0.06666666666666667
+    }
+  },
+  "Game Summary": {
+    "AVG TICKS": 314.03333333333336,
+    "AVG TURNS": 119.23333333333333,
+    "AVG DURATION": 1.1104492823282877
+  }
+}
+================================ Human Message =================================
+
+### After Running The New foo_player.py Player, Here is my analysis and findings:
+
+---
+### **PERFORMANCE SUMMARY**
+- **Outcome**: **Poor** (14 wins, 16 losses).
+- **VP**: FooPlayer (BLUE) **7.53 VP** vs. AlphaBetaPlayer (RED) **8.1 VP**.
+- **VP Diff**: **-0.57** (Poor).
+- **Key Counts**:
+  - **Cities**: 2.27 (FooPlayer) vs. 2.07 (Opponent).
+  - **Settlements**: 2.0 (FooPlayer) vs. 2.53 (Opponent).
+  - **Roads**: 0.4 (FooPlayer) vs. 0.6 (Opponent).
+  - **Dev Cards**: 0.07 (FooPlayer) vs. 0.17 (Opponent).
+  - **Total Turns**: 119.23.
+
+---
+### **VERDICT**
+**Poor**: FooPlayer loses **53% of games** with a **VP diff of -0.57**, underperforming the opponent.
+
+---
+### **LIKELY REASONS**
+1. **Resource Mapping Errors**:
+   - **Evidence**: Repeated `'list' object has no attribute 'get'` errors in logs.
+   - **Cause**: The `_can_afford_build` method fails to handle **list-based resources** correctly.
+   - **Code Issue**: The fallback logic in `_can_afford_build` (lines 150–170) does not account for all possible resource shapes.
+   - **Log Excerpt**:
+     ```
+     [foo_player] _can_afford_build error: 'list' object has no attribute 'get'
+     ```
+
+2. **Road Chain Detection Fails**:
+   - **Evidence**: Logs show `No start_nodes found for edge (X, Y)` for all `BUILD_ROAD` actions.
+   - **Cause**: The `_edge_to_nearest_open_info` method fails to resolve edge nodes due to API mismatches.
+   - **Code Issue**: The fallback logic for tuple-based edge identifiers (e.g., `(0, 1)`) is insufficient.
+   - **Log Excerpt**:
+     ```
+     [foo_player] No start_nodes found for edge (13, 14) (after fallbacks)
+     ```
+
+3. **Settlement Heuristic Ineffective**:
+   - **Evidence**: FooPlayer builds **fewer settlements** (2.0) than the opponent (2.53).
+   - **Cause**: The `estimate_settlement_node_value` method may not be scoring nodes correctly due to API mismatches.
+   - **Code Issue**: The `board.node_tiles(node_id)` and `tile.pip` attribute access may fail silently.
+   - **Log Excerpt**:
+     ```
+     [foo_player] estimate_settlement_node_value error: ...
+     ```
+
+4. **Dev Card Utilization**:
+   - **Evidence**: FooPlayer buys **fewer dev cards** (0.07 avg) than the opponent (0.17), missing opportunities for VP and disruption.
+   - **Cause**: The `BUY_DEVELOPMENT_CARD` heuristic is not aggressive enough.
+
+---
+### **STRATEGIC FLAW**
+The player **fails to build settlements and roads** due to **broken resource detection** and **incorrect board API usage**, leading to missed opportunities for VP and board control.
+
+---
+### **NEXT STEP**
+Send to **Coder** to fix the **resource mapping logic** in `_can_afford_build` and **edge node resolution** in `_edge_to_nearest_open_info`.
+
+---
+**Let me know if you need anything else.** END ANALYZER
+
+--- Output from META at 20250920_184504 ---
+================================== Ai Message ==================================
+Tool Calls:
+  think_tool (call_tD5QJ6svfNxHvVkOU1WAip8d)
+ Call ID: call_tD5QJ6svfNxHvVkOU1WAip8d
+  Args:
+    reflection: Findings: Analyzer reports recurring 'list' object has no attribute 'get' from _can_afford_build and 'No start_nodes found' from _edge_to_nearest_open_info. Previously we added normalizer and resolver, then more fixes; later results improved. Now after settlement-priority patches, regressions returned. Likely reasons: some code paths still call previous helpers or directly reference pstate.resources assuming dict; normalize not used everywhere (some calls use pstate.resources.get or iterate expecting dict). For edges, some action values and board.edges keys could be stored as strings, custom objects, or list-of-ints with different ordering. Need to (A) locate and replace all raw resource accesses to use normalized res; (B) make resolver try more shapes including strings, JSON-like slices, numeric indices, and parse reprs; (C) add one-time logging of exact shapes in failing cases and counters; (D) include fail-safe: if affordability check fails due to resource shape, assume affordable only if resources_UNKNOWN flag false? Better: treat unknown shapes conservatively but avoid throwing. Implementation plan: STRATEGIZER must produce exact code for search/replace patterns (regex), provide universal normalizer and enforced usage, and enhanced edge resolver with scanning of board.edges keys and matching by string form and numeric id, plus fallback parsing of action.value repr if necessary. Tests: run debug game and assert zero lines of _can_afford_build error and no No start_nodes lines. Metrics: count failures and ensure zero or below threshold across debug game. Next step: if failures persist, capture printed reprs for targeted mapping.
+================================= Tool Message =================================
+Name: think_tool
+
+Reflection recorded: Findings: Analyzer reports recurring 'list' object has no attribute 'get' from _can_afford_build and 'No start_nodes found' from _edge_to_nearest_open_info. Previously we added normalizer and resolver, then more fixes; later results improved. Now after settlement-priority patches, regressions returned. Likely reasons: some code paths still call previous helpers or directly reference pstate.resources assuming dict; normalize not used everywhere (some calls use pstate.resources.get or iterate expecting dict). For edges, some action values and board.edges keys could be stored as strings, custom objects, or list-of-ints with different ordering. Need to (A) locate and replace all raw resource accesses to use normalized res; (B) make resolver try more shapes including strings, JSON-like slices, numeric indices, and parse reprs; (C) add one-time logging of exact shapes in failing cases and counters; (D) include fail-safe: if affordability check fails due to resource shape, assume affordable only if resources_UNKNOWN flag false? Better: treat unknown shapes conservatively but avoid throwing. Implementation plan: STRATEGIZER must produce exact code for search/replace patterns (regex), provide universal normalizer and enforced usage, and enhanced edge resolver with scanning of board.edges keys and matching by string form and numeric id, plus fallback parsing of action.value repr if necessary. Tests: run debug game and assert zero lines of _can_afford_build error and no No start_nodes lines. Metrics: count failures and ensure zero or below threshold across debug game. Next step: if failures persist, capture printed reprs for targeted mapping.
+================================== Ai Message ==================================
+
+- META THOUGHTS:
+  - The Analyzer shows regressions: the same adapter errors ("'list' object has no attribute 'get'" and "No start_nodes found") reappeared after the settlement patches. That implies some code locations still access raw pstate.resources or call older helpers, and the edge resolver still misses some encodings. We must stop iterating strategy and fix adapter robustness thoroughly.
+  - Plan: produce precise, copy-paste patches that (A) replace any remaining raw resource accesses by canonical _normalize_resources, (B) harden _can_afford_build to never call .get on lists, (C) make _edge_to_nearest_open_info and a new _resolve_edge_nodes exhaustive (try string keys, numeric keys, repr parsing), and (D) add one-time debug dumps when failures occur so we can patch any unhandled shapes.
+
+- META GOAL:
+  - Provide CODER with exact edits (search/replace patterns and new exhaustive resolver code) to eliminate the two classes of failures. After applying, run a debug game and confirm no "_can_afford_build error" and no "No start_nodes found" lines; if any remain, capture the printed reprs for targeted mapping.
+
+- CHOSEN AGENT: STRATEGIZER
+
+- AGENT OBJECTIVE:
+You are the STRATEGIZER. Give CODER the exact, minimal edits to apply now to fully harden resource access and edge resolution. Include:
+1) A short explanation for each patch.
+2) Copy-paste code to insert/replace (be explicit which function to replace).
+3) A small grep/replace checklist so CODER can find remaining raw usages.
+4) The debug output lines to capture if errors persist.
+
+Patches (apply immediately, in order):
+
+Patch A — Enforce canonical resource access everywhere
+- Why: Some code still uses pstate.resources.get(...) or pstate.resources[...] causing the "'list' object has no attribute 'get'" error. We must replace all such usages.
+
+1) Search-and-replace checklist (run across foo_player.py):
+- Find occurrences of:
+  - "pstate.resources.get" or ".resources.get(" — replace with normalized access.
+  - "pstate.resources[" or ".resources[" — replace with normalized access.
+  - "for k, v in pstate.resources" — replace with iterate over normalized dict.
+  - Any usage of methods named "_resources_of" or "_resources_from_pstate" — replace calls with _normalize_resources.
+
+2) Replace pattern examples:
+
+a) Anywhere you see:
+```python
+pstate = game.state.players.get(self.color)
+wood = pstate.resources.get('wood', 0)
+```
+Replace with:
+```python
+pstate = game.state.players.get(self.color)
+res = self._normalize_resources(pstate)
+wood = res['wood']
+```
+
+b) Anywhere you see:
+```python
+raw = pstate.resources
+if 'wheat' in raw: ...
+```
+Replace with:
+```python
+res = self._normalize_resources(pstate)
+if res['wheat'] > 0: ...
+```
+
+3) Add a final guard at file-level inside decide() startup to fail fast and print any remaining raw usages (temporary):
+Insert near top of decide(), after getting pstate:
+```python
+# Debug: catch any unexpected raw resource usage objects early
+raw_resources = getattr(pstate, 'resources', None)
+if isinstance(raw_resources, (list, tuple)) and not getattr(self, '_logged_raw_res_warning', False):
+    print(f"[foo_player] WARNING: raw pstate.resources is list: repr={repr(raw_resources)[:300]}")
+    self._logged_raw_res_warning = True
+```
+This will make remaining spots easier to find.
+
+Patch B — Replace _can_afford_build with fully defensive version (replace entire function)
+- Why: Prevent any .get calls on unknown shapes and centralize logic.
+
+Copy-paste this replacement (ensure it overwrites any previous _can_afford_build):
+```python
+def _can_afford_build(self, game, color, action_type):
+    """Deterministic affordability check using _normalize_resources. Fully defensive."""
+    try:
+        pstate = game.state.players.get(color)
+        if not pstate:
+            return False
+        res = self._normalize_resources(pstate)
+        # Defensive casting
+        try:
+            wood = int(res.get('wood', 0))
+            brick = int(res.get('brick', 0))
+            wheat = int(res.get('wheat', 0))
+            sheep = int(res.get('sheep', 0))
+            ore = int(res.get('ore', 0))
+        except Exception:
+            # If normalization returned unexpected types, coerce manually
+            wood = int(res['wood']) if 'wood' in res else 0
+            brick = int(res['brick']) if 'brick' in res else 0
+            wheat = int(res['wheat']) if 'wheat' in res else 0
+            sheep = int(res['sheep']) if 'sheep' in res else 0
+            ore = int(res['ore']) if 'ore' in res else 0
+
+        if action_type == getattr(ActionType, 'BUILD_CITY', None):
+            return (wheat >= 3 and ore >= 2)
+        if action_type == getattr(ActionType, 'BUILD_SETTLEMENT', None):
+            return (wood >= 1 and brick >= 1 and wheat >= 1 and sheep >= 1)
+        if action_type == getattr(ActionType, 'BUILD_ROAD', None):
+            return (wood >= 1 and brick >= 1)
+        if action_type == getattr(ActionType, 'BUY_DEVELOPMENT_CARD', None):
+            return (wheat >= 1 and sheep >= 1 and ore >= 1)
+    except Exception as e:
+        print(f"[foo_player] _can_afford_build error: {e}")
+    return False
+```
+
+Patch C — Exhaustive edge->nodes resolver and logging
+- Why: Some edge encodings are still missed. We must try more shapes and scan board.edges keys, matching by string or numeric key, and parse action.value reprs.
+
+Replace (overwrite) _resolve_edge_nodes (or add if not present) with this robust version:
+```python
+def _resolve_edge_nodes(self, board, start_edge):
+    """
+    Exhaustive resolver: returns [nodeA, nodeB] or None.
+    Tries:
+      - board.edge_nodes(start_edge)
+      - board.edges[start_edge].nodes
+      - start_edge if it's tuple/list length 2
+      - reversed tuple
+      - string keys matching repr(start_edge) or str(key)
+      - numeric matching: if key is int/float equal to start_edge
+      - scan board.edges items and match .nodes or .id/.index or key string equality
+      - parse repr for patterns like '(12, 13)' or '[12, 13]'
+    Logs first 50 failures for inspection.
+    """
+    try:
+        # 1. direct board.edge_nodes
+        try:
+            if hasattr(board, 'edge_nodes'):
+                nodes = board.edge_nodes(start_edge)
+                if nodes:
+                    return list(nodes)
+        except Exception:
+            pass
+
+        # 2. board.edges direct key
+        try:
+            edges = getattr(board, 'edges', None)
+            if edges is not None and start_edge in edges:
+                eo = edges[start_edge]
+                nodes = getattr(eo, 'nodes', None)
+                if nodes:
+                    return list(nodes)
+        except Exception:
+            pass
+
+        # 3. start_edge as tuple/list
+        try:
+            if isinstance(start_edge, (tuple, list)) and len(start_edge) == 2:
+                a, b = start_edge
+                # validate nodes types are primitive
+                if (isinstance(a, (int,str)) and isinstance(b, (int,str))):
+                    return [a, b]
+        except Exception:
+            pass
+
+        # 4. reversed tuple
+        try:
+            if isinstance(start_edge, (tuple, list)) and len(start_edge) == 2:
+                rev = (start_edge[1], start_edge[0])
+                edges = getattr(board, 'edges', None)
+                if edges is not None and rev in edges:
+                    eo = edges[rev]
+                    nodes = getattr(eo, 'nodes', None)
+                    if nodes:
+                        return list(nodes)
+        except Exception:
+            pass
+
+        # 5. try keys by string or numeric equivalence
+        try:
+            edges = getattr(board, 'edges', None)
+            if edges:
+                for key in getattr(edges, 'keys', lambda: [])():
+                    try:
+                        # exact nodes match
+                        eo = edges[key]
+                        nodes = getattr(eo, 'nodes', None)
+                        if nodes and isinstance(start_edge, (tuple,list)) and set(nodes) == set(start_edge):
+                            return list(nodes)
+                        # match by key string or repr
+                        if str(key) == str(start_edge) or repr(key) == repr(start_edge) or str(key) == repr(start_edge) or repr(key) == str(start_edge):
+                            nodes = getattr(eo, 'nodes', None)
+                            if nodes:
+                                return list(nodes)
+                        # match by id/index fields
+                        for fld in ('id','index'):
+                            try:
+                                if getattr(eo, fld, None) == start_edge:
+                                    nodes = getattr(eo, 'nodes', None)
+                                    if nodes:
+                                        return list(nodes)
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        # 6. parse repr of start_edge for "(12, 13)" or "[12, 13]"
+        try:
+            s = repr(start_edge)
+            import re
+            m = re.search(r'\\(?\\[?\\s*([0-9]+)\\s*,\\s*([0-9]+)\\s*\\)?\\]?', s)
+            if m:
+                a = int(m.group(1)); b = int(m.group(2))
+                return [a,b]
+        except Exception:
+            pass
+
+        # log failure once in a while
+        cnt = getattr(self, '_edge_resolve_failures', 0)
+        if cnt < 50:
+            print(f"[foo_player] _resolve_edge_nodes failed for start_edge={repr(start_edge)}; board.edges type={type(getattr(board,'edges',None))}")
+            setattr(self, '_edge_resolve_failures', cnt+1)
+        return None
+    except Exception as e:
+        print(f"[foo_player] _resolve_edge_nodes exception for {repr(start_edge)}: {e}")
+        return None
+```
+
+Patch D — Use _resolve_edge_nodes in _edge_to_nearest_open_info and add a final fallback
+- Replace the start_nodes resolution in _edge_to_nearest_open_info with:
+```python
+start_nodes = None
+try:
+    start_nodes = self._resolve_edge_nodes(board, start_edge)
+except Exception:
+    start_nodes = None
+if not start_nodes:
+    print(f"[foo_player] No start_nodes found for edge {repr(start_edge)} (after exhaustive resolver)")
+    return (None, 0.0)
+```
+
+Patch E — Add precise debug dumps when errors occur
+- In _can_afford_build except block and _edge_to_nearest_open_info failure logging, include reprs:
+```python
+print(f"[foo_player] _can_afford_build error: {e} pstate.resources repr={repr(getattr(pstate,'resources',None))[:500]}")
+```
+and
+```python
+print(f"[foo_player] _edge_resolver final failure for {repr(start_edge)}; sample playable BUILD_ROAD values: {sample_build_road_repr}")
+```
+(Where sample_build_road_repr is built by inspecting playable_actions in decide() and grabbing their reprs — add a one-time capture to self._last_build_road_samples).
+
+Patch F — Grep/Replace checklist
+- Ensure no occurrences of: ".resources.get(", "pstate.resources[", "_resources_of(", "_resources_from_pstate(", "board.edge_nodes(" used without try/except (wrap them).
+
+Debug Run Expectations (what CODER must paste back)
+- After applying patches, run one deterministic debug game and copy exactly any lines matching:
+  - "[foo_player] WARNING: raw pstate.resources is list: repr=..."
+  - "[foo_player] Detected list-resource shape -> mapped to ..."
+  - "[foo_player] _can_afford_build error: ..." — should not appear; if it does, include full line and repr.
+  - "[foo_player] _resolve_edge_nodes failed for start_edge=..." — should be zero; if any, include reprs printed.
+  - "[foo_player] No start_nodes found for edge ..." — should be zero.
+  - "[foo_player] _edge_resolver final failure for ..." — should be zero. If present, paste sample_playable_build_road reprs shown.
+  - Final per-game counters: "[foo_player] Diagnostics: settlements_built=..., roads_built=..."
+
+Success criteria for debug game
+- No "_can_afford_build error" lines.
+- No "_resolve_edge_nodes failed..." or "No start_nodes found..." lines.
+- Normal "Detected list-resource shape -> mapped to ..." may appear once per game if a list-type resource was observed.
+
+If failures persist
+- Paste the exact printed reprs for raw resource shapes and start_edge values; I will produce a targeted mapping.
+
+Notes
+- These patches are conservative and additive; they centralize resource handling and greatly broaden edge resolution.
+- After CODER runs the debug game and confirms no failures, proceed to a 30-game run and return JSON + logs.
+
+Now, implement these patches, run a debug game, and paste the requested diagnostic lines.
+
