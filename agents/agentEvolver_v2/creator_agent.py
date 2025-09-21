@@ -18,6 +18,13 @@ from agents.agentEvolver_v2.prompts import (
     MULTI_AGENT_PROMPT,
     RESEARCHER_SYSTEM_PROMPT,
     STRATEGIZER_SYSTEM_PROMPT,
+    DISCOVERY_MULTI_AGENT_PROMPT,
+    DISCOVERY_META_SYSTEM_PROMPT,
+    DISCOVERY_ANALYZER_SYSTEM_PROMPT,
+    DISCOVERY_STRATEGIZER_SYSTEM_PROMPT,
+    DISCOVERY_CODER_SYSTEM_PROMPT,
+    DISCOVERY_RESEARCHER_SYSTEM_PROMPT,
+
 )
 from langchain_openai import AzureChatOpenAI
 from langchain_openai import ChatOpenAI
@@ -47,12 +54,13 @@ PRINT_LLM = "LOG" # "NONE", "LOG", "LOG_FULL"
 
 # Starting phase for the run: "improvement" (default) or "discovery"
 START_PHASE = "improvement"  # "discovery" | "improvement"
+CURRENT_PHASE = START_PHASE
 
 # Coder LLM
-CODER_LLM_BACKEND = "mistral"
-CODER_LLM_MODEL = "codestral-latest"
-# CODER_LLM_BACKEND = "openai"
-# CODER_LLM_MODEL = "gpt-5-mini"
+# CODER_LLM_BACKEND = "mistral"
+# CODER_LLM_MODEL = "codestral-latest"
+CODER_LLM_BACKEND = "openai"
+CODER_LLM_MODEL = "gpt-5-mini"
 
 # Analyzer LLM
 ANALYZER_LLM_BACKEND = "mistral"
@@ -67,10 +75,10 @@ STRATEGIZER_LLM_BACKEND = "mistral"
 STRATEGIZER_LLM_MODEL = "mistral-large-latest"
 
 # Meta LLM
-META_LLM_BACKEND = "mistral"
-META_LLM_MODEL = "mistral-large-latest"
-# META_LLM_BACKEND = "openai"
-# META_LLM_MODEL = "gpt-5-mini"
+# META_LLM_BACKEND = "mistral"
+# META_LLM_MODEL = "mistral-large-latest"
+META_LLM_BACKEND = "openai"
+META_LLM_MODEL = "gpt-5-mini"
 
 FOO_MAX_BYTES   = 64_000      # context-friendly cap
 CREATOR_LANGRAPH_RECURSION_LIMIT = 200  # max depth of graph recursion
@@ -87,6 +95,8 @@ FOO_RUN_COMMAND = "catanatron-play --players=AB,AE2 --num=30 --config-map=MINI -
 # Adapter
 ADAPTER_TARGET_FILENAME = "adapters.py"
 ADAPTER_TARGET_FILE = Path(__file__).parent / ADAPTER_TARGET_FILENAME
+ADAPTER_TEMPLATE_FILENAME = "__TEMPLATE__adapters.py"
+ADAPTER_TEMPLATE_FILE = Path(__file__).parent / ADAPTER_TEMPLATE_FILENAME
 
 # CONSTANTS
 LOCAL_CATANATRON_BASE_DIR = (Path(__file__).parent.parent.parent / "catanatron").resolve()
@@ -208,7 +218,36 @@ class CreatorAgent():
 
         self.log_config_settings()
 
-        self.react_graph = self.create_langchain_react_graph()
+    def _run_phase(self, phase_name: str):
+        """
+        Compiles and runs the graph for a specific phase.
+        """
+        global CURRENT_PHASE
+        CURRENT_PHASE = phase_name
+        self.debug_log(f"PHASE START: Compiling and running the {phase_name.upper()} phase.")
+
+        if phase_name == "discovery":
+            try:
+                src = ADAPTER_TEMPLATE_FILE.resolve()
+                dst = ADAPTER_TARGET_FILE.resolve()
+                shutil.copy2(src, dst)
+                self.debug_log(f"Initialized {ADAPTER_TARGET_FILENAME} from template: {src.name}")
+            except Exception as e:
+                self.debug_log(f"Failed to initialize {ADAPTER_TARGET_FILENAME} from template: {e}")
+
+        if phase_name == "discovery":
+            graph = self.create_discovery_graph()
+        elif phase_name == "improvement":
+            graph = self.create_improvement_graph()
+        else:
+            self.debug_log(f"Error: Unknown phase '{phase_name}'")
+            return
+
+        # Each phase starts with a fresh state.
+        for step in graph.stream({}, self.config, stream_mode="updates"):
+            pass  # The work is done in the nodes
+
+        self.debug_log(f"✅ PHASE COMPLETE: {phase_name.upper()} phase finished.")
 
     def debug_log(self, message: str):
         """
@@ -338,6 +377,7 @@ class CreatorAgent():
             "tool_calling_messages": [],
         }
 
+    # Used to test foo_player.py in IMPROVEMENT phase
     def _run_player_node(self, state: CreatorGraphState):
         """
         Runs Catanatron with the current Code
@@ -360,22 +400,130 @@ class CreatorAgent():
             "recent_meta_message": defualt_analyze_msg,
             "meta_messages": meta_messages,
         }
+    
+    # Used to test adapters.py in DISCOVERY phase
+    def _validate_adapter_node(self, state: CreatorGraphState):
+        """
+        Validates adapters.py using a python compiler check. This is the
+        feedback loop for the discovery phase.
+        """
+        self.debug_log("VALIDATE ADAPTER NODE")
+        
+        if not ADAPTER_TARGET_FILE.exists():
+            return {"recent_meta_message": HumanMessage(content="VALIDATION RESULT: adapters.py does not exist. Please create it.")}
+
+        try:
+            # Use py_compile to do a lightweight syntax check
+            result = subprocess.run(
+                [sys.executable, "-m", "py_compile", str(ADAPTER_TARGET_FILE)],
+                capture_output=True,
+                text=True,
+                check=False, # Don't raise exception on non-zero exit
+                timeout=30,
+            )
+            
+            if result.returncode == 0:
+                validation_output = "SUCCESS: adapters.py is valid Python code."
+                self.debug_log(validation_output)
+            else:
+                # Combine stdout and stderr for a complete error message
+                error_details = (result.stdout + result.stderr).strip()
+                validation_output = f"VALIDATION FAILED:\n\n{error_details}"
+                self.debug_log(f"Adapter validation failed: {error_details}")
+
+        except subprocess.TimeoutExpired:
+            validation_output = "VALIDATION FAILED: The validation process timed out."
+        
+        # This message will be seen by META and the other agents
+        validation_msg = HumanMessage(content=validation_output)
+
+        return {
+            "recent_meta_message": validation_msg,
+            "meta_messages": state["meta_messages"] + [validation_msg],
+        }
+
+    # def _validate_adapter_node(self, state: CreatorGraphState):
+    #     """
+    #     Validates adapters.py with a two-stage check:
+    #     1. Syntax Check: Compiles the code to ensure it's valid Python.
+    #     2. Runtime Check: Executes a test harness that imports and calls the functions.
+    #     """
+    #     self.debug_log("VALIDATE ADAPTER NODE")
+        
+    #     if not ADAPTER_TARGET_FILE.exists():
+    #         return {"recent_meta_message": HumanMessage(content="VALIDATION RESULT: adapters.py does not exist. Please create it.")}
+
+    #     # --- Stage 1: Syntax Check ---
+    #     try:
+    #         result = subprocess.run(
+    #             [sys.executable, "-m", "py_compile", str(ADAPTER_TARGET_FILE)],
+    #             capture_output=True, text=True, check=False, timeout=30,
+    #         )
+    #         if result.returncode != 0:
+    #             error_details = (result.stdout + result.stderr).strip()
+    #             validation_output = f"VALIDATION FAILED (Syntax Error):\n\n{error_details}"
+    #             self.debug_log(f"Adapter validation failed at syntax stage: {error_details}")
+    #             validation_msg = HumanMessage(content=validation_output)
+    #             return {"recent_meta_message": validation_msg, "meta_messages": state["meta_messages"] + [validation_msg]}
+    #     except Exception as e:
+    #         # Handle exceptions during the subprocess call itself
+    #         validation_output = f"VALIDATION FAILED (Syntax Check Crashed):\n\n{e}"
+    #         self.debug_log(f"Syntax check subprocess failed: {e}")
+    #         validation_msg = HumanMessage(content=validation_output)
+    #         return {"recent_meta_message": validation_msg, "meta_messages": state["meta_messages"] + [validation_msg]}
+        
+    #     self.debug_log("Syntax check passed. Proceeding to runtime check.")
+
+    #     # --- Stage 2: Runtime Check ---
+    #     try:
+    #         test_harness_path = Path(__file__).parent / "run_adapter_test.py"
+    #         runtime_result = subprocess.run(
+    #             [sys.executable, str(test_harness_path)],
+    #             capture_output=True, text=True, check=False, timeout=60,
+    #         )
+            
+    #         if runtime_result.returncode == 0:
+    #             validation_output = "SUCCESS: adapters.py passed both syntax and runtime checks."
+    #             self.debug_log(validation_output)
+    #         else:
+    #             error_details = (runtime_result.stdout + runtime_result.stderr).strip()
+    #             validation_output = f"VALIDATION FAILED (Runtime Error):\n\n{error_details}"
+    #             self.debug_log(f"Adapter validation failed at runtime stage.")
+        
+    #     except Exception as e:
+    #         validation_output = f"VALIDATION FAILED (Runtime Check Crashed):\n\n{e}"
+    #         self.debug_log(f"Runtime check subprocess failed: {e}")
+
+    #     validation_msg = HumanMessage(content=validation_output)
+    #     return {"recent_meta_message": validation_msg, "meta_messages": state["meta_messages"] + [validation_msg]}
 
     def _meta_node(self, state: CreatorGraphState):
         self.debug_log("META NODE")
 
-        sys_msg = SystemMessage(
-            content=META_SYSTEM_PROMPT.format(
-                MULTI_AGENT_PROMPT=MULTI_AGENT_PROMPT.format(FOO_TARGET_FILENAME=FOO_TARGET_FILENAME),
-                FOO_TARGET_FILENAME=FOO_TARGET_FILENAME,
-                read_full_performance_history=read_full_performance_history(),
-                ANALYZER_NAME=ANALYZER_NAME,
-                STRATEGIZER_NAME=STRATEGIZER_NAME,
-                RESEARCHER_NAME=RESEARCHER_NAME,
-                CODER_NAME=CODER_NAME,
+        if CURRENT_PHASE == "discovery":
+            sys_msg = SystemMessage(
+                content=DISCOVERY_META_SYSTEM_PROMPT.format(
+                    DISCOVERY_MULTI_AGENT_PROMPT=DISCOVERY_MULTI_AGENT_PROMPT,
+                    ANALYZER_NAME=ANALYZER_NAME,
+                    STRATEGIZER_NAME=STRATEGIZER_NAME,
+                    RESEARCHER_NAME=RESEARCHER_NAME,
+                    CODER_NAME=CODER_NAME,
+                )
             )
-        )
 
+        else: # IMPROVEMENT PHASE
+            sys_msg = SystemMessage(
+                content=META_SYSTEM_PROMPT.format(
+                    MULTI_AGENT_PROMPT=MULTI_AGENT_PROMPT.format(FOO_TARGET_FILENAME=FOO_TARGET_FILENAME),
+                    FOO_TARGET_FILENAME=FOO_TARGET_FILENAME,
+                    read_full_performance_history=read_full_performance_history(),
+                    ANALYZER_NAME=ANALYZER_NAME,
+                    STRATEGIZER_NAME=STRATEGIZER_NAME,
+                    RESEARCHER_NAME=RESEARCHER_NAME,
+                    CODER_NAME=CODER_NAME,
+                )
+            )
+            
         msgs = state["meta_messages"][-MAX_MESSAGES_IN_AGENT:]
         tools = [think_tool]
         log_path = self.agent_log_input("META", msgs)
@@ -395,27 +543,40 @@ class CreatorAgent():
     def _analyzer_node(self, state: CreatorGraphState):
         self.debug_log("ANALYZER NODE")
 
-        sys_msg = SystemMessage(
-            content=ANALYZER_SYSTEM_PROMPT.format(
-                MULTI_AGENT_PROMPT=MULTI_AGENT_PROMPT.format(FOO_TARGET_FILENAME=FOO_TARGET_FILENAME),
-                FOO_TARGET_FILENAME=FOO_TARGET_FILENAME,
-                ANALYZER_NAME=ANALYZER_NAME,
-                MAX_MESSAGES_TOOL_CALLING=MAX_MESSAGES_TOOL_CALLING,
+        if CURRENT_PHASE == "discovery":
+            sys_msg = SystemMessage(
+                content=DISCOVERY_ANALYZER_SYSTEM_PROMPT.format(
+                    DISCOVERY_MULTI_AGENT_PROMPT=DISCOVERY_MULTI_AGENT_PROMPT,
+                    ANALYZER_NAME=ANALYZER_NAME,
+                )
             )
-        )
+            tools = [read_local_file, think_tool, read_adapter]
 
-        tools = [read_local_file, think_tool, read_adapter]
+            adapter_msg = HumanMessage(content=f"This is the current adapters.py file\n\n{read_adapter()}")
 
-        performance_msg = HumanMessage(content=f"This is the current performance history\n\n{read_full_performance_history()}")
-        game_output_msg = HumanMessage(content=f"This is the current game_output.txt file\n\n{read_game_output_file()}")
-        game_results_msg = HumanMessage(content=f"This is the current game_results json file\n\n{read_game_results_file()}")
-        current_foo_msg = HumanMessage(content=f"This is the current foo_player.py file\n\n{read_foo()}")
-        adapter_msg = HumanMessage(content=f"This is the current adapters.py file\n\n{read_adapter()}")
+            # Call the LLM with the provided tools
+            msgs = state["analyzer_messages"][-MAX_MESSAGES_IN_AGENT:] + [adapter_msg, state["recent_meta_message"]]
 
+        else: # IMPROVEMENT PHASE
+            sys_msg = SystemMessage(
+                content=ANALYZER_SYSTEM_PROMPT.format(
+                    MULTI_AGENT_PROMPT=MULTI_AGENT_PROMPT.format(FOO_TARGET_FILENAME=FOO_TARGET_FILENAME),
+                    FOO_TARGET_FILENAME=FOO_TARGET_FILENAME,
+                    ANALYZER_NAME=ANALYZER_NAME,
+                    MAX_MESSAGES_TOOL_CALLING=MAX_MESSAGES_TOOL_CALLING,
+                )
+            )
+            tools = [read_local_file, think_tool, read_adapter]
 
-        # Call the LLM with the provided tools
-        #base_len = len(state["analyzer_messages"][-MAX_MESSAGES_IN_AGENT:])
-        msgs = state["analyzer_messages"][-MAX_MESSAGES_IN_AGENT:] + [performance_msg, game_output_msg, game_results_msg, current_foo_msg, adapter_msg, state["recent_meta_message"]]
+            performance_msg = HumanMessage(content=f"This is the current performance history\n\n{read_full_performance_history()}")
+            game_output_msg = HumanMessage(content=f"This is the current game_output.txt file\n\n{read_game_output_file()}")
+            game_results_msg = HumanMessage(content=f"This is the current game_results json file\n\n{read_game_results_file()}")
+            current_foo_msg = HumanMessage(content=f"This is the current foo_player.py file\n\n{read_foo()}")
+            adapter_msg = HumanMessage(content=f"This is the current adapters.py file\n\n{read_adapter()}")
+
+            # Call the LLM with the provided tools
+            msgs = state["analyzer_messages"][-MAX_MESSAGES_IN_AGENT:] + [performance_msg, game_output_msg, game_results_msg, current_foo_msg, adapter_msg, state["recent_meta_message"]]
+        
         log_path = self.agent_log_input(ANALYZER_NAME, msgs)
         output = self._tool_calling_state_graph(self.analyzer_llm, sys_msg, msgs, tools)
         self.agent_log_output(ANALYZER_NAME, output["messages"][len(msgs):], log_path)
@@ -440,25 +601,41 @@ class CreatorAgent():
 
         self.debug_log("STRATEGIZER NODE")
 
-        sys_msg = SystemMessage(
-            content=STRATEGIZER_SYSTEM_PROMPT.format(
-                MULTI_AGENT_PROMPT=MULTI_AGENT_PROMPT.format(FOO_TARGET_FILENAME=FOO_TARGET_FILENAME),
-                STRATEGIZER_NAME=STRATEGIZER_NAME,
-                FOO_TARGET_FILENAME=FOO_TARGET_FILENAME,
-                MAX_MESSAGES_TOOL_CALLING=MAX_MESSAGES_TOOL_CALLING,
+        if CURRENT_PHASE == "discovery":
+            sys_msg = SystemMessage(
+                content=DISCOVERY_STRATEGIZER_SYSTEM_PROMPT.format(
+                    DISCOVERY_MULTI_AGENT_PROMPT=DISCOVERY_MULTI_AGENT_PROMPT,
+                    STRATEGIZER_NAME=STRATEGIZER_NAME,
+                )
             )
-        )
 
-        tools = [read_local_file, read_game_results_file, read_older_foo_file, web_search_tool_call, think_tool, read_adapter]
+            tools = [read_local_file, web_search_tool_call, think_tool, read_adapter]
 
-        # Call the LLM with the provided tools
-        #base_len = len(state["strategizer_messages"][-MAX_MESSAGES_IN_AGENT:])
+            adapter_msg = HumanMessage(content=f"This is the current adapters.py file\n\n{read_adapter()}")
 
-        performance_msg = HumanMessage(content=f"This is the current performance history\n\n{read_full_performance_history()}")
-        current_foo_msg = HumanMessage(content=f"This is the current foo_player.py file\n\n{read_foo()}")
-        adapter_msg = HumanMessage(content=f"This is the current adapters.py file\n\n{read_adapter()}")
+            msgs = state["strategizer_messages"][-MAX_MESSAGES_IN_AGENT:] + [adapter_msg, state["recent_meta_message"]]
 
-        msgs = state["strategizer_messages"][-MAX_MESSAGES_IN_AGENT:] + [performance_msg, current_foo_msg, adapter_msg, state["recent_meta_message"]]
+        else: # IMPROVEMENT PHASE
+            sys_msg = SystemMessage(
+                content=STRATEGIZER_SYSTEM_PROMPT.format(
+                    MULTI_AGENT_PROMPT=MULTI_AGENT_PROMPT.format(FOO_TARGET_FILENAME=FOO_TARGET_FILENAME),
+                    STRATEGIZER_NAME=STRATEGIZER_NAME,
+                    FOO_TARGET_FILENAME=FOO_TARGET_FILENAME,
+                    MAX_MESSAGES_TOOL_CALLING=MAX_MESSAGES_TOOL_CALLING,
+                )
+            )
+
+            tools = [read_local_file, read_game_results_file, read_older_foo_file, web_search_tool_call, think_tool, read_adapter]
+
+            # Call the LLM with the provided tools
+            #base_len = len(state["strategizer_messages"][-MAX_MESSAGES_IN_AGENT:])
+
+            performance_msg = HumanMessage(content=f"This is the current performance history\n\n{read_full_performance_history()}")
+            current_foo_msg = HumanMessage(content=f"This is the current foo_player.py file\n\n{read_foo()}")
+            adapter_msg = HumanMessage(content=f"This is the current adapters.py file\n\n{read_adapter()}")
+
+            msgs = state["strategizer_messages"][-MAX_MESSAGES_IN_AGENT:] + [performance_msg, current_foo_msg, adapter_msg, state["recent_meta_message"]]
+        
         log_path = self.agent_log_input(STRATEGIZER_NAME, msgs)
         output = self._tool_calling_state_graph(self.strategizer_llm, sys_msg, msgs, tools)
         self.agent_log_output(STRATEGIZER_NAME, output["messages"][len(msgs):], log_path)
@@ -483,21 +660,28 @@ class CreatorAgent():
 
         self.debug_log("RESEARCHER NODE")
 
-        sys_msg = SystemMessage(
-            content=RESEARCHER_SYSTEM_PROMPT.format(
-                MULTI_AGENT_PROMPT=MULTI_AGENT_PROMPT.format(FOO_TARGET_FILENAME=FOO_TARGET_FILENAME),
-                RESEARCHER_NAME=RESEARCHER_NAME,
-                FOO_TARGET_FILENAME=FOO_TARGET_FILENAME,
-                MAX_MESSAGES_TOOL_CALLING=MAX_MESSAGES_TOOL_CALLING,
+        if CURRENT_PHASE == "discovery":
+            sys_msg = SystemMessage(
+                content=DISCOVERY_RESEARCHER_SYSTEM_PROMPT.format(
+                    DISCOVERY_MULTI_AGENT_PROMPT=DISCOVERY_MULTI_AGENT_PROMPT,
+                    RESEARCHER_NAME=RESEARCHER_NAME,
+                )
             )
-        )
+
+        else: # IMPROVEMENT PHASE
+            sys_msg = SystemMessage(
+                content=RESEARCHER_SYSTEM_PROMPT.format(
+                    MULTI_AGENT_PROMPT=MULTI_AGENT_PROMPT.format(FOO_TARGET_FILENAME=FOO_TARGET_FILENAME),
+                    RESEARCHER_NAME=RESEARCHER_NAME,
+                    FOO_TARGET_FILENAME=FOO_TARGET_FILENAME,
+                    MAX_MESSAGES_TOOL_CALLING=MAX_MESSAGES_TOOL_CALLING,
+                )
+            )
 
         tools = [read_local_file, web_search_tool_call, think_tool, read_adapter]
 
-        catanatron_files_msg = HumanMessage(content=f"This is the list of catanatron files\n\n{list_catanatron_files()}")
-        # Call the LLM with the provided tools (Add 1 because no need to summarize catanatron files)
-        #base_len = len(state["researcher_messages"][-MAX_MESSAGES_IN_AGENT:]) + 1
-        msgs = state["researcher_messages"][-MAX_MESSAGES_IN_AGENT:] + [catanatron_files_msg, state["recent_meta_message"]]
+        catanatron_files_msg = HumanMessage(content=f"This is the list of catanatron files\n\n{list_catanatron_files()}")  
+        msgs = state["researcher_messages"][-MAX_MESSAGES_IN_AGENT:] + [catanatron_files_msg, state["recent_meta_message"]]  
         log_path = self.agent_log_input(RESEARCHER_NAME, msgs)
         output = self._tool_calling_state_graph(self.researcher_llm, sys_msg, msgs, tools)
         self.agent_log_output(RESEARCHER_NAME, output["messages"][len(msgs):], log_path)
@@ -507,8 +691,6 @@ class CreatorAgent():
         meta_messages = state["meta_messages"] + [response]
 
         # Add To Node Messages: Meta Human Request --> AI Response(content = tool_call_summary) + AI Response(content = final_message)
-        # Only summarize new messages
-        #tool_call_summary = summarize_messages(output["messages"][base_len:])
         researcher_messages = state["researcher_messages"] + [state["recent_meta_message"], AIMessage(content=response.content)]
 
         return {
@@ -522,29 +704,40 @@ class CreatorAgent():
         
         self.debug_log("CODER NODE")
 
-        sys_msg = SystemMessage(
-            content=CODER_SYSTEM_PROMPT.format(
-                MULTI_AGENT_PROMPT=MULTI_AGENT_PROMPT.format(FOO_TARGET_FILENAME=FOO_TARGET_FILENAME),
-                CODER_NAME=CODER_NAME,
-                MAX_META_MESSAGES_GIVEN_TO_CODER=MAX_META_MESSAGES_GIVEN_TO_CODER,
-                FOO_TARGET_FILENAME=FOO_TARGET_FILENAME,
-            )
-        )
-
-        tools = [write_foo, replace_code_in_foo, think_tool, read_adapter]
-
-        # # Give Coder The Last Number of Meta Messages
+        # Give Coder The Last Number of Meta Messages
         if len(state["meta_messages"]) > MAX_META_MESSAGES_GIVEN_TO_CODER:
             meta_msgs = state["meta_messages"][-MAX_META_MESSAGES_GIVEN_TO_CODER:]
         else:
             meta_msgs = state["meta_messages"]
 
-        # Call the LLM with the provided tools
-        current_foo_msg = HumanMessage(content=f"This is the old foo_player.py file\nNow It is your turn to update it with the new recommendations from META\n\n{read_foo()}")
-        adapter_msg = HumanMessage(content=f"This is the current adapters.py file that you must use to interact with the Catanatron API\n\n{read_adapter()}")
+        if CURRENT_PHASE == "discovery":
+            sys_msg = SystemMessage(
+                content=DISCOVERY_CODER_SYSTEM_PROMPT.format(
+                    DISCOVERY_MULTI_AGENT_PROMPT=DISCOVERY_MULTI_AGENT_PROMPT,
+                    CODER_NAME=CODER_NAME,)
+            )
+            tools = [read_adapter, write_adapter, replace_code_in_adapter, think_tool]
 
-        #base_len = len(state["coder_messages"][-MAX_MESSAGES_IN_AGENT:])
-        msgs = state["coder_messages"][-MAX_MESSAGES_IN_AGENT:] + meta_msgs + [current_foo_msg, adapter_msg]
+            # Call the LLM with the provided tools
+            adapter_msg = HumanMessage(content=f"This is the old adapters.py file\nNow It is your turn to update it with the new recommendations from META\n\n{read_adapter()}")
+            msgs = state["coder_messages"][-MAX_MESSAGES_IN_AGENT:] + meta_msgs + [adapter_msg]
+        
+        else: # IMPROVEMENT PHASE
+            sys_msg = SystemMessage(
+                content=CODER_SYSTEM_PROMPT.format(
+                    MULTI_AGENT_PROMPT=MULTI_AGENT_PROMPT.format(FOO_TARGET_FILENAME=FOO_TARGET_FILENAME),
+                    CODER_NAME=CODER_NAME,
+                    MAX_META_MESSAGES_GIVEN_TO_CODER=MAX_META_MESSAGES_GIVEN_TO_CODER,
+                    FOO_TARGET_FILENAME=FOO_TARGET_FILENAME,
+                )
+            )
+            tools = [write_foo, replace_code_in_foo, think_tool, read_adapter]
+
+            # Call the LLM with the provided tools
+            current_foo_msg = HumanMessage(content=f"This is the old foo_player.py file\nNow It is your turn to update it with the new recommendations from META\n\n{read_foo()}")
+            adapter_msg = HumanMessage(content=f"This is the current adapters.py file that you must use to interact with the Catanatron API\n\n{read_adapter()}")
+            msgs = state["coder_messages"][-MAX_MESSAGES_IN_AGENT:] + meta_msgs + [current_foo_msg, adapter_msg]
+        
         log_path = self.agent_log_input(CODER_NAME, msgs)
         output = self._tool_calling_state_graph(self.coder_llm, sys_msg, msgs, tools)
         self.agent_log_output(CODER_NAME, output["messages"][len(msgs):], log_path)
@@ -554,13 +747,8 @@ class CreatorAgent():
         meta_messages = state["meta_messages"] + [response]
 
         #Add To Node Messages: Meta Human Request --> AI Response(content = tool_call_summary) + AI Response(content = final_message)
-        #Only summarize new messages
-        #tool_call_summary = summarize_messages(output["messages"][base_len:])
         coder_messages = state["coder_messages"] + [state["recent_meta_message"], AIMessage(content=response.content)]
 
-        # Add to Coder Messages
-        #coder_messages = state["coder_messages"] + [state["recent_meta_message"], AIMessage(content=response.content)]
-        
         return {
             "recent_helper_response": response,
             "tool_calling_messages": output["messages"],
@@ -599,7 +787,7 @@ class CreatorAgent():
         self.debug_log(f"Warning: Could not determine desired agent in recent meta message. Defaulting to {ANALYZER_NAME}")
         return ANALYZER_NAME
 
-    def create_langchain_react_graph(self):
+    def create_improvement_graph(self):
         """Create a react graph for the LLM to use."""
         graph = StateGraph(CreatorGraphState)
         graph.add_node("init", self._init_node)
@@ -634,6 +822,50 @@ class CreatorAgent():
 
 
         return graph.compile()
+    
+    def create_discovery_graph(self):
+        """Create a react graph for the DISCOVERY phase."""
+        graph = StateGraph(CreatorGraphState)
+        graph.add_node("init", self._init_node)
+        
+        # Use the same agent nodes, they will get new prompts
+        graph.add_node(ANALYZER_NAME, self._analyzer_node)
+        graph.add_node(STRATEGIZER_NAME, self._strategizer_node)
+        graph.add_node(RESEARCHER_NAME, self._researcher_node)
+        graph.add_node(CODER_NAME, self._coder_node)
+        graph.add_node("meta", self._meta_node)
+        
+        # Add the new validation node
+        graph.add_node("validate_adapter", self._validate_adapter_node)
+
+        graph.add_edge(START, "init")
+        graph.add_edge("init", "validate_adapter") # Start by checking the file
+        
+        # The validation result goes to META to decide the next step
+        graph.add_edge("validate_adapter", "meta")
+        
+        # META routes to the appropriate agent
+        graph.add_conditional_edges(
+            "meta",
+            self._meta_choice, # Can reuse the same chooser logic
+            {
+                ANALYZER_NAME: ANALYZER_NAME,
+                STRATEGIZER_NAME: STRATEGIZER_NAME,
+                RESEARCHER_NAME: RESEARCHER_NAME,
+                CODER_NAME: CODER_NAME,
+                END: END
+            }
+        )
+
+        # After helper agents finish, they report back to META
+        graph.add_edge(ANALYZER_NAME, "meta")
+        graph.add_edge(STRATEGIZER_NAME, "meta")
+        graph.add_edge(RESEARCHER_NAME, "meta")
+        
+        # After CODER writes the code, it goes back to validation
+        graph.add_edge(CODER_NAME, "validate_adapter")
+
+        return graph.compile()
 
     def print_react_graph(self):
         """
@@ -643,71 +875,105 @@ class CreatorAgent():
         display(Image(self.react_graph.get_graph(xray=True).draw_mermaid_png()))
 
     def run_react_graph(self):
-        
+        """
+        Orchestrates the execution of the discovery and/or improvement phases.
+        """
         try:
-            # Phase switch: discovery vs improvement
-            if str(START_PHASE).lower().strip() == "discovery":
-                self.debug_log("Starting in DISCOVERY phase")
-                self.run_discovery_phase()
-                self.debug_log("✅ discovery phase finished")
-                return None
+            if START_PHASE == "discovery":
+                # 1. Run Discovery Phase to create adapters.py
+                self._run_phase("discovery")
+                
+                # 2. Automatically transition to and run the Improvement Phase
+                self.debug_log("Transitioning from Discovery to Improvement phase.")
+                self._run_phase("improvement")
 
-            self.debug_log("Starting in IMPROVEMENT phase")
+            elif START_PHASE == "improvement":
+                # Run only the Improvement Phase
+                self._run_phase("improvement")
+            
+            else:
+                self.debug_log(f"Error: Invalid START_PHASE '{START_PHASE}'. Must be 'discovery' or 'improvement'.")
+                return
 
-            try:
-                if ADAPTER_TARGET_FILE.exists():
-                    shutil.copy2(
-                        ADAPTER_TARGET_FILE.resolve(),
-                        (Path(CreatorAgent.run_dir) / ADAPTER_TARGET_FILENAME)
-                    )
-                    self.debug_log(f"Copied finalized {ADAPTER_TARGET_FILENAME} to run dir: {CreatorAgent.run_dir}")
-                else:
-                    self.debug_log(f"{ADAPTER_TARGET_FILENAME} not found at {ADAPTER_TARGET_FILE}; proceeding without copy.")
-            except Exception as e:
-                self.debug_log(f"Failed to copy {ADAPTER_TARGET_FILENAME} into run dir: {e}")
-
-            for step in self.react_graph.stream({}, self.config, stream_mode="updates"):
-                for node, update in step.items():
-                    #self.debug_log(f"In Node: {node}")
-                    pass
-
-            self.debug_log("✅  graph finished")
-
-            # Copy Result File to the new directory
+            # --- Finalization after all phases are complete ---
+            self.debug_log("All phases complete. Copying final artifacts.")
+            
+            # Copy the final adapters.py
+            if ADAPTER_TARGET_FILE.exists():
+                shutil.copy2(
+                    ADAPTER_TARGET_FILE.resolve(),
+                    (Path(CreatorAgent.run_dir) / f"final_{ADAPTER_TARGET_FILENAME}")
+                )
+            
+            # Copy the final foo_player.py
             dt = datetime.now().strftime("_%Y%m%d_%H%M%S_")
-
             shutil.copy2(                           
                 (FOO_TARGET_FILE).resolve(),
                 (Path(CreatorAgent.run_dir) / ("final" + dt + FOO_TARGET_FILENAME))
             )
 
-        
         except Exception as e:
-            self.debug_log(f"Error calling LLM: {e}\n{traceback.format_exc()}")
+            self.debug_log(f"FATAL ERROR during phase execution: {e}\n{traceback.format_exc()}")
         return None
 
-    def run_discovery_phase(self):
-        """
-        Discovery phase: prepare or construct adapters.py that the improvement phase uses.
-        For now, this is a minimal placeholder that ensures adapters.py exists.
-        """
-        self.debug_log("DISCOVERY PHASE: Ensuring adapters.py exists")
-        try:
-            ADAPTER_TARGET_FILE.parent.mkdir(parents=True, exist_ok=True)
-            if not ADAPTER_TARGET_FILE.exists():
-                stub = (
-                    "# Auto-generated stub by discovery phase.\n"
-                    "# TODO: Populate with real adapter logic for Catanatron API.\n"
-                    "from typing import Any\n\n"
-                    "def not_implemented(*args: Any, **kwargs: Any):\n"
-                    "    raise NotImplementedError('adapters.py generated by discovery phase. Implement required interfaces.')\n"
-                )
-                ADAPTER_TARGET_FILE.write_text(stub, encoding="utf-8")
-                self.debug_log(f"Created stub adapters file at: {ADAPTER_TARGET_FILE}")
-            else:
-                self.debug_log("adapters.py already exists; leaving as-is.")
-        except Exception as e:
-            self.debug_log(f"Error during discovery phase: {e}\n{traceback.format_exc()}")
+    # def run_react_graph(self):
+    #     self.debug_log(f"Starting in {START_PHASE.upper()} phase.")
+        
+    #     ## CLEAN UP THIS LOGIC
+    #     try:
+    #         if START_PHASE == "improvement":
+    #             try:
+    #                 if ADAPTER_TARGET_FILE.exists():
+    #                     shutil.copy2(
+    #                         ADAPTER_TARGET_FILE.resolve(),
+    #                         (Path(CreatorAgent.run_dir) / ADAPTER_TARGET_FILENAME)
+    #                     )
+    #                     self.debug_log(f"Copied finalized {ADAPTER_TARGET_FILENAME} to run dir: {CreatorAgent.run_dir}")
+    #                 else:
+    #                     self.debug_log(f"{ADAPTER_TARGET_FILENAME} not found at {ADAPTER_TARGET_FILE}; proceeding without copy.")
+    #             except Exception as e:
+    #                 self.debug_log(f"Failed to copy {ADAPTER_TARGET_FILENAME} into run dir: {e}")
+
+    #         for step in self.react_graph.stream({}, self.config, stream_mode="updates"):
+    #                 for node, update in step.items():
+    #                     #self.debug_log(f"In Node: {node}")
+    #                     pass
+
+    #         if START_PHASE == "improvement":
+    #             # Copy Result File to the new directory
+    #             dt = datetime.now().strftime("_%Y%m%d_%H%M%S_")
+
+    #             shutil.copy2(                           
+    #                 (FOO_TARGET_FILE).resolve(),
+    #                 (Path(CreatorAgent.run_dir) / ("final" + dt + FOO_TARGET_FILENAME))
+    #             )
+
+    #     except Exception as e:
+    #         self.debug_log(f"Error calling LLM: {e}\n{traceback.format_exc()}")
+    #     return None
+
+    # def run_discovery_phase(self):
+    #     """
+    #     Discovery phase: prepare or construct adapters.py that the improvement phase uses.
+    #     For now, this is a minimal placeholder that ensures adapters.py exists.
+    #     """
+    #     self.debug_log("DISCOVERY PHASE: Ensuring adapters.py exists")
+    #     try:
+    #         ADAPTER_TARGET_FILE.parent.mkdir(parents=True, exist_ok=True)
+    #         if not ADAPTER_TARGET_FILE.exists():
+    #             stub = (
+    #                 "# Auto-generated stub by discovery phase.\n"
+    #                 "# TODO: Populate with real adapter logic for Catanatron API.\n"
+    #                 "from typing import Any\n\n"
+    #                 "def not_implemented(*args: Any, **kwargs: Any):\n"
+    #                 "    raise NotImplementedError('adapters.py generated by discovery phase. Implement required interfaces.')\n"
+    #             )
+    #             ADAPTER_TARGET_FILE.write_text(stub, encoding="utf-8")
+    #             self.debug_log(f"Created stub adapters file at: {ADAPTER_TARGET_FILE}")
+    #         else:
+    #             self.debug_log("adapters.py already exists; leaving as-is.")
+    #     except Exception as e:
+    #         self.debug_log(f"Error during discovery phase: {e}\n{traceback.format_exc()}")
 
 
     def _run_testfoo(self, short_game: bool = False) -> str:
@@ -908,6 +1174,15 @@ def write_foo(new_text: str) -> str:
 
     return f"{FOO_TARGET_FILENAME} updated successfully"
 
+def write_adapter(new_text: str) -> str:
+    """
+    Overwrite adapters.py with new_text (UTF-8).
+    """
+    if len(new_text.encode()) > FOO_MAX_BYTES:
+        raise ValueError("Refusing to write >64 kB")
+    ADAPTER_TARGET_FILE.write_text(new_text, encoding="utf-8")
+    return f"{ADAPTER_TARGET_FILENAME} updated successfully."
+
 def replace_code_in_foo(search: str, replace: str) -> str:
     """
     Replace a block of code in the Agent File.
@@ -930,6 +1205,17 @@ def replace_code_in_foo(search: str, replace: str) -> str:
         return f"Successfully replaced code in {FOO_TARGET_FILENAME}"
     except Exception as e:
         return f"Error writing file: {e}"
+
+def replace_code_in_adapter(search: str, replace: str) -> str:
+    """
+    Replace a block of code in the adapters.py File.
+    """
+    content = read_adapter()
+    new_content = content.replace(search, replace)
+    if new_content == content:
+        return "Search string not found in file. No changes made."
+    write_adapter(new_content)
+    return f"Successfully replaced code in {ADAPTER_TARGET_FILENAME}."
 
 def web_search_tool_call(query: str) -> str:
     """Perform a web search using the Tavily API.

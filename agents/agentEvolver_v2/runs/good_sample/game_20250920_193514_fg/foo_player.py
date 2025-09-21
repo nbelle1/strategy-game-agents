@@ -1,6 +1,9 @@
 import os
 from .adapters import (
-    Game, Player, Color
+    Game, Player, Color, Action, ActionType,
+    playable_actions, pruned_actions, chance_children,
+    make_value_fn, DEFAULT_WEIGHTS, value_production,
+    production_features_sampler, winning_color, copy_game
 )
 
 
