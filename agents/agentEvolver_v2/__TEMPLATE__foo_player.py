@@ -3,8 +3,6 @@ from .adapters import (
     Game, Player, Color
 )
 
-
-
 class FooPlayer(Player):
     def __init__(self, name=None):
         super().__init__(Color.BLUE, name)

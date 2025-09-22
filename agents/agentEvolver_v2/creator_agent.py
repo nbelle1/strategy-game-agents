@@ -53,14 +53,14 @@ PRINT_DEBUG = True
 PRINT_LLM = "LOG" # "NONE", "LOG", "LOG_FULL"
 
 # Starting phase for the run: "improvement" (default) or "discovery"
-START_PHASE = "improvement"  # "discovery" | "improvement"
+START_PHASE = "discovery"  # "discovery" | "improvement"
 CURRENT_PHASE = START_PHASE
 
 # Coder LLM
-# CODER_LLM_BACKEND = "mistral"
-# CODER_LLM_MODEL = "codestral-latest"
-CODER_LLM_BACKEND = "openai"
-CODER_LLM_MODEL = "gpt-5-mini"
+CODER_LLM_BACKEND = "mistral"
+CODER_LLM_MODEL = "codestral-latest"
+# CODER_LLM_BACKEND = "openai"
+# CODER_LLM_MODEL = "gpt-5-mini"
 
 # Analyzer LLM
 ANALYZER_LLM_BACKEND = "mistral"
@@ -68,17 +68,17 @@ ANALYZER_LLM_MODEL = "mistral-large-latest"
 
 # Researcher LLM
 RESEARCHER_LLM_BACKEND = "mistral"
-RESEARCHER_LLM_MODEL = "devstral-medium-latest"
+RESEARCHER_LLM_MODEL = "mistral-large-latest"
 
 # Strategizer LLM
 STRATEGIZER_LLM_BACKEND = "mistral"
 STRATEGIZER_LLM_MODEL = "mistral-large-latest"
 
 # Meta LLM
-# META_LLM_BACKEND = "mistral"
-# META_LLM_MODEL = "mistral-large-latest"
-META_LLM_BACKEND = "openai"
-META_LLM_MODEL = "gpt-5-mini"
+META_LLM_BACKEND = "mistral"
+META_LLM_MODEL = "mistral-large-latest"
+# META_LLM_BACKEND = "openai"
+# META_LLM_MODEL = "gpt-5-mini"
 
 FOO_MAX_BYTES   = 64_000      # context-friendly cap
 CREATOR_LANGRAPH_RECURSION_LIMIT = 200  # max depth of graph recursion
@@ -247,6 +247,19 @@ class CreatorAgent():
         for step in graph.stream({}, self.config, stream_mode="updates"):
             pass  # The work is done in the nodes
 
+        # Copy adapters.py into the run directory at the end of the discovery phase
+        if phase_name == "discovery":
+            try:
+                if ADAPTER_TARGET_FILE.exists():
+                    out_path = Path(CreatorAgent.run_dir) / "adapters_after_discovery.py"
+                    shutil.copy2(ADAPTER_TARGET_FILE.resolve(), out_path)
+                    rel = Path(out_path).relative_to(Path(CreatorAgent.run_dir))
+                    self.debug_log(f"Copied adapters.py to run dir after discovery: {rel}")
+                else:
+                    self.debug_log("adapters.py not found at end of discovery; nothing to copy.")
+            except Exception as e:
+                self.debug_log(f"Failed to copy adapters.py at end of discovery: {e}")
+
         self.debug_log(f"✅ PHASE COMPLETE: {phase_name.upper()} phase finished.")
 
     def debug_log(self, message: str):
@@ -400,102 +413,66 @@ class CreatorAgent():
             "recent_meta_message": defualt_analyze_msg,
             "meta_messages": meta_messages,
         }
-    
-    # Used to test adapters.py in DISCOVERY phase
+
     def _validate_adapter_node(self, state: CreatorGraphState):
         """
-        Validates adapters.py using a python compiler check. This is the
-        feedback loop for the discovery phase.
+        Validates adapters.py with a two-stage check:
+        1. Syntax Check: Compiles the code to ensure it's valid Python.
+        2. Runtime Check: Executes a test harness that imports and calls the functions.
         """
         self.debug_log("VALIDATE ADAPTER NODE")
         
         if not ADAPTER_TARGET_FILE.exists():
-            return {"recent_meta_message": HumanMessage(content="VALIDATION RESULT: adapters.py does not exist. Please create it.")}
+            validation_msg = HumanMessage(content="VALIDATION RESULT: adapters.py does not exist. Please create it.")
+            # Only update the specific state key, not the conversational history
+            return {"recent_meta_message": validation_msg}
 
+        # --- Stage 1: Syntax Check ---
         try:
-            # Use py_compile to do a lightweight syntax check
             result = subprocess.run(
                 [sys.executable, "-m", "py_compile", str(ADAPTER_TARGET_FILE)],
-                capture_output=True,
-                text=True,
-                check=False, # Don't raise exception on non-zero exit
-                timeout=30,
+                capture_output=True, text=True, check=False, timeout=30,
+            )
+            if result.returncode != 0:
+                error_details = (result.stdout + result.stderr).strip()
+                validation_output = f"VALIDATION FAILED (Syntax Error):\n\n{error_details}"
+                self.debug_log(f"Adapter validation failed at syntax stage: {error_details}")
+                validation_msg = HumanMessage(content=validation_output)
+                # Only update the specific state key
+                return {"recent_meta_message": validation_msg}
+        except Exception as e:
+            validation_output = f"VALIDATION FAILED (Syntax Check Crashed):\n\n{e}"
+            self.debug_log(f"Syntax check subprocess failed: {e}")
+            validation_msg = HumanMessage(content=validation_output)
+            # Only update the specific state key
+            return {"recent_meta_message": validation_msg}
+        
+        self.debug_log("Syntax check passed. Proceeding to runtime check.")
+
+        # --- Stage 2: Runtime Check ---
+        try:
+            test_harness_path = Path(__file__).parent / "run_adapter_test.py"
+            runtime_result = subprocess.run(
+                [sys.executable, str(test_harness_path)],
+                capture_output=True, text=True, check=False, timeout=60,
             )
             
-            if result.returncode == 0:
-                validation_output = "SUCCESS: adapters.py is valid Python code."
+            if runtime_result.returncode == 0:
+                validation_output = "SUCCESS: adapters.py passed both syntax and runtime checks."
                 self.debug_log(validation_output)
             else:
-                # Combine stdout and stderr for a complete error message
-                error_details = (result.stdout + result.stderr).strip()
-                validation_output = f"VALIDATION FAILED:\n\n{error_details}"
-                self.debug_log(f"Adapter validation failed: {error_details}")
-
-        except subprocess.TimeoutExpired:
-            validation_output = "VALIDATION FAILED: The validation process timed out."
+                error_details = (runtime_result.stdout + runtime_result.stderr).strip()
+                validation_output = f"VALIDATION FAILED (Runtime Error):\n\n{error_details}"
+                self.debug_log(f"Adapter validation failed at runtime stage.")
         
-        # This message will be seen by META and the other agents
+        except Exception as e:
+            validation_output = f"VALIDATION FAILED (Runtime Check Crashed):\n\n{e}"
+            self.debug_log(f"Runtime check subprocess failed: {e}")
+
         validation_msg = HumanMessage(content=validation_output)
-
-        return {
-            "recent_meta_message": validation_msg,
-            "meta_messages": state["meta_messages"] + [validation_msg],
-        }
-
-    # def _validate_adapter_node(self, state: CreatorGraphState):
-    #     """
-    #     Validates adapters.py with a two-stage check:
-    #     1. Syntax Check: Compiles the code to ensure it's valid Python.
-    #     2. Runtime Check: Executes a test harness that imports and calls the functions.
-    #     """
-    #     self.debug_log("VALIDATE ADAPTER NODE")
-        
-    #     if not ADAPTER_TARGET_FILE.exists():
-    #         return {"recent_meta_message": HumanMessage(content="VALIDATION RESULT: adapters.py does not exist. Please create it.")}
-
-    #     # --- Stage 1: Syntax Check ---
-    #     try:
-    #         result = subprocess.run(
-    #             [sys.executable, "-m", "py_compile", str(ADAPTER_TARGET_FILE)],
-    #             capture_output=True, text=True, check=False, timeout=30,
-    #         )
-    #         if result.returncode != 0:
-    #             error_details = (result.stdout + result.stderr).strip()
-    #             validation_output = f"VALIDATION FAILED (Syntax Error):\n\n{error_details}"
-    #             self.debug_log(f"Adapter validation failed at syntax stage: {error_details}")
-    #             validation_msg = HumanMessage(content=validation_output)
-    #             return {"recent_meta_message": validation_msg, "meta_messages": state["meta_messages"] + [validation_msg]}
-    #     except Exception as e:
-    #         # Handle exceptions during the subprocess call itself
-    #         validation_output = f"VALIDATION FAILED (Syntax Check Crashed):\n\n{e}"
-    #         self.debug_log(f"Syntax check subprocess failed: {e}")
-    #         validation_msg = HumanMessage(content=validation_output)
-    #         return {"recent_meta_message": validation_msg, "meta_messages": state["meta_messages"] + [validation_msg]}
-        
-    #     self.debug_log("Syntax check passed. Proceeding to runtime check.")
-
-    #     # --- Stage 2: Runtime Check ---
-    #     try:
-    #         test_harness_path = Path(__file__).parent / "run_adapter_test.py"
-    #         runtime_result = subprocess.run(
-    #             [sys.executable, str(test_harness_path)],
-    #             capture_output=True, text=True, check=False, timeout=60,
-    #         )
-            
-    #         if runtime_result.returncode == 0:
-    #             validation_output = "SUCCESS: adapters.py passed both syntax and runtime checks."
-    #             self.debug_log(validation_output)
-    #         else:
-    #             error_details = (runtime_result.stdout + runtime_result.stderr).strip()
-    #             validation_output = f"VALIDATION FAILED (Runtime Error):\n\n{error_details}"
-    #             self.debug_log(f"Adapter validation failed at runtime stage.")
-        
-    #     except Exception as e:
-    #         validation_output = f"VALIDATION FAILED (Runtime Check Crashed):\n\n{e}"
-    #         self.debug_log(f"Runtime check subprocess failed: {e}")
-
-    #     validation_msg = HumanMessage(content=validation_output)
-    #     return {"recent_meta_message": validation_msg, "meta_messages": state["meta_messages"] + [validation_msg]}
+        # THE FIX: Only update the key that the next agent explicitly expects.
+        # DO NOT add the validation_msg to the general 'meta_messages' history.
+        return {"recent_meta_message": validation_msg}
 
     def _meta_node(self, state: CreatorGraphState):
         self.debug_log("META NODE")
@@ -773,6 +750,12 @@ class CreatorAgent():
         match = re.search(r"CHOSEN AGENT:\s*(\w+)", meta_message)
         if match:
             agent_name = match.group(1)
+
+            # Explicitly check for the END keyword first.
+            if agent_name == "END":
+                self.debug_log("Meta Message: Found END signal. Terminating graph.")
+                return END
+            
             if agent_name in AGENT_KEYS:
                 self.debug_log(f"Meta Message: Found agent {agent_name} via specific format - going to {agent_name}")
                 return agent_name
@@ -915,66 +898,6 @@ class CreatorAgent():
         except Exception as e:
             self.debug_log(f"FATAL ERROR during phase execution: {e}\n{traceback.format_exc()}")
         return None
-
-    # def run_react_graph(self):
-    #     self.debug_log(f"Starting in {START_PHASE.upper()} phase.")
-        
-    #     ## CLEAN UP THIS LOGIC
-    #     try:
-    #         if START_PHASE == "improvement":
-    #             try:
-    #                 if ADAPTER_TARGET_FILE.exists():
-    #                     shutil.copy2(
-    #                         ADAPTER_TARGET_FILE.resolve(),
-    #                         (Path(CreatorAgent.run_dir) / ADAPTER_TARGET_FILENAME)
-    #                     )
-    #                     self.debug_log(f"Copied finalized {ADAPTER_TARGET_FILENAME} to run dir: {CreatorAgent.run_dir}")
-    #                 else:
-    #                     self.debug_log(f"{ADAPTER_TARGET_FILENAME} not found at {ADAPTER_TARGET_FILE}; proceeding without copy.")
-    #             except Exception as e:
-    #                 self.debug_log(f"Failed to copy {ADAPTER_TARGET_FILENAME} into run dir: {e}")
-
-    #         for step in self.react_graph.stream({}, self.config, stream_mode="updates"):
-    #                 for node, update in step.items():
-    #                     #self.debug_log(f"In Node: {node}")
-    #                     pass
-
-    #         if START_PHASE == "improvement":
-    #             # Copy Result File to the new directory
-    #             dt = datetime.now().strftime("_%Y%m%d_%H%M%S_")
-
-    #             shutil.copy2(                           
-    #                 (FOO_TARGET_FILE).resolve(),
-    #                 (Path(CreatorAgent.run_dir) / ("final" + dt + FOO_TARGET_FILENAME))
-    #             )
-
-    #     except Exception as e:
-    #         self.debug_log(f"Error calling LLM: {e}\n{traceback.format_exc()}")
-    #     return None
-
-    # def run_discovery_phase(self):
-    #     """
-    #     Discovery phase: prepare or construct adapters.py that the improvement phase uses.
-    #     For now, this is a minimal placeholder that ensures adapters.py exists.
-    #     """
-    #     self.debug_log("DISCOVERY PHASE: Ensuring adapters.py exists")
-    #     try:
-    #         ADAPTER_TARGET_FILE.parent.mkdir(parents=True, exist_ok=True)
-    #         if not ADAPTER_TARGET_FILE.exists():
-    #             stub = (
-    #                 "# Auto-generated stub by discovery phase.\n"
-    #                 "# TODO: Populate with real adapter logic for Catanatron API.\n"
-    #                 "from typing import Any\n\n"
-    #                 "def not_implemented(*args: Any, **kwargs: Any):\n"
-    #                 "    raise NotImplementedError('adapters.py generated by discovery phase. Implement required interfaces.')\n"
-    #             )
-    #             ADAPTER_TARGET_FILE.write_text(stub, encoding="utf-8")
-    #             self.debug_log(f"Created stub adapters file at: {ADAPTER_TARGET_FILE}")
-    #         else:
-    #             self.debug_log("adapters.py already exists; leaving as-is.")
-    #     except Exception as e:
-    #         self.debug_log(f"Error during discovery phase: {e}\n{traceback.format_exc()}")
-
 
     def _run_testfoo(self, short_game: bool = False) -> str:
         """
@@ -1353,8 +1276,6 @@ def _get_evolution_entry(num: int) -> Tuple[Dict[str, Any], str]:
         return None, f"{key} not found in performance history."
 
     return perf[key], ""
-
-
 
 # Adapter
 

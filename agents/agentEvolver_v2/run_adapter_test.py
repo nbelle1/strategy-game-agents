@@ -2,81 +2,190 @@ import sys
 import inspect
 from pathlib import Path
 
-# Add the parent and catanatron directories to the path to ensure imports work
-# This mirrors the setup of your main agent
-sys.path.insert(0, str(Path(__file__).parent.parent))
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "catanatron"))
+agent_dir = Path(__file__).parent  # .../agents/agentEvolver_v2
+sys.path.insert(0, str(agent_dir))  # import adapters as top-level module
 
-import adapters
-from catanatron.game import CatanatronGame
-from catanatron.models.enums import Resource
+# Ensure catanatron importable (fallback to repo layout if needed)
+try:
+    from catanatron.game import Game
+    from catanatron.models.player import Player, Color  # add for manual construction
+except Exception:
+    project_root = agent_dir.parent.parent  # .../strategy-game-agents
+    catan_dir = project_root / "catanatron"
+    sys.path.insert(0, str(catan_dir))
+    from catanatron.game import Game  # type: ignore
+    from catanatron.models.player import Player, Color  # type: ignore
+
+import adapters  # must resolve to module "adapters"
+
+SKIP_PATTERNS = ("_", "file", "path", "save", "load", "write", "read", "open", "http", "socket")
+
+def _make_dummy_game():
+    # Prefer adapter helper if present
+    if hasattr(adapters, "create_game") and callable(getattr(adapters, "create_game")):
+        try:
+            return adapters.create_game(players=3, seed=42, vps_to_win=10, catan_map=None, initialize=True)
+        except Exception:
+            pass
+
+    # Fallback 1: use Catanatron factory if available
+    if hasattr(Game, "from_config"):
+        # Try with player names
+        try:
+            return Game.from_config(player_names=["p1", "p2", "p3"], vps_to_win=10, config_map="MINI")
+        except Exception:
+            pass
+        # Try with player colors
+        try:
+            return Game.from_config(player_colors=[Color.BLUE, Color.RED, Color.WHITE], vps_to_win=10, config_map="MINI")
+        except Exception:
+            pass
+
+    # Fallback 2: construct Players and call Game(...) directly
+    colors = [getattr(Color, name) for name in ("BLUE", "RED", "WHITE", "ORANGE") if hasattr(Color, name)]
+    players = []
+    for i, c in enumerate(colors[:3]):
+        try:
+            # Some versions accept (color, name) positionally
+            players.append(Player(c, f"p{i+1}"))
+        except TypeError:
+            # Others accept only (color)
+            players.append(Player(c))
+
+    # Try common ctor signatures
+    for kwargs in (
+        dict(players=players, vps_to_win=10, config_map="MINI"),
+        dict(players=players, vps_to_win=10),
+        dict(players=players),
+    ):
+        try:
+            return Game(**kwargs)
+        except Exception:
+            continue
+
+    raise RuntimeError("Unable to construct Game with any known pattern (from_config or direct players list).")
+
+def _first_playable_action(game):
+    # Try using adapter helpers if available
+    try:
+        if hasattr(adapters, "playable_actions"):
+            try:
+                acts = adapters.playable_actions(game)  # game-first convention
+            except TypeError:
+                acts = adapters.playable_actions(game.state)  # some APIs take state
+            return acts[0] if acts else None
+    except Exception:
+        pass
+    return None
+
+def _type_name(x):
+    try:
+        return type(x).__name__
+    except Exception:
+        return "?"
+
+def _build_args(func, game, game_state, sample_action):
+    sig = inspect.signature(func)
+    ann = func.__annotations__ if hasattr(func, "__annotations__") else {}
+    AColor = getattr(adapters, "Color", None)
+    AActionType = getattr(adapters, "ActionType", None)
+    DEFAULT_WEIGHTS = getattr(adapters, "DEFAULT_WEIGHTS", None)
+    copy_game = getattr(adapters, "copy_game", None)
+
+    args = {}
+    for p in sig.parameters.values():
+        if p.kind in (p.VAR_POSITIONAL, p.VAR_KEYWORD):
+            continue
+        if p.default is not inspect._empty:
+            # Prefer using defaults where provided
+            continue
+
+        name = p.name.lower()
+        pann = p.annotation
+
+        # Annotation-based hints
+        if pann is Game or (isinstance(pann, str) and pann.endswith("Game")):
+            args[p.name] = copy_game(game) if callable(copy_game) else game
+            continue
+
+        # Name-based heuristics
+        if name in ("game", "g") or name.endswith("_game"):
+            args[p.name] = copy_game(game) if callable(copy_game) else game
+        elif "state" in name:
+            args[p.name] = game_state
+        elif name in ("player_id", "playerindex", "player_idx", "idx"):
+            args[p.name] = 0
+        elif "color" in name and AColor is not None:
+            args[p.name] = AColor.BLUE
+        elif "action_type" in name and AActionType is not None:
+            args[p.name] = AActionType.END_TURN
+        elif name == "action":
+            args[p.name] = sample_action
+        elif name == "validate":
+            args[p.name] = False
+        elif "seed" in name:
+            args[p.name] = 42
+        elif "vps" in name:
+            args[p.name] = 10
+        elif "weights" in name and DEFAULT_WEIGHTS is not None:
+            args[p.name] = DEFAULT_WEIGHTS
+        elif name.endswith("_fn") or name.endswith("_func") or name.endswith("callback"):
+            args[p.name] = (lambda *a, **k: None)
+        else:
+            args[p.name] = None
+    return args
 
 def run_tests():
-    """
-    Dynamically finds and calls functions in adapters.py to check for runtime errors.
-    """
     print("--- Starting Adapter Runtime Test ---")
-    
-    # 1. Create a dummy game instance to get a valid 'game_state' object
+
+    # Create a valid game and state
     try:
-        # Using a minimal config to speed up initialization
-        game = CatanatronGame.from_config(player_names=["p1", "p2"], vps_to_win=10, config_map="MINI")
+        game = _make_dummy_game()
         game_state = game.state
-        print("Successfully created a dummy Catanatron game instance.")
+        print("Game initialized.")
     except Exception as e:
-        print(f"FATAL: Could not initialize CatanatronGame. Error: {e}")
+        print(f"FATAL: Could not initialize Game. Error: {e}")
         sys.exit(1)
 
-    # 2. Find all functions defined in the adapters module
-    functions_to_test = [
-        obj for name, obj in inspect.getmembers(adapters) 
-        if inspect.isfunction(obj) and obj.__module__ == 'adapters'
+    # Optional: get one legal action
+    sample_action = _first_playable_action(game)
+
+    # Collect only functions defined in adapters.py (not re-exports)
+    functions = [
+        obj for _, obj in inspect.getmembers(adapters)
+        if inspect.isfunction(obj) and obj.__module__ == "adapters"
     ]
-    
-    if not functions_to_test:
-        print("No functions found in adapters.py to test. Exiting.")
+    # Skip risky/private utilities
+    functions = [
+        f for f in functions
+        if not any(tok in f.__name__.lower() for tok in SKIP_PATTERNS)
+    ]
+
+    if not functions:
+        print("No functions defined in adapters.py to test. Exiting.")
         sys.exit(0)
-        
-    print(f"Found {len(functions_to_test)} functions to test in adapters.py")
+
+    print(f"Found {len(functions)} functions to test in adapters.py")
     all_passed = True
 
-    # 3. Loop through and try to call each function
-    for func in functions_to_test:
-        func_name = func.__name__
-        sig = inspect.signature(func)
-        
-        # 4. Naively construct dummy arguments based on parameter names
-        dummy_args = {}
+    for func in functions:
+        args = _build_args(func, game, game_state, sample_action)
         try:
-            for param in sig.parameters.values():
-                if 'state' in param.name:
-                    dummy_args[param.name] = game_state
-                elif 'player_id' in param.name:
-                    dummy_args[param.name] = 0
-                elif 'resource' in param.name:
-                    dummy_args[param.name] = Resource.WOOD # Just pick one
-                # Add other common dummy args as needed
-                else:
-                    # For any other parameter, pass None as a default guess
-                    dummy_args[param.name] = None
-            
-            print(f"Testing {func_name} with args: { {k: type(v).__name__ for k, v in dummy_args.items()} }...")
-            func(**dummy_args)
-            print(f"  ✅ PASSED: {func_name}")
-
+            arg_types = ", ".join(f"{k}: {_type_name(v)}" for k, v in args.items())
+            print(f"Testing {func.__name__}({arg_types})")
+            func(**args)
+            print(f"  ✅ PASSED: {func.__name__}")
         except Exception as e:
-            print(f"  ❌ FAILED: {func_name}")
-            print(f"     Error Type: {type(e).__name__}")
-            print(f"     Error: {e}")
             all_passed = False
-            # We don't exit here, to see if other functions fail too
-    
+            print(f"  ❌ FAILED: {func.__name__}")
+            print(f"     {type(e).__name__}: {e}")
+
     if not all_passed:
         print("\n--- Some runtime tests failed. See errors above. ---")
-        sys.exit(1) # Exit with a non-zero code to signal failure
-    
+        sys.exit(1)
+
     print("\n--- All adapter functions passed runtime checks! ---")
-    sys.exit(0) # Success!
+    sys.exit(0)
 
 if __name__ == "__main__":
     run_tests()
