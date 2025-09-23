@@ -1,6 +1,6 @@
 import os
 from .adapters import (
-    Game, Player, Color
+    Game, Player, Color, _list_pruned_actions
 )
 
 class FooPlayer(Player):
@@ -9,9 +9,9 @@ class FooPlayer(Player):
 
     def decide(self, game, playable_actions):
         # Should return one of the playable_actions.
-
+        
         # Args:
-        #     game (Game): complete game state. read-only. 
+        #     game (Game): complete game state. read-only.
         #         Defined in in "catanatron/catanatron_core/catanatron/game.py"
         #     playable_actions (Iterable[Action]): options to choose from
         # Return:
@@ -20,6 +20,8 @@ class FooPlayer(Player):
         # ===== YOUR CODE HERE =====
         # As an example we simply return the first action:
         print("Choosing First Action on Default")
+        for action in playable_actions:
+            if hasattr(action, 'action_type') and action.action_type == 'BUILD_SETTLEMENT':
+                return action
         return playable_actions[0]
         # ===== END YOUR CODE =====
-

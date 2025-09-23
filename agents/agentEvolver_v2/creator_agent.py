@@ -53,14 +53,14 @@ PRINT_DEBUG = True
 PRINT_LLM = "LOG" # "NONE", "LOG", "LOG_FULL"
 
 # Starting phase for the run: "improvement" (default) or "discovery"
-START_PHASE = "improvement"  # "discovery" | "improvement"
+START_PHASE = "discovery"  # "discovery" | "improvement"
 CURRENT_PHASE = START_PHASE
 
 # Coder LLM
-# CODER_LLM_BACKEND = "mistral"
-# CODER_LLM_MODEL = "codestral-latest"
-CODER_LLM_BACKEND = "openai"
-CODER_LLM_MODEL = "gpt-5-mini"
+CODER_LLM_BACKEND = "mistral"
+CODER_LLM_MODEL = "codestral-latest"
+# CODER_LLM_BACKEND = "openai"
+# CODER_LLM_MODEL = "gpt-5-mini"
 
 # Analyzer LLM
 ANALYZER_LLM_BACKEND = "mistral"
@@ -75,10 +75,10 @@ STRATEGIZER_LLM_BACKEND = "mistral"
 STRATEGIZER_LLM_MODEL = "mistral-large-latest"
 
 # Meta LLM
-# META_LLM_BACKEND = "mistral"
-# META_LLM_MODEL = "mistral-large-latest"
-META_LLM_BACKEND = "openai"
-META_LLM_MODEL = "gpt-5-mini"
+META_LLM_BACKEND = "mistral"
+META_LLM_MODEL = "mistral-large-latest"
+# META_LLM_BACKEND = "openai"
+# META_LLM_MODEL = "gpt-5-mini"
 
 FOO_MAX_BYTES   = 64_000      # context-friendly cap
 CREATOR_LANGRAPH_RECURSION_LIMIT = 200  # max depth of graph recursion
@@ -732,6 +732,7 @@ class CreatorAgent():
             "meta_messages": meta_messages,
             "coder_messages": coder_messages,
         }
+
 
     def _meta_choice(self, state: CreatorGraphState):
         """

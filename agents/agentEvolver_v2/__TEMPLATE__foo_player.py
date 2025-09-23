@@ -22,4 +22,3 @@ class FooPlayer(Player):
         print("Choosing First Action on Default")
         return playable_actions[0]
         # ===== END YOUR CODE =====
-
