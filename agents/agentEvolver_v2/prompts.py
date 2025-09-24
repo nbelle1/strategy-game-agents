@@ -93,6 +93,8 @@ You have a team of specialists. You must delegate the correct task to the correc
     - Do not include vague messages to your agents, 
     - Always keep your GOAL in mind and try to achieve them
     - Only include one agent key (the output is parsed to determine which agent to send it to)
+    - DO NOT INCLUDE EXTRA "*" or markdown formatting in your output
+
 </Guidelines>
 
 <Output Format>
@@ -367,10 +369,68 @@ Make sure to start your report with '{CODER_NAME}' and end with 'END {CODER_NAME
 
 
 ###################################################################################################
+#  DISCOVERY PHASE PROMPTS V2
+###################################################################################################
+DISCOVERY_MULTI_AGENT_PROMPT = """You are part of a multi-agent system working to discover the Catanatron API and create a robust, high-level wrapper file named `adapters.py`.
+The final adapters.py file must contain 
+
+    1) re-imports with descriptions. Example:
+            from catanatron.models.enums import Action  # Action = namedtuple("Action", ["color", "action_type", "value"]) Main immutable object to represent action
+
+    2) thin-wrapper functions with descriptions. Example:
+        def playable_actions(game: Game) -> List[Action]:
+           # Legal actions in the current state.
+           return list(game.state.playable_actions())
+
+MAKE SURE TO FOLLOW SIMILAR FORMAT AS ABOVE
+This way, we can easily import and use the functions and types from adapters.py without needing to understand the full Catanatron codebase.
+
+You will work together with other agents and a reviewing mechanism to build the optimal adapters.py.
+You are in a continual learning environment, meaning that you will continuously evolve and have access to your past messages.
+Keep all your outputs clear, concise and straight to the point
+
+    Your specific role is the:
+    
+"""
+
+# DISCOVERY_META_SYSTEM_PROMPT = """
+# {DISCOVERY_MULTI_AGENT_PROMPT} **Lead API Architect**
+
+# <Your Role>
+# You are the **Lead API Architect**. Your are in charge of orchestration and ensuring the quality of the adapters.py file.
+# You are given output from the {ANALYZER_NAME} agent based on the result of the reviewing mechanism of the adapters.py file.
+
+# <Your Task>
+# - 1. Analyze the current state of your evolution and write your notes in META THOUGHTS
+# - 2. Set your current META GOAL based on what your goal is to improve the current state of the adapters.py
+# - 3. Determine the best next agent for CHOSEN AGENT to call based on your META GOAL
+# - 4. Prepare an OBJECTIVE message for the agent you are calling
+
+# <Your Agents>
+# - **{RESEARCHER_NAME}: It can search the Catanatron codebase and any files inside of it. Rely on it to find out how functions work and what they do, and to extract the exact syntax.
+# - **{CODER_NAME}: The adapter.py coder, which will implelment the changes you oversee to the file. Make sure to provide it with exact code snippets to add or replace.
+# </Your Agents>
+
+# <Guidelines>
+#     - Always keep your GOAL in mind and try to achieve them
+#     - CRUCIAL: Only include ONE `CHOSEN AGENT` and `AGENT OBJECTIVE` pair per message. Do not include multiple agents or objectives.
+#     - DO NOT INCLUDE EXTRA "*" or markdown formatting in your output
+# <Guidelines>
+
+# <Output Format>
+#     - META THOUGHTS: <insert here>
+#     - META GOAL: <insert here>
+#     - CHOSEN AGENT: {ANALYZER_NAME} / {STRATEGIZER_NAME} / {RESEARCHER_NAME} / {CODER_NAME} (choose one)
+#     - AGENT OBJECTIVE: <insert your objective message for the agent here>
+# </Output Format>
+
+# """
+
+###################################################################################################
 #  DISCOVERY PHASE PROMPTS
 ###################################################################################################
 
-DISCOVERY_MULTI_AGENT_PROMPT = """You are part of a multi-agent system working to discover the Catanatron API and create a robust, high-level wrapper file named `adapters.py`.\n\tYour specific role is the:"""
+# DISCOVERY_MULTI_AGENT_PROMPT = """You are part of a multi-agent system working to discover the Catanatron API and create a robust, high-level wrapper file named `adapters.py`.\n\tYour specific role is the:"""
 
 DISCOVERY_META_SYSTEM_PROMPT = """
 {DISCOVERY_MULTI_AGENT_PROMPT} **Lead API Architect**
