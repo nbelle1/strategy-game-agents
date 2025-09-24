@@ -56,29 +56,35 @@ PRINT_LLM = "LOG" # "NONE", "LOG", "LOG_FULL"
 START_PHASE = "discovery"  # "discovery" | "improvement"
 CURRENT_PHASE = START_PHASE
 
-# Coder LLM
-CODER_LLM_BACKEND = "mistral"
-CODER_LLM_MODEL = "codestral-latest"
-# CODER_LLM_BACKEND = "openai"
-# CODER_LLM_MODEL = "gpt-5-mini"
+# "openai"
+# "gpt-5-mini", "gpt-5"
 
-# Analyzer LLM
-ANALYZER_LLM_BACKEND = "mistral"
-ANALYZER_LLM_MODEL = "mistral-large-latest"
+# "mistral"
+# "mistral-large-latest", "codestral-latest"
 
-# Researcher LLM
-RESEARCHER_LLM_BACKEND = "mistral"
-RESEARCHER_LLM_MODEL = "mistral-large-latest"
+# OPENAI
+CODER_LLM_BACKEND = "openai"
+CODER_LLM_MODEL = "gpt-5-mini"
+ANALYZER_LLM_BACKEND = "openai"
+ANALYZER_LLM_MODEL = "gpt-5-mini"
+RESEARCHER_LLM_BACKEND = "openai"
+RESEARCHER_LLM_MODEL = "gpt-5-mini"
+STRATEGIZER_LLM_BACKEND = "openai"
+STRATEGIZER_LLM_MODEL = "gpt-5-mini"
+META_LLM_BACKEND = "openai"
+META_LLM_MODEL = "gpt-5-mini"
 
-# Strategizer LLM
-STRATEGIZER_LLM_BACKEND = "mistral"
-STRATEGIZER_LLM_MODEL = "mistral-large-latest"
-
-# Meta LLM
-META_LLM_BACKEND = "mistral"
-META_LLM_MODEL = "mistral-large-latest"
-# META_LLM_BACKEND = "openai"
-# META_LLM_MODEL = "gpt-5-mini"
+# MISTRAL
+# CODER_LLM_BACKEND = "mistral"
+# CODER_LLM_MODEL = "codestral-latest"
+# ANALYZER_LLM_BACKEND = "mistral"
+# ANALYZER_LLM_MODEL = "mistral-large-latest"
+# RESEARCHER_LLM_BACKEND = "mistral"
+# RESEARCHER_LLM_MODEL = "mistral-large-latest"
+# STRATEGIZER_LLM_BACKEND = "mistral"
+# STRATEGIZER_LLM_MODEL = "mistral-large-latest"
+# META_LLM_BACKEND = "mistral"
+# META_LLM_MODEL = "mistral-large-latest"
 
 FOO_MAX_BYTES   = 64_000      # context-friendly cap
 CREATOR_LANGRAPH_RECURSION_LIMIT = 200  # max depth of graph recursion
@@ -89,7 +95,8 @@ MAX_META_MESSAGES_GIVEN_TO_CODER = 6
 MAX_MESSAGES_IN_AGENT = 20
 
 # Catanatron
-FOO_RUN_COMMAND = "catanatron-play --players=AB,AE2 --num=30 --config-map=MINI --config-vps-to-win=10"
+FOO_RUN_COMMAND = "catanatron-play --players=AB,AE2 --num=30 --config-map=base --config-vps-to-win=10"
+# FOO_RUN_COMMAND = "catanatron-play --players=AB,AE2 --num=30 --config-map=MINI --config-vps-to-win=10"
 # catanatron-play --players=AB,BP --num=100 --config-vps-to-win=10
 
 # Adapter
@@ -285,7 +292,7 @@ class CreatorAgent():
         os.makedirs(log_dir, exist_ok=True)
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        log_path = os.path.join(log_dir, f"{agent_name}_e{CreatorAgent.current_evolution}_{timestamp}.txt")
+        log_path = os.path.join(log_dir, f"{CURRENT_PHASE}_e{CreatorAgent.current_evolution}_{timestamp}.txt")
 
         with open(log_path, "w") as f:
             f.write(f"--- Input for {agent_name} at {timestamp} ---\n")
@@ -295,7 +302,7 @@ class CreatorAgent():
 
         # Print only the relative path from run_dir
         relative_path = Path(log_path).relative_to(Path(CreatorAgent.run_dir))
-        self.debug_log(f"{agent_name} logged to {relative_path}")
+        self.debug_log(f"{agent_name} input logged to {relative_path}. Awaiting model response...")
 
         return log_path
 
@@ -311,6 +318,9 @@ class CreatorAgent():
             for message in messages:
                 f.write(message.pretty_repr() + "\n")
             f.write("\n")
+
+        relative_path = Path(agent_log_path).relative_to(Path(CreatorAgent.run_dir))
+        self.debug_log(f"{agent_name} output logged to {relative_path}")
 
         # Log to llm_log_full.txt
         full_log_path = os.path.join(CreatorAgent.run_dir, "log", "llm_log_full.txt")
@@ -426,6 +436,17 @@ class CreatorAgent():
             validation_msg = HumanMessage(content="VALIDATION RESULT: adapters.py does not exist. Please create it.")
             # Only update the specific state key, not the conversational history
             return {"recent_meta_message": validation_msg}
+        
+        # Save a copy of the current adapters.py with a timestamp
+        adapter_folder = os.path.join(CreatorAgent.run_dir, "adapters")
+        os.makedirs(adapter_folder, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        adapter_log_path = os.path.join(adapter_folder, f"e{CreatorAgent.current_evolution}_adapter_{timestamp}.py")
+        shutil.copy2(ADAPTER_TARGET_FILE.resolve(), adapter_log_path)
+
+        # Create a log for the syntax and runtime check results
+        validation_log_path = os.path.join(adapter_folder, f"e{CreatorAgent.current_evolution}_validation_{timestamp}.txt")
+        validation_output = ""
 
         # --- Stage 1: Syntax Check ---
         try:
@@ -435,39 +456,42 @@ class CreatorAgent():
             )
             if result.returncode != 0:
                 error_details = (result.stdout + result.stderr).strip()
-                validation_output = f"VALIDATION FAILED (Syntax Error):\n\n{error_details}"
-                self.debug_log(f"Adapter validation failed at syntax stage: {error_details}")
-                validation_msg = HumanMessage(content=validation_output)
+                validation_output += f"VALIDATION FAILED (Syntax Error):\n\n{error_details}"
+                
                 # Only update the specific state key
-                return {"recent_meta_message": validation_msg}
+            else:
+                validation_output += "SUCCESS: adapters.py passed syntax check. Proceeding to runtime check."
         except Exception as e:
-            validation_output = f"VALIDATION FAILED (Syntax Check Crashed):\n\n{e}"
-            self.debug_log(f"Syntax check subprocess failed: {e}")
-            validation_msg = HumanMessage(content=validation_output)
-            # Only update the specific state key
-            return {"recent_meta_message": validation_msg}
+            validation_output += f"VALIDATION FAILED (Syntax Check Crashed):\n\n{e}"
         
-        self.debug_log("Syntax check passed. Proceeding to runtime check.")
+        self.debug_log("Syntax Check Validation Output:\n" + validation_output)
 
         # --- Stage 2: Runtime Check ---
-        try:
-            test_harness_path = Path(__file__).parent / "run_adapter_test.py"
-            runtime_result = subprocess.run(
-                [sys.executable, str(test_harness_path)],
-                capture_output=True, text=True, check=False, timeout=60,
-            )
+        runtime_output = ""
+        if "SUCCESS: adapters.py passed syntax check" in validation_output:
+            try:
+                test_harness_path = Path(__file__).parent / "run_adapter_test.py"
+                runtime_result = subprocess.run(
+                    [sys.executable, str(test_harness_path)],
+                    capture_output=True, text=True, check=False, timeout=60,
+                )
+                if runtime_result.returncode == 0:
+                    runtime_output += "SUCCESS: adapters.py passed runtime checks."
+                else:
+                    error_details = (runtime_result.stdout + runtime_result.stderr).strip()
+                    runtime_output += f"VALIDATION FAILED (Runtime Error):\n\n{error_details}"
             
-            if runtime_result.returncode == 0:
-                validation_output = "SUCCESS: adapters.py passed both syntax and runtime checks."
-                self.debug_log(validation_output)
-            else:
-                error_details = (runtime_result.stdout + runtime_result.stderr).strip()
-                validation_output = f"VALIDATION FAILED (Runtime Error):\n\n{error_details}"
-                self.debug_log(f"Adapter validation failed at runtime stage.")
+            except Exception as e:
+                runtime_output += f"VALIDATION FAILED (Runtime Check Crashed):\n\n{e}"
+
+        self.debug_log("Runtime Check Validation Output:\n" + runtime_output)
         
-        except Exception as e:
-            validation_output = f"VALIDATION FAILED (Runtime Check Crashed):\n\n{e}"
-            self.debug_log(f"Runtime check subprocess failed: {e}")
+        validation_output += "\n\n" + runtime_output
+        with open(validation_log_path, "w") as f:
+            f.write(validation_output)
+
+        # Increment evolution count
+        CreatorAgent.current_evolution += 1
 
         validation_msg = HumanMessage(content=validation_output)
         # THE FIX: Only update the key that the next agent explicitly expects.
@@ -733,13 +757,10 @@ class CreatorAgent():
             "coder_messages": coder_messages,
         }
 
-
     def _meta_choice(self, state: CreatorGraphState):
         """
         Conditional edge for Meta
         """
-        self.debug_log("Conditional Edge Meta")
-
         # End evolution if we exceed max evolutions
         if (CreatorAgent.current_evolution > CREATOR_NUM_EVOLUTIONS):
             self.debug_log(f"Reached Max Evolutions of {CREATOR_NUM_EVOLUTIONS}, going to END")
@@ -748,28 +769,30 @@ class CreatorAgent():
         meta_message = state["meta_messages"][-1].content
 
         # First, try to find the chosen agent using the specific format
-        match = re.search(r"CHOSEN AGENT:\s*(\w+)", meta_message)
+        #match = re.search(r"CHOSEN AGENT:\s*(\w+)", meta_message)
+        match = re.search(r"CHOSEN AGENT:\s*\**\s*([A-Za-z_]+)", meta_message)
+
         if match:
             agent_name = match.group(1)
 
             # Explicitly check for the END keyword first.
             if agent_name == "END":
-                self.debug_log("Meta Message: Found END signal. Terminating graph.")
+                self.debug_log("Conditional Meta Message: Found END signal. Terminating graph.")
                 return END
             
             if agent_name in AGENT_KEYS:
-                self.debug_log(f"Meta Message: Found agent {agent_name} via specific format - going to {agent_name}")
+                self.debug_log(f"Conditional Meta Message: Found agent {agent_name} via specific format - going to {agent_name}")
                 return agent_name
 
         # If not found, fall back to just searching the test
         for key in AGENT_KEYS:
             if key in meta_message:
-                self.debug_log(f"Meta Message: Found {key} somewhere in text - going to {key}")
+                self.debug_log(f"Conditional Meta Message: WARNING! Found {key} somewhere in text - going to {key}")
                 return key
             
             # Default case if neither string is found
-        self.debug_log(f"Warning: Could not determine desired agent in recent meta message. Defaulting to {ANALYZER_NAME}")
-        return ANALYZER_NAME
+        self.debug_log(f"Conditional Meta Message Warning: Could not determine desired agent in recent meta message. Defaulting to {ANALYZER_NAME}")
+        return CODER_NAME
 
     def create_improvement_graph(self):
         """Create a react graph for the LLM to use."""
@@ -862,13 +885,15 @@ class CreatorAgent():
         """
         Orchestrates the execution of the discovery and/or improvement phases.
         """
+        # Reset evolution count at start of run
         try:
             if START_PHASE == "discovery":
                 # 1. Run Discovery Phase to create adapters.py
                 self._run_phase("discovery")
-                
+
                 # 2. Automatically transition to and run the Improvement Phase
                 self.debug_log("Transitioning from Discovery to Improvement phase.")
+                CreatorAgent.current_evolution = 0
                 self._run_phase("improvement")
 
             elif START_PHASE == "improvement":
@@ -981,7 +1006,7 @@ class CreatorAgent():
             except json.JSONDecodeError:
                 json_content = {"error": "Failed to parse JSON file"}
         else:
-            self.debug_log(f"[DEBUG] No results JSON found for run_id={run_id}. Pattern search failed.")
+            self.debug_log(f"[DEBUG] No results JSON found for run_id={run_id}. Player failed to run game without errors.")
 
         # ----- Update performance history -----
         performance_history_path = Path(CreatorAgent.run_dir) / "performance_history.json"
