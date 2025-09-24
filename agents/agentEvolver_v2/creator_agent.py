@@ -27,6 +27,7 @@ from agents.agentEvolver_v2.prompts import (
 
 )
 from langchain_openai import AzureChatOpenAI
+from langchain_anthropic import ChatAnthropic
 from langchain_openai import ChatOpenAI
 from langchain_mistralai import ChatMistralAI
 from langgraph.graph import MessagesState, START, END, StateGraph
@@ -53,7 +54,7 @@ PRINT_DEBUG = True
 PRINT_LLM = "LOG" # "NONE", "LOG", "LOG_FULL"
 
 # Starting phase for the run: "improvement" (default) or "discovery"
-START_PHASE = "discovery"  # "discovery" | "improvement"
+START_PHASE = "improvement"  # "discovery" | "improvement"
 CURRENT_PHASE = START_PHASE
 
 # "openai"
@@ -75,16 +76,28 @@ CURRENT_PHASE = START_PHASE
 # META_LLM_MODEL = "gpt-5-mini"
 
 # MISTRAL
-CODER_LLM_BACKEND = "mistral"
-CODER_LLM_MODEL = "codestral-latest"
+# CODER_LLM_BACKEND = "mistral"
+# CODER_LLM_MODEL = "codestral-latest"
 ANALYZER_LLM_BACKEND = "mistral"
 ANALYZER_LLM_MODEL = "mistral-large-latest"
 RESEARCHER_LLM_BACKEND = "mistral"
 RESEARCHER_LLM_MODEL = "mistral-large-latest"
 STRATEGIZER_LLM_BACKEND = "mistral"
 STRATEGIZER_LLM_MODEL = "mistral-large-latest"
-META_LLM_BACKEND = "mistral"
-META_LLM_MODEL = "mistral-large-latest"
+# META_LLM_BACKEND = "mistral"
+# META_LLM_MODEL = "mistral-large-latest"
+
+# MISTRAL
+CODER_LLM_BACKEND = "claude"
+CODER_LLM_MODEL = "claude-3.7"
+# ANALYZER_LLM_BACKEND = "mistral"
+# ANALYZER_LLM_MODEL = "mistral-large-latest"
+# RESEARCHER_LLM_BACKEND = "mistral"
+# RESEARCHER_LLM_MODEL = "mistral-large-latest"
+# STRATEGIZER_LLM_BACKEND = "mistral"
+# STRATEGIZER_LLM_MODEL = "mistral-large-latest"
+META_LLM_BACKEND = "claude"
+META_LLM_MODEL = "claude-3.7"
 
 FOO_MAX_BYTES   = 64_000      # context-friendly cap
 CREATOR_LANGRAPH_RECURSION_LIMIT = 200  # max depth of graph recursion
@@ -96,7 +109,7 @@ MAX_MESSAGES_IN_AGENT = 20
 
 # Catanatron
 FOO_RUN_COMMAND = "catanatron-play --players=AB,AE2 --num=30 --config-map=base --config-vps-to-win=10"
-# FOO_RUN_COMMAND = "catanatron-play --players=AB,AE2 --num=30 --config-map=MINI --config-vps-to-win=10"
+# FOO_RUN_COMMAND = "catanatron-play --players=AB,AB --num=30 --config-map=MINI --config-vps-to-win=10"
 # catanatron-play --players=AB,BP --num=100 --config-vps-to-win=10
 
 # Adapter
@@ -157,13 +170,18 @@ class CreatorAgent():
                 rate_limiter=rate_limiter,
             )
         elif backend == "claude":
-            return ChatBedrockConverse(
-                aws_access_key_id = os.environ["AWS_ACESS_KEY"],
-                aws_secret_access_key = os.environ["AWS_SECRET_KEY"],
-                region_name = "us-east-2",
-                provider = "anthropic",
-                model_id="# TODO: ADD MODEL ID"
+            return ChatAnthropic(
+            model="claude-sonnet-4-0",
+            max_retries=10,
             )
+
+            # return ChatBedrockConverse(
+            #     aws_access_key_id = os.environ["AWS_ACESS_KEY"],
+            #     aws_secret_access_key = os.environ["AWS_SECRET_KEY"],
+            #     region_name = "us-east-2",
+            #     provider = "anthropic",
+            #     model_id="arn:aws:bedrock:us-east-2:288380904485:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0"
+            # )
         else:
             raise ValueError(f"Unknown LLM_BACKEND: {backend}")
     
