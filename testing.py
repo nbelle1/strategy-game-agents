@@ -5,9 +5,10 @@ import time
 import re
 from datetime import datetime
 
-LLM = "gpt-4o"  # The LLM used
-EVAL_PLAYER = "LLM"  # The player you want to evaluate (use the code/key)
-NUM_GAMES = 10
+LLM = "None"  # The LLM used
+EVAL_PLAYER = "AB"  # The player you want to evaluate (use the code/key)
+NUM_GAMES = 100
+NUM_REPETITIONS = 10
 
 # Dictionary mapping player codes to their full names as they appear in summary
 AGENTS = {
@@ -87,50 +88,52 @@ def parse_agent_wins(output, agent_code):
 
 def main():
     # Create a unique directory name based on current date/time
-    timestamp = datetime.now().strftime("trial_%Y%m%d_%H%M%S")
+    timestamp = datetime.now().strftime(f"trial_%Y%m%d_%H%M%S_{NUM_REPETITIONS}Reps_{NUM_GAMES}Games")
     results_dir = os.path.join("results", timestamp)
     os.makedirs(results_dir, exist_ok=True)
     
     # Get the full name of the evaluation player
     eval_player_name = AGENTS.get(EVAL_PLAYER, EVAL_PLAYER)
     
-    print(f"Results will be saved to: {results_dir}")
-    print(f"Testing {eval_player_name} ({EVAL_PLAYER}) against opponents...")
+    for repetition in range(NUM_REPETITIONS):
+        print(f"Results will be saved to: {results_dir}")
+        print(f"Testing {eval_player_name} ({EVAL_PLAYER}) against opponents...")
 
-    # Track all results for summary
-    summary_results = []
+        # Track all results for summary
+        summary_results = []
 
-    for opponent in OPPONENTS:
-        opponent_name = AGENTS.get(opponent, opponent)
-        print(f"\n=== Evaluating {eval_player_name} vs {opponent_name} ===")
-        output = run_game(EVAL_PLAYER, opponent, NUM_GAMES)
+        for opponent in OPPONENTS:
+            opponent_name = AGENTS.get(opponent, opponent)
+            print(f"\n=== Evaluating {eval_player_name} vs {opponent_name} ===")
+            output = run_game(EVAL_PLAYER, opponent, NUM_GAMES)
 
-        # Save output to the timestamped directory
-        filename = f"{LLM}_{EVAL_PLAYER}_vs_{opponent}.txt"
-        filepath = os.path.join(results_dir, filename)
-        with open(filepath, "w") as f:
-            f.write(output)
+            # Save output to the timestamped directory
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            filename = f"{LLM}_{EVAL_PLAYER}_vs_{opponent}_{timestamp}.txt"
+            filepath = os.path.join(results_dir, filename)
+            with open(filepath, "w") as f:
+                f.write(output)
 
-        # Parse wins for both players
-        eval_wins = parse_agent_wins(output, EVAL_PLAYER)
-        opponent_wins = parse_agent_wins(output, opponent)
-        
-        print(f"{eval_player_name} wins: {eval_wins}/{NUM_GAMES}")
-        print(f"{opponent_name} wins: {opponent_wins}/{NUM_GAMES}")
-        
-        # Store results for summary
-        summary_results.append({
-            "opponent": opponent,
-            "opponent_name": opponent_name,
-            "eval_wins": eval_wins,
-            "opponent_wins": opponent_wins
-        })
+            # Parse wins for both players
+            eval_wins = parse_agent_wins(output, EVAL_PLAYER)
+            opponent_wins = parse_agent_wins(output, opponent)
+            
+            print(f"{eval_player_name} wins: {eval_wins}/{NUM_GAMES}")
+            print(f"{opponent_name} wins: {opponent_wins}/{NUM_GAMES}")
+            
+            # Store results for summary
+            summary_results.append({
+                "opponent": opponent,
+                "opponent_name": opponent_name,
+                "eval_wins": eval_wins,
+                "opponent_wins": opponent_wins
+            })
 
-        if eval_wins > NUM_GAMES / 2:
-            print(f"{eval_player_name} beats {opponent_name} ({eval_wins}/{NUM_GAMES}). Stopping evaluation.")
-            break
-        else:
-            print(f"{eval_player_name} did not beat {opponent_name} ({eval_wins}/{NUM_GAMES}). Trying next opponent...")
+            if eval_wins > NUM_GAMES / 2:
+                print(f"{eval_player_name} beats {opponent_name} ({eval_wins}/{NUM_GAMES}). Stopping evaluation.")
+                break
+            else:
+                print(f"{eval_player_name} did not beat {opponent_name} ({eval_wins}/{NUM_GAMES}). Trying next opponent...")
 
     # Create a summary file
     with open(os.path.join(results_dir, "summary.txt"), "w") as f:
