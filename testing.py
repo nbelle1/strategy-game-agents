@@ -5,9 +5,9 @@ import time
 import re
 from datetime import datetime
 
-LLM = "None"  # The LLM used
-EVAL_PLAYER = "AB"  # The player you want to evaluate (use the code/key)
-NUM_GAMES = 100
+LLM = "GPTv2"  # The LLM used
+EVAL_PLAYER = "BP"  # The player you want to evaluate (use the code/key)
+NUM_GAMES = 1
 NUM_REPETITIONS = 10
 
 # Dictionary mapping player codes to their full names as they appear in summary
@@ -26,6 +26,7 @@ AGENTS = {
     "PE": "PromptEvolverPlayer",
     "AE": "AgentEvolverFooPlayer",
     "LAE": "LLMAgentEvolverFooPlayer",
+    "BP": "BestPlayer",
 }
 
 # List opponents from strongest to weakest
