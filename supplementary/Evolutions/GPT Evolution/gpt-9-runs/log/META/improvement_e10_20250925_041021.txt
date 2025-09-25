@@ -1,0 +1,2488 @@
+--- Input for META at 20250925_041021 ---
+================================ Human Message =================================
+
+GAME RESULTS:
+
+{
+  "Player Summary": {
+    "AlphaBetaPlayer:RED(depth=2,value_fn=base_fn,prunning=False)": {
+      "WINS": 16,
+      "AVG VP": 8.233333333333333,
+      "AVG SETTLES": 2.433333333333333,
+      "AVG CITIES": 2.2,
+      "AVG ROAD": 0.7,
+      "AVG ARMY": 0.0,
+      "AVG DEV VP": 0.0
+    },
+    "FooPlayer:BLUE": {
+      "WINS": 14,
+      "AVG VP": 6.866666666666666,
+      "AVG SETTLES": 2.1,
+      "AVG CITIES": 2.0,
+      "AVG ROAD": 0.3,
+      "AVG ARMY": 0.06666666666666667,
+      "AVG DEV VP": 0.03333333333333333
+    }
+  },
+  "Game Summary": {
+    "AVG TICKS": 218.86666666666667,
+    "AVG TURNS": 77.46666666666667,
+    "AVG DURATION": 1.906960662206014
+  }
+}
+================================ Human Message =================================
+
+ANALYZER
+---
+After Running The New foo_player.py Player, Here is my analysis and findings:
+
+---
+### PERFORMANCE SUMMARY
+- **Outcome**: **Borderline** (14 wins, 16 losses).
+- **VP Comparison**: FooPlayer (BLUE) averaged **6.87 VP** vs. AlphaBetaPlayer (RED) **8.23 VP**.
+- **VP Difference**: **-1.36** (below parity).
+- **Key Counts**:
+  - FooPlayer: 2.1 settlements, 2.0 cities, 0.3 roads, 0.07 armies, 0.03 dev cards.
+  - Opponent: 2.43 settlements, 2.2 cities, 0.7 roads, 0.0 armies, 0.0 dev cards.
+  - **Total Turns**: 77.47 turns per game.
+
+---
+### VERDICT
+**Borderline**: FooPlayer is competitive but underperforms, with a **VP difference of -1.36**.
+
+---
+### LIKELY REASONS
+1. **Road-Building Deficiency**:
+   - FooPlayer averages **0.3 roads** compared to the opponent's **0.7 roads**, indicating a **lack of expansion strategy**.
+   - **Corroborating Log**: The opponent consistently builds more roads, which is critical for Longest Road and resource access.
+
+2. **Robber and Development Card Underutilization**:
+   - FooPlayer averages **0.07 armies** and **0.03 dev cards**, while the opponent leverages these better.
+   - **Corroborating Result**: The opponent's higher VP suggests better use of disruptive strategies (e.g., robber placement).
+
+3. **Tie-Breaking Logic**:
+   - The `decide` method (lines 500–550) uses **lexicographical tie-breaking** (`repr(action)`), which may not prioritize strategically superior actions (e.g., city upgrades over roads).
+
+4. **2-Ply Adversarial Evaluation**:
+   - While the 2-ply lookahead is implemented, it **fails to simulate opponent responses effectively** due to:
+     - **Low reliability thresholds** (`MIN_EVAL_SUCCESS_RATE_FOR_2PLY=0.85` and `MIN_SPECTRUM_SUCCESS_RATE=0.7`).
+     - **Corroborating Log**: The opponent's higher VP suggests FooPlayer's 2-ply evaluation is **not robust enough** to counter adversarial strategies.
+
+---
+### STRATEGIC FLAW
+FooPlayer's **2-ply adversarial evaluation lacks depth and robustness**, leading to suboptimal road-building, robber placement, and development card usage. The tie-breaking logic also fails to prioritize high-impact actions.
+
+---
+### NEXT STEP
+Send to **Strategizer** to **refine 2-ply evaluation thresholds**, **prioritize road-building and robber strategies**, and **improve tie-breaking logic**.
+
+---
+Let me know if you need anything else.
+END ANALYZER
+================================== Ai Message ==================================
+
+- META THOUGHTS:
+  - The Analyzer shows FooPlayer is close but still underperforms (14/16). The core problems: low road-building, weak robber/dev usage, and tie-breaking that doesn't favor high-impact long-term actions. The conservative 2-ply reintroduction helped but didn't correct these specific strategic deficits.
+  - We must avoid hand-tuned heuristics. Instead use algorithmic, adapter-driven signals (expansion potential, counts of build/road playable actions, expected opponent expansion loss from robber actions, base_fn changes) to steer the selective 2-ply and candidate selection.
+  - We should make targeted changes (small, testable) that: (1) ensure road/expansion candidates are always considered, (2) evaluate robber actions by measuring adversary impact, (3) improve tie-breaks with measurable future-build metrics, and (4) make 2-ply activation adaptive and more robust (looser reliability thresholds but with safer deterministic fallbacks).
+
+- META GOAL:
+  - Produce a precise, implementable strategy specification (no heuristics) that CODER can apply to foo_player.py so the next experiment improves roads, robber/dev usage, and overall win-rate. Include exact parameter adjustments, metrics to compute from adapters, integration points, and diagnostic outputs.
+
+- CHOSEN AGENT: STRATEGIZER
+
+- AGENT OBJECTIVE:
+Produce a concrete, adapter-driven refinement plan to fix the strategic flaws the Analyzer identified. The plan must be implementable as focused code edits in foo_player.py (small, safe, deterministic). Provide exact pseudocode and parameter recommendations CODER can paste. Requirements: do not invent new handcrafted value functions — only use adapters (copy_game, execute_spectrum/expand_spectrum, execute_deterministic, derive_playable_actions / derive_opponent_actions, base_fn, visible VP). Be explicit about tie-break rules, simulation budgeting, and diagnostics to collect.
+
+Plan (actionable items with pseudocode & parameter suggestions)
+
+1) Adaptive 2-ply activation (safer, more useful)
+- New idea: enable 2-ply when it is most likely to help:
+  - Early/mid game when expansion matters, OR
+  - When top 1-ply scores are close (ambiguous immediate best).
+- Change thresholds:
+  - MIN_EVAL_SUCCESS_RATE_FOR_2PLY = 0.80 (lower slightly to allow more 2-ply when deterministic fallbacks exist)
+  - MIN_SPECTRUM_SUCCESS_RATE = 0.60
+- Additional activation conditions:
+  - If (best_1ply_score - second_best_1ply_score) < SCORE_AMBIGUITY_THRESHOLD (choose small value, e.g., 0.05 of normalized scale) => run 2-ply.
+  - If any candidate is a road-building action or robber action and expansion potential for top candidates differs significantly (std dev > small threshold) => run 2-ply.
+
+Pseudocode check before 2-ply:
+eval_success_rate = n_eval_success / max(1, n_eval_attempts)
+spectrum_success_rate = ...
+score_gap = best_score - second_best_score
+if (eval_success_rate >= 0.80 and spectrum_success_rate >= 0.60) or (score_gap < SCORE_AMBIGUITY_THRESHOLD) or (exists road/robber candidate with exp_potential > X):
+    allow_2ply = True
+else:
+    allow_2ply = False
+
+2) Guarantee road/expansion candidate inclusion
+- Always include at least one road action in the candidate_pool when a road is playable and its expansion_potential is non-negative.
+- Implementation:
+  - Compute expansion_potential for all road actions among candidates.
+  - If any road action exists with expansion_potential >= 0 (i.e., we could simulate it), include the top road action in candidate_pool even if it’s outside top_by_1ply / top-K by expansion.
+- Rationale: ensures we explicitly evaluate expansion moves.
+
+Pseudocode:
+road_candidates = [a for a in candidates if _is_road_action(a)]
+road_scores = {a: _compute_expansion_potential(game,a) for a in road_candidates}
+if road_scores:
+    best_road = argmax(road_scores)
+    if best_road not in candidate_pool:
+        candidate_pool.append(best_road)
+
+3) Robber action evaluation by opponent-impact metric
+- For candidate actions that are robber-like:
+  - Compute opponent_expansion_before: average expansion potential for opponents on current game (simulate none).
+  - For each outcome of our robber action, compute opponent_expansion_after (simulate state, then compute opponent expansion potential from derive_opponent_actions or by counting opponent playable build/road actions).
+  - Opponent impact metric = opponent_expansion_before - E[opponent_expansion_after]. Positive means we reduced opponents’ future options.
+- Use opponent impact as a tertiary (or secondary for robber candidates) tie-breaker favoring robber actions that reduce opponents' expansion.
+- Implementation details:
+  - Use _compute_expansion_potential but with opponent color and counting their playable actions.
+  - If simulation fails for robber candidate, treat impact as -inf for prioritization (prefer reliable sims).
+
+Pseudocode for robber candidate:
+opp_before = average_playable_count_for_opp(game)
+for outcome_game, p in outcomes:
+    opp_after = count_playable_for_opp(outcome_game)
+    expected_opp_after += p * opp_after
+opp_impact = opp_before - expected_opp_after
+
+Include opp_impact in candidate comparison, higher is better for robber actions.
+
+4) Future-build-count metric for tie-breaking (algorithmic, not heuristic)
+- Compute future_build_count(a) = E[number of build actions available to my_color in immediate next state after a].
+- This is simply expansion_potential but specifically counting build-type playable actions (settlement/city/road/dev plays).
+- Use as secondary tie-breaker after expected_value and expansion_potential to prefer actions that increase our ability to build.
+
+Pseudocode:
+future_build_count = sum_i p_i * count_build_actions(outcome_game_i)
+
+Tie-break order:
+1. expected_value (2-ply)
+2. expansion_potential (our average playable actions)
+3. opp_impact if action is robber (higher better)
+4. future_build_count (higher better)
+5. 1-ply vp_delta
+6. repr(action)
+
+5) More robust opponent simulation fallbacks
+- When opponent spectrum simulation fails, instead of skipping the opponent action entirely, fallback to:
+  - Deterministic simulation for the opponent action if available.
+  - If both fail, use safe_eval_base_fn(outcome_game) as approximation for that branch (no opponent action).
+- This reduces the number of skipped opponent branches and therefore reduces candidate failures.
+- Also keep MAX_SIMULATION_NODES hard cap; allocate simulation budget proportionally:
+  - sim_budget_per_candidate = min(MAX_SIMULATION_NODES_left, MAX_SIMULATION_NODES / max(1, len(candidate_pool))) and track simulated nodes consumed.
+
+Pseudocode inside opponent loop:
+try:
+    opp_outcomes = execute_spectrum(og, b)
+except:
+    try:
+        det = execute_deterministic(og, b)
+        opp_outcomes = [(det_game, 1.0)]
+    except:
+        # approximate: evaluate og itself (no opponent action effect)
+        score_after_b = safe_eval_base_fn(og)
+
+6) Slight parameter adjustments (recommendations)
+- MIN_EVAL_SUCCESS_RATE_FOR_2PLY = 0.80
+- MIN_SPECTRUM_SUCCESS_RATE = 0.60
+- SCORE_AMBIGUITY_THRESHOLD = 0.05  # small
+- Keep MAX_SIMULATION_NODES = 4000, TOP_K_1PLY = 6, OP_MAX_ACTIONS = 10
+
+7) Diagnostics to collect (must be printed under debug)
+- Number of times 2-ply was executed vs skipped and reason for skipping (low eval rate, low spectrum rate, sim cap).
+- For each decide where 2-ply runs, print:
+  - candidate_pool list with (is_road, is_robber, expansion_potential, future_build_count)
+  - For robber candidates: opponent_impact metric and its sign.
+  - For each candidate: expected_value_a and sim_nodes_used_for_candidate.
+  - sim_nodes total and whether cap hit.
+- Add counters: n_road_candidates_included, n_robber_candidates_included, avg_opponent_impact_for_chosen_robber (aggregated over games).
+
+8) Small safe code-level changes CODER must make (summary)
+- Add inclusion rule for road candidate (guarantee one road candidate).
+- Compute opponent_impact for robber candidates and include in tie-break comparison.
+- Lower reliability thresholds to 0.80 and 0.60.
+- Add fallback for opponent spectrum failures: attempt deterministic, then approximate by evaluating current outcome_game.
+- Implement sim budget allocation per candidate and track sim_count; abort safely when cap reached.
+- Add the requested diagnostics prints.
+
+9) Hypothesis / Success criteria
+- If implemented, we expect:
+  - Increase in average roads (aim ≥ 0.5).
+  - Smaller VP gap (target within 0.5).
+  - Improved win rate (>= 50%).
+  - Diagnostics will show 2-ply enabled more often for ambiguous or expansion-critical decisions and robber actions will be selected when they demonstrably reduce opponent expansion potential.
+
+10) Quick pseudocode snippet to compare two candidates (to paste inside candidate evaluation loop):
+```
+# After computing expected_value_a, expansion_potential_a, future_build_count_a
+robber_impact_a = -float('inf')
+if self._is_robber_or_chance(a):
+    robber_impact_a = compute_opponent_impact(game, a)  # implement as described
+
+# candidate comparison:
+if best_action is None or expected_value_a > best_value:
+    choose a
+elif expected_value_a == best_value:
+    if expansion_potential_a > best_expansion: choose a
+    elif expansion_potential_a == best_expansion:
+        if robber_impact_a > best_robber_impact: choose a
+        elif robber_impact_a == best_robber_impact:
+            if future_build_count_a > best_future_build: choose a
+            elif future_build_count_a == best_future_build:
+                if one_ply_vp_delta > best_vp_delta: choose a
+                elif equal: use repr tie-break
+```
+
+Deliverable for CODER:
+- Implement the above adapter-driven refinements:
+  - Road guarantee inclusion
+  - Robber opponent-impact metric
+  - future_build_count tie-break
+  - Opponent simulation fallbacks and sim budget allocation
+  - Lowered thresholds and ambiguity-based activation
+  - Diagnostics additions
+- Run 3 debug games with debug=True and return per-decision logs (highlight road inclusion and robber impact prints).
+- If diagnostics indicate improvements and sim nodes are within budget, run 30 games and return the results.
+
+Would you like me to produce the exact ready-to-paste code snippets for the robber impact computation, opponent fallback logic, sim-budget allocation, and the candidate comparison block so CODER can paste them directly into foo_player.py?
+================================ Human Message =================================
+
+STRATEGIZER
+**Ready-to-Paste Code Snippets for Strategic Refinements**
+
+---
+### **1. Update Class Parameters**
+Add or update the following parameters in the `FooPlayer` class:
+```python
+# Adaptive 2-ply activation thresholds
+MIN_EVAL_SUCCESS_RATE_FOR_2PLY: float = 0.80  # Lowered from 0.85
+MIN_SPECTRUM_SUCCESS_RATE: float = 0.60      # Lowered from 0.70
+SCORE_AMBIGUITY_THRESHOLD: float = 0.05      # New: Enable 2-ply for close scores
+```
+
+---
+### **2. Add `compute_opponent_impact` Method**
+```python
+def _compute_opponent_impact(self, game: Game, action) -> float:
+    """Compute the impact of a robber action on opponent expansion potential.
+
+    Returns the difference between opponent's expansion potential before and after the action.
+    """
+    try:
+        game_copy = copy_game(game)
+    except Exception:
+        if self.debug:
+            print("_compute_opponent_impact: copy_game failed")
+            traceback.print_exc()
+        return -float("inf")
+
+    # Determine opponent color
+    opp_color = self._determine_opponent_color(game, self.color)
+
+    # Compute opponent expansion potential before action
+    opp_expansion_before = self._compute_expansion_potential(game_copy, None)  # None = evaluate current state
+
+    # Simulate the action to get outcome branches
+    outcomes = []
+    try:
+        if self._is_robber_or_chance(action):
+            spec = None
+            try:
+                spec = execute_spectrum(game_copy, action)
+            except Exception:
+                try:
+                    spec_map = expand_spectrum(game_copy, [action])
+                    if isinstance(spec_map, dict):
+                        spec = spec_map.get(action, None)
+                except Exception:
+                    spec = None
+            if spec:
+                outcomes = self._normalize_and_cap_spectrum(spec, self.SPECTRUM_MAX_OUTCOMES)
+        else:
+            det_res = execute_deterministic(game_copy, action)
+            if det_res:
+                outcomes = [(det_res[0][0], 1.0)] if isinstance(det_res[0], tuple) else [(det_res[0], 1.0)]
+    except Exception:
+        if self.debug:
+            print("_compute_opponent_impact: failed to simulate action")
+            traceback.print_exc()
+        return -float("inf")
+
+    if not outcomes:
+        return -float("inf")
+
+    # Compute expected opponent expansion potential after action
+    expected_opp_expansion_after = 0.0
+    for outcome_game, prob in outcomes:
+        try:
+            opp_expansion_after = self._compute_expansion_potential(outcome_game, None)
+            expected_opp_expansion_after += prob * opp_expansion_after
+        except Exception:
+            if self.debug:
+                print("_compute_opponent_impact: failed to compute expansion for outcome")
+                traceback.print_exc()
+            return -float("inf")
+
+    return opp_expansion_before - expected_opp_expansion_after
+```
+
+---
+### **3. Add `count_build_actions` Method**
+```python
+def _count_build_actions(self, game: Game, color: Color) -> int:
+    """Count the number of build-type actions available to `color` in `game`."""
+    try:
+        playable = self._derive_opponent_actions(game, color)
+        if not playable:
+            return 0
+        return sum(
+            1 for a in playable
+            if self._is_build_or_upgrade(a) or self._is_road_action(a)
+        )
+    except Exception:
+        if self.debug:
+            print("_count_build_actions: failed to derive playable actions")
+            traceback.print_exc()
+        return 0
+```
+
+---
+### **4. Update `decide` Method for Adaptive 2-Ply Activation**
+Replace the **reliability check** section in `decide` with the following:
+```python
+# Stage 2: Check reliability and ambiguity for 2-ply activation
+eval_success_rate = self._diag.get("n_eval_success", 0) / max(1, self._diag.get("n_eval_attempts", 0))
+spectrum_success_rate = (
+    self._diag.get("n_spectrum_success", 0) / max(1, self._diag.get("n_spectrum_calls", 0))
+    if self._diag.get("n_spectrum_calls", 0) > 0
+    else 1.0
+)
+# Check if top 1-ply scores are close
+one_ply_results.sort(key=lambda t: t[1], reverse=True)
+if len(one_ply_results) > 1:
+    score_gap = one_ply_results[0][1] - one_ply_results[1][1]
+else:
+    score_gap = float("inf")
+
+# Check for road/robber candidates with high expansion potential
+road_candidates = [a for a in candidates if self._is_road_action(a)]
+robber_candidates = [a for a in candidates if self._is_robber_or_chance(a)]
+has_high_potential_road = any(
+    self._compute_expansion_potential(game, a) >= 0 for a in road_candidates
+)
+has_high_potential_robber = any(
+    self._compute_opponent_impact(game, a) >= 0 for a in robber_candidates
+)
+
+# Enable 2-ply if:
+# 1. Evaluators are reliable, OR
+# 2. Top scores are ambiguous, OR
+# 3. High-potential road/robber candidates exist
+allow_2ply = (
+    (eval_success_rate >= self.MIN_EVAL_SUCCESS_RATE_FOR_2PLY and spectrum_success_rate >= self.MIN_SPECTRUM_SUCCESS_RATE)
+    or (score_gap < self.SCORE_AMBIGUITY_THRESHOLD)
+    or has_high_potential_road
+    or has_high_potential_robber
+)
+
+if self.debug:
+    print(
+        f"decide: eval_success_rate={eval_success_rate:.2f}, "
+        f"spectrum_success_rate={spectrum_success_rate:.2f}, "
+        f"score_gap={score_gap:.3f}, "
+        f"has_high_potential_road={has_high_potential_road}, "
+        f"has_high_potential_robber={has_high_potential_robber}, "
+        f"allow_2ply={allow_2ply}"
+    )
+
+if not allow_2ply:
+    self._diag["n_2ply_skipped"] = self._diag.get("n_2ply_skipped", 0) + 1
+    if self.debug:
+        print("decide: skipping 2-ply due to low reliability or lack of high-potential candidates")
+    # Fall back to best 1-ply action
+    # ... (existing fallback logic)
+```
+
+---
+### **5. Update Candidate Pool Construction**
+Replace the **candidate pool construction** section in `decide` with the following:
+```python
+# Stage 3: Build candidate pool with expansion potential and road guarantee
+one_ply_results.sort(key=lambda t: (t[1], t[2]), reverse=True)
+top_by_1ply = [t[0] for t in one_ply_results[:3]]  # Always include top 3 by 1-ply score
+remaining_candidates = [t[0] for t in one_ply_results[3:]]
+
+# Guarantee inclusion of at least one high-potential road candidate
+road_candidates = [a for a in candidates if self._is_road_action(a)]
+road_scores = {a: self._compute_expansion_potential(game, a) for a in road_candidates}
+best_road = None
+if road_scores:
+    best_road = max(road_scores.items(), key=lambda x: x[1])[0]
+    if best_road not in top_by_1ply and best_road not in remaining_candidates:
+        remaining_candidates.append(best_road)
+
+# Compute expansion potential for remaining candidates
+expansion_scores = {}
+for a in remaining_candidates:
+    exp_potential = self._compute_expansion_potential(game, a)
+    if exp_potential != -float("inf"):
+        expansion_scores[a] = exp_potential
+
+# Sort remaining candidates by expansion potential
+sorted_remaining = sorted(
+    expansion_scores.items(),
+    key=lambda x: x[1],
+    reverse=True
+)
+additional_candidates = [a for a, _ in sorted_remaining[: max(0, self.TOP_K_1PLY - len(top_by_1ply))]]
+candidate_pool = top_by_1ply + additional_candidates
+
+# Include best road candidate if not already present
+if best_road and best_road not in candidate_pool:
+    candidate_pool.append(best_road)
+    if self.debug:
+        print(f"decide: added guaranteed road candidate {repr(best_road)} with expansion_potential={road_scores[best_road]}")
+
+if self.debug:
+    print("Candidate pool:")
+    for a in candidate_pool:
+        exp_potential = expansion_scores.get(a, "N/A")
+        is_road = self._is_road_action(a)
+        is_robber = self._is_robber_or_chance(a)
+        print(f"  {repr(a)} (is_road={is_road}, is_robber={is_robber}, expansion_potential={exp_potential})")
+```
+
+---
+### **6. Update 2-Ply Evaluation Logic**
+Replace the **2-ply evaluation loop** in `decide` with the following:
+```python
+# Stage 4: 2-ply adversarial evaluation with opponent impact and build count
+best_action = None
+best_value = -float("inf")
+best_expansion = -float("inf")
+best_robber_impact = -float("inf")
+best_future_build = -float("inf")
+best_vp_delta = -float("inf")
+best_repr = None
+sim_count = 0
+
+# Use class cap for simulated nodes
+SIMULATION_HARD_LIMIT = self.MAX_SIMULATION_NODES
+
+# Track diagnostics
+deep_successful_candidates = 0
+
+try:
+    for a in candidate_pool:
+        if sim_count >= SIMULATION_HARD_LIMIT:
+            if self.debug:
+                print("decide: reached simulation hard limit; stopping deepening")
+            break
+
+        # Simulate our action a to produce outcome branches
+        try:
+            game_copy = copy_game(game)
+        except Exception as e:
+            if self.debug:
+                print("decide: copy_game failed for candidate", repr(a), e)
+                traceback.print_exc()
+            continue
+
+        # Obtain outcome branches
+        outcomes = []
+        try:
+            if self._is_robber_or_chance(a):
+                spec = None
+                try:
+                    spec = execute_spectrum(game_copy, a)
+                except Exception:
+                    try:
+                        spec_map = expand_spectrum(game_copy, [a])
+                        if isinstance(spec_map, dict):
+                            spec = spec_map.get(a, None)
+                    except Exception:
+                        spec = None
+                if spec:
+                    outcomes = self._normalize_and_cap_spectrum(spec, self.SPECTRUM_MAX_OUTCOMES)
+            if not outcomes:
+                det_res = execute_deterministic(game_copy, a)
+                if det_res:
+                    outcomes = [(det_res[0][0], 1.0)] if isinstance(det_res[0], tuple) else [(det_res[0], 1.0)]
+        except Exception as e:
+            if self.debug:
+                print("decide: failed to obtain outcomes for candidate", repr(a), "error:", e)
+                traceback.print_exc()
+            continue
+
+        if not outcomes:
+            continue
+
+        # Cap outcomes
+        if len(outcomes) > self.SPECTRUM_MAX_OUTCOMES:
+            outcomes = outcomes[:self.SPECTRUM_MAX_OUTCOMES]
+
+        if self.debug:
+            print(f"Candidate {repr(a)} produced {len(outcomes)} outcome(s) to evaluate")
+
+        expected_value_a = 0.0
+        expansion_potential_a = 0.0
+        robber_impact_a = -float("inf")
+        future_build_count_a = 0.0
+        one_ply_vp_delta = next((v for (act, s, v) in one_ply_results if act == a), 0.0)
+
+        # Compute robber impact if applicable
+        if self._is_robber_or_chance(a):
+            robber_impact_a = self._compute_opponent_impact(game, a)
+
+        for og, p_i in outcomes:
+            if sim_count >= SIMULATION_HARD_LIMIT:
+                break
+
+            # Compute expansion potential for this outcome
+            try:
+                playable = self._derive_opponent_actions(og, self.color)
+                expansion = len(playable) if playable else 0
+                expansion_potential_a += p_i * expansion
+            except Exception:
+                if self.debug:
+                    print("decide: failed to compute expansion potential for outcome")
+                    traceback.print_exc()
+                expansion_potential_a += p_i * -float("inf")
+
+            # Compute future build count for this outcome
+            try:
+                future_build_count_a += p_i * self._count_build_actions(og, self.color)
+            except Exception:
+                if self.debug:
+                    print("decide: failed to compute future build count for outcome")
+                    traceback.print_exc()
+                future_build_count_a += p_i * -float("inf")
+
+            # Determine opponent color
+            opp_color = self._determine_opponent_color(og, self.color)
+
+            # Get opponent actions with robust fallbacks
+            try:
+                opp_actions = self._derive_opponent_actions(og, opp_color)
+            except Exception:
+                opp_actions = []
+
+            if not opp_actions:
+                val_i = self._simulate_and_evaluate(og, None, self.color)
+                if val_i is None:
+                    continue
+                expected_value_a += p_i * val_i
+                sim_count += 1
+                continue
+
+            # Prune opponent actions deterministically and cap
+            opp_sampled = self._sample_opponent_actions(opp_actions, og, opp_color)[: self.OP_MAX_ACTIONS]
+
+            if self.debug:
+                print(f"  outcome p={p_i:.3f}: opp_actions={len(opp_actions)} -> sampled={len(opp_sampled)}")
+
+            # Adversarial evaluation
+            min_score_after_opp = float("inf")
+            opp_successes = 0
+            for b in opp_sampled:
+                if sim_count >= SIMULATION_HARD_LIMIT:
+                    break
+                # Try spectrum first for opponent chance actions
+                if self._is_robber_or_chance(b):
+                    try:
+                        opp_spec = execute_spectrum(og, b)
+                        if opp_spec:
+                            opp_outcomes = self._normalize_and_cap_spectrum(opp_spec, self.SPECTRUM_MAX_OUTCOMES)
+                            opp_scores = []
+                            for opp_og, opp_p in opp_outcomes:
+                                opp_sc = self._safe_eval_base_fn(opp_og, self.color)
+                                if opp_sc is not None:
+                                    opp_scores.append(opp_p * opp_sc)
+                            if opp_scores:
+                                opp_val = sum(opp_scores)
+                                min_score_after_opp = min(min_score_after_opp, opp_val)
+                                opp_successes += 1
+                    except Exception:
+                        pass
+                # Fallback to deterministic
+                if min_score_after_opp == float("inf"):
+                    try:
+                        opp_det = execute_deterministic(og, b)
+                        if opp_det:
+                            opp_det_og = opp_det[0][0] if isinstance(opp_det[0], tuple) else opp_det[0]
+                            opp_sc = self._safe_eval_base_fn(opp_det_og, self.color)
+                            if opp_sc is not None:
+                                min_score_after_opp = min(min_score_after_opp, opp_sc)
+                                opp_successes += 1
+                    except Exception:
+                        pass
+                # Last resort: evaluate og directly
+                if min_score_after_opp == float("inf"):
+                    opp_sc = self._safe_eval_base_fn(og, self.color)
+                    if opp_sc is not None:
+                        min_score_after_opp = opp_sc
+
+                sim_count += 1
+
+            if opp_successes == 0:
+                min_score_after_opp = self._simulate_and_evaluate(og, None, self.color) or 0.0
+
+            expected_value_a += p_i * min_score_after_opp
+
+        # Compare candidate using tie-breaks
+        if self.debug:
+            print(
+                f"Candidate {repr(a)}: expected_value={expected_value_a}, "
+                f"expansion_potential={expansion_potential_a}, "
+                f"robber_impact={robber_impact_a}, "
+                f"future_build_count={future_build_count_a}, "
+                f"1-ply vp_delta={one_ply_vp_delta}"
+            )
+
+        is_better = False
+        if best_action is None:
+            is_better = True
+        elif expected_value_a > best_value:
+            is_better = True
+        elif expected_value_a == best_value:
+            if expansion_potential_a > best_expansion:
+                is_better = True
+            elif expansion_potential_a == best_expansion:
+                if robber_impact_a > best_robber_impact:
+                    is_better = True
+                elif robber_impact_a == best_robber_impact:
+                    if future_build_count_a > best_future_build:
+                        is_better = True
+                    elif future_build_count_a == best_future_build:
+                        if one_ply_vp_delta > best_vp_delta:
+                            is_better = True
+                        elif one_ply_vp_delta == best_vp_delta:
+                            tie_repr = repr(a)
+                            if best_repr is None or tie_repr < best_repr:
+                                is_better = True
+
+        if is_better:
+            best_action = a
+            best_value = expected_value_a
+            best_expansion = expansion_potential_a
+            best_robber_impact = robber_impact_a
+            best_future_build = future_build_count_a
+            best_vp_delta = one_ply_vp_delta
+            best_repr = repr(a)
+```
+
+---
+### **7. Add Debug Diagnostics**
+Add the following to the `decide` method after the 2-ply evaluation loop:
+```python
+if self.debug:
+    print("2-ply diagnostics:")
+    print(f"  n_2ply_runs: {self._diag.get('n_2ply_runs', 0)}")
+    print(f"  n_2ply_skipped: {self._diag.get('n_2ply_skipped', 0)}")
+    print(f"  sim_count: {sim_count} / {SIMULATION_HARD_LIMIT}")
+    print(f"  best_action: {repr(best_action)}")
+    print(f"  best_value: {best_value}")
+    print(f"  best_expansion: {best_expansion}")
+    print(f"  best_robber_impact: {best_robber_impact}")
+    print(f"  best_future_build: {best_future_build}")
+```
+
+---
+### **8. Deliverable for CODER**
+1. **Implement the provided snippets** in `foo_player.py`.
+2. **Run 3 games with `debug=True`** and share logs.
+3. **Run the 30-game batch** and report metrics.
+
+---
+### **Expected Outcome**
+- **Win Rate**: ≥50%.
+- **Avg Roads**: ≥0.5.
+- **Avg VP**: Within 0.5 of the opponent.
+- **Diagnostics**: 2-ply enabled for ambiguous or expansion-critical decisions.
+
+END STRATEGIZER
+================================== Ai Message ==================================
+
+- META THOUGHTS:
+  - Analyzer shows FooPlayer is close but still underperforming. The STRATEGIZER's refinements (road guarantee, robber opponent-impact, future-build tie-breaks, adaptive 2-ply activation, opponent-fallbacks, sim-budgeting) are appropriate, narrowly scoped, and adapter-driven. They should improve expansion and disruptive play without introducing handcrafted heuristics.
+  - Next actionable step is to have CODER implement the STRATEGIZER's ready-to-paste snippets exactly, run a short debug experiment to gather diagnostics, and proceed to the full batch only if diagnostics show evaluator reliability and reasonable simulation costs.
+
+- META GOAL:
+  - Implement the STRATEGIZER's refinements in foo_player.py, run 3 debug games (player.debug=True) to collect per-decision diagnostics and up to 5 stack traces if failures occur, then — if diagnostics pass thresholds — run the 30-game batch and return the JSON metrics plus aggregate diagnostics.
+
+- CHOSEN AGENT: CODER
+
+- AGENT OBJECTIVE:
+Implement and test the STRATEGIZER's ready-to-paste refinements exactly as provided. Follow these steps and return the requested outputs.
+
+1) Code changes to implement (apply exactly):
+   - Update class parameters:
+     - MIN_EVAL_SUCCESS_RATE_FOR_2PLY = 0.80
+     - MIN_SPECTRUM_SUCCESS_RATE = 0.60
+     - SCORE_AMBIGUITY_THRESHOLD = 0.05
+     - Keep previously set: TOP_K_1PLY = 6, OP_MAX_ACTIONS = 10, OP_SAMPLE_PER_ACTION_TYPE = 2, MAX_SIMULATION_NODES = 4000, MAX_ACTIONS_TO_EVAL = 80, SAMPLE_PER_ACTION_TYPE = 4, SPECTRUM_MAX_OUTCOMES = 8, EARLY_TURN_THRESHOLD = 30.
+
+   - Add / paste the helper methods:
+     - _compute_opponent_impact (exact snippet).
+     - _count_build_actions (exact snippet).
+     - Ensure _compute_expansion_potential already exists; if not, use the provided one previously.
+
+   - Replace the reliability check in decide() with the Adaptive 2-Ply Activation snippet (section 4). Make sure to compute eval_success_rate and spectrum_success_rate using self._diag counters.
+
+   - Replace candidate pool construction with the Updated Candidate Pool snippet (section 5). Guarantee inclusion of at least one high-potential road candidate.
+
+   - Replace the 2-ply evaluation loop in decide() with the Updated 2-Ply Evaluation Logic snippet (section 6). Ensure:
+     - sim_count tracks simulated nodes; enforce SIMULATION_HARD_LIMIT = self.MAX_SIMULATION_NODES.
+     - Fallbacks for opponent spectrum failures: try deterministic, else evaluate og directly.
+     - All adapter calls wrapped in try/except and log full tracebacks when self.debug True.
+     - Tie-break order implemented: expected_value > expansion_potential > robber_impact > future_build_count > 1-ply vp_delta > repr(action).
+     - Update diagnostic counters: increment n_2ply_runs when 2-ply actually executed, increment n_2ply_skipped when skipped and record reason.
+
+   - Add debug diagnostics print block after the 2-ply loop (section 7).
+
+2) Defensive requirements:
+   - Any adapter call (copy_game, execute_spectrum, expand_spectrum, execute_deterministic, base_fn, derive_playable_actions/_derive_opponent_actions) must be in try/except. On exception, log stack trace if self.debug True, handle gracefully (treat as simulation failure or use fallback evaluation), and never let decide() raise.
+   - If more than 50% of candidate sims fail for a decide() invocation, skip 2-ply and fall back to best 1-ply.
+   - Allocate sim budget per candidate proportionally or simply break when sim_count >= MAX_SIMULATION_NODES; ensure deterministic ordering of candidate evaluation.
+
+3) Determinism:
+   - Preserve RNG seeding (random.Random(self.RNG_SEED + stable_color_hash)) everywhere sampling is used.
+   - No use of randomization in 2-ply choice or tie-breaks.
+
+4) Testing plan to run now:
+   A) Debug smoke run:
+     - Set player.debug = True.
+     - Run 3 full games against AlphaBetaPlayer.
+     - Capture and return the raw debug logs (stdout) that include:
+       - Per-decision diagnostics printed from decide()
+       - Candidate pool prints, expansion_potential, robber_impact, future_build_count, expected_value per candidate, sim_count per decision, and why 2-ply was skipped when applicable.
+     - If any adapter exceptions occur, capture and return up to the first 5 full stack traces (raw).
+
+   B) Analysis gate:
+     - Evaluate aggregated diagnostics from 3 games:
+       - eval_success_rate >= MIN_EVAL_SUCCESS_RATE_FOR_2PLY (0.80)
+       - spectrum_success_rate >= MIN_SPECTRUM_SUCCESS_RATE (0.60) when spectrum used
+       - Average sim_count per 2-ply invocation substantially below MAX_SIMULATION_NODES (preferably < 0.5 * MAX_SIMULATION_NODES)
+       - Check n_2ply_runs > 0 and n_road_candidates_included > 0 across games
+     - If diagnostics meet these criteria, proceed to the full batch. Otherwise, return logs and traces for further analysis / call RESEARCHER if adapter signature mismatches are observed.
+
+   C) Full experiment:
+     - Set player.debug = False.
+     - Run 30-game batch vs AlphaBetaPlayer.
+     - Return the JSON metrics (Player Summary & Game Summary) plus aggregate diagnostics:
+       - times_2ply_run, times_2ply_skipped (with reasons), avg_simulated_nodes_per_2ply, eval_success_rate (aggregate), spectrum_success_rate (aggregate), avg roads for FooPlayer.
+
+5) Reporting format:
+   - Provide the 3-game debug logs as raw text output.
+   - Include up to 5 full stack traces verbatim if any exceptions occurred during debug runs.
+   - Provide the 30-game experiment JSON exactly as before.
+   - Add a short summary with these aggregated diagnostics: times_2ply_run, times_2ply_skipped, avg_sim_nodes, eval_success_rate, spectrum_success_rate, avg roads.
+
+6) Failure handling:
+   - If decide() still raises AttributeError or other unexpected unhandled exception, stop experiments immediately and return the full stack trace(s) (then we will call RESEARCHER).
+   - If many simulation failures occur (more than 50% of candidate sims across decides), stop and return logs so STRATEGIZER can propose alternate remedy.
+
+Execute these steps now: implement the code edits, run the 3-game debug experiment (player.debug=True), and return the raw logs and up to 5 stack traces (if any). After we inspect the debug output, we'll instruct you whether to run the 30-game batch.
+================================ Human Message =================================
+
+CODER
+
+I updated foo_player.py with the STRATEGIZER's conservative selective 2-ply refinements and stabilization changes you requested. Summary of the exact edits applied:
+
+- Parameters updated:
+  - MAX_ACTIONS_TO_EVAL = 80
+  - SAMPLE_PER_ACTION_TYPE = 4
+  - SPECTRUM_MAX_OUTCOMES = 8
+  - EARLY_TURN_THRESHOLD = 30
+  - TOP_K_1PLY = 6
+  - OP_MAX_ACTIONS = 10
+  - OP_SAMPLE_PER_ACTION_TYPE = 2
+  - MAX_SIMULATION_NODES = 4000
+  - MIN_EVAL_SUCCESS_RATE_FOR_2PLY = 0.80
+  - MIN_SPECTRUM_SUCCESS_RATE = 0.60
+  - SCORE_AMBIGUITY_THRESHOLD = 0.05
+  - RNG_SEED = 0 (kept)
+
+- Implemented and added:
+  - _compute_opponent_impact (robber opponent-impact metric).
+  - _count_build_actions (build-action counter).
+  - Improved _sample_actions to bias roads mid-game and builds early-game (deterministic RNG).
+  - _sample_opponent_actions implemented for opponent pruning.
+  - _normalize_and_cap_spectrum sorts by probability before truncating.
+  - _evaluate_action added (robust, spectrum-aware, returns (score, vp_delta)).
+  - _simulate_and_evaluate used for deterministic/chance single-state evaluation.
+  - _compute_expansion_potential returns average playable-actions count after action; -inf on failure.
+  - decide() rewritten to:
+    - 1-ply evaluation with diagnostics
+    - adaptive 2-ply activation (ambiguity and high-potential road/robber overrides)
+    - candidate pool building with guaranteed road inclusion
+    - conservative adversarial 2-ply with sim_count budget and robust opponent fallbacks
+    - tie-breaks preferring expected_value, expansion_potential, future build counts, vp_delta, then repr
+    - detailed debug prints when self.debug True
+    - never raise exceptions; fallbacks to 1-ply or first action
+
+- Diagnostics:
+  - self._diag counters populated and updated: n_candidates, n_eval_attempts/success, n_spectrum_calls/success, n_det_calls/success, n_skipped, n_fallbacks_to_first_action, n_2ply_runs, n_2ply_skipped, n_road_candidates_included, simulated_nodes_total.
+  - Debug prints added for per-decision and per-candidate diagnostics; enable with player.debug = True.
+
+- Adapter usage:
+  - Uses only functions from adapters.py: copy_game, execute_deterministic, execute_spectrum, expand_spectrum, list_prunned_actions, base_fn (via base_fn()).
+  - All adapter calls wrapped in try/except; failures logged if debug True and handled gracefully.
+
+Next steps (I can run them now if you confirm):
+1) Run 3 debug games (player.debug = True) to collect per-decision logs and up to 5 stack traces if failures occur.
+2) If diagnostics meet thresholds, run the 30-game batch with player.debug = False and report the JSON metrics plus aggregated diagnostics.
+
+Tell me to proceed with the debug runs now and I'll run them and return logs. END CODER
+================================ Human Message =================================
+
+GAME RESULTS:
+
+{
+  "Player Summary": {
+    "AlphaBetaPlayer:RED(depth=2,value_fn=base_fn,prunning=False)": {
+      "WINS": 20,
+      "AVG VP": 8.833333333333334,
+      "AVG SETTLES": 2.566666666666667,
+      "AVG CITIES": 2.3666666666666667,
+      "AVG ROAD": 0.7666666666666667,
+      "AVG ARMY": 0.0,
+      "AVG DEV VP": 0.0
+    },
+    "FooPlayer:BLUE": {
+      "WINS": 10,
+      "AVG VP": 6.666666666666667,
+      "AVG SETTLES": 2.0,
+      "AVG CITIES": 2.033333333333333,
+      "AVG ROAD": 0.23333333333333334,
+      "AVG ARMY": 0.03333333333333333,
+      "AVG DEV VP": 0.06666666666666667
+    }
+  },
+  "Game Summary": {
+    "AVG TICKS": 207.5,
+    "AVG TURNS": 73.33333333333333,
+    "AVG DURATION": 1.8830600738525392
+  }
+}
+================================ Human Message =================================
+
+ANALYZER
+---
+After Running The New foo_player.py Player, Here is my analysis and findings:
+
+---
+### PERFORMANCE SUMMARY
+- **Outcome**: **Poor** (10 wins, 20 losses).
+- **VP Comparison**: FooPlayer (BLUE) averaged **6.67 VP** vs. AlphaBetaPlayer (RED) **8.83 VP**.
+- **VP Difference**: **-2.16** (significantly below parity).
+- **Key Counts**:
+  - FooPlayer: 2.0 settlements, 2.03 cities, 0.23 roads, 0.03 armies, 0.07 dev cards.
+  - Opponent: 2.57 settlements, 2.37 cities, 0.77 roads, 0.0 armies, 0.0 dev cards.
+  - **Total Turns**: 73.33 turns per game.
+
+---
+### VERDICT
+**Poor**: FooPlayer underperforms significantly, with a **VP difference of -2.16** and a **33% win rate**.
+
+---
+### LIKELY REASONS
+1. **Road-Building Deficiency**:
+   - FooPlayer averages **0.23 roads** compared to the opponent's **0.77 roads**, indicating a **critical lack of expansion and connectivity**.
+   - **Corroborating Log**: The opponent consistently builds more roads, which is essential for Longest Road and resource access.
+
+2. **Robber and Development Card Underutilization**:
+   - FooPlayer averages **0.03 armies** and **0.07 dev cards**, while the opponent leverages these better.
+   - **Corroborating Result**: The opponent's higher VP suggests better use of disruptive strategies (e.g., robber placement).
+
+3. **2-Ply Adversarial Evaluation Issues**:
+   - The 2-ply lookahead is **not robust enough** to counter adversarial strategies due to:
+     - **Low reliability thresholds** (`MIN_EVAL_SUCCESS_RATE_FOR_2PLY=0.80` and `MIN_SPECTRUM_SUCCESS_RATE=0.60`).
+     - **Corroborating Log**: The opponent's higher VP suggests FooPlayer's 2-ply evaluation is **not effectively simulating opponent responses**.
+
+4. **Tie-Breaking Logic**:
+   - The `decide` method (lines 500–550) uses **lexicographical tie-breaking** (`repr(action)`), which may not prioritize strategically superior actions (e.g., city upgrades over roads).
+
+---
+### STRATEGIC FLAW
+FooPlayer's **2-ply adversarial evaluation lacks depth and robustness**, leading to suboptimal road-building, robber placement, and development card usage. The tie-breaking logic also fails to prioritize high-impact actions, and the **road-building strategy is critically deficient**.
+
+---
+### NEXT STEP
+Send to **Strategizer** to **prioritize road-building strategies**, **refine 2-ply evaluation thresholds**, and **improve tie-breaking logic** to focus on high-impact actions.
+
+---
+Let me know if you need anything else.
+END ANALYZER
+================================== Ai Message ==================================
+
+- META THOUGHTS:
+  - Analyzer confirms FooPlayer regressed: road-building and disruptive play are weak and the conservative 2‑ply didn’t fix the core strategic gap. Past changes increased complexity but lowered practical expansion (roads) and VP. We must avoid more blind parameter tuning; instead add a targeted, algorithmic capability that directly measures and favors multi-turn expansion sequences (road → settlement) using the adapters, and make opponent-simulation fallbacks more reliable. This keeps us within the rule “no simple heuristics” because we’ll use explicit simulation/search to evaluate multi-step plans.
+  - Keep changes small and verifiable: introduce a bounded self-only forward search (simulate only our consecutive build sequences up to depth D) to compute an expected_settlement_gain metric, incorporate it into candidate selection/tiebreaks, and make opponent modeling fallbacks more robust (deterministic fallback, probability-weighted aggregation when appropriate). Also tighten diagnostics so we can measure whether these algorithmic signals actually increase roads and VPs.
+
+- META GOAL:
+  - Produce a concise, implementable strategy plan (for CODER) that (1) increases multi-turn expansion (roads → settlements) via a bounded self-forward search and a new expected_settlement_gain metric, (2) improves opponent-simulation robustness/fallbacks, and (3) updates candidate selection/tie-breaks to use these algorithmic metrics — all while preserving determinism and adapter-only operations. Provide exact parameters, pseudocode, and diagnostics to collect.
+
+- CHOSEN AGENT: STRATEGIZER
+
+- AGENT OBJECTIVE:
+Provide an actionable, adapter-driven plan (with ready-to-implement pseudocode and exact parameter values) that the CODER can paste into foo_player.py. Constraints: do NOT add handcrafted scoring heuristics; only use adapters (copy_game, execute_spectrum, expand_spectrum, execute_deterministic, derive_playable_actions/_derive_opponent_actions, base_fn/ safe_eval). The plan must be narrowly focused and reversible. Include diagnostics to prove the change helps (roads, VP). Deliver:
+
+1) New parameter suggestions (exact values)
+   - SELF_LOOKAHEAD_DEPTH = 3  # simulate up to 3 consecutive self actions (roads/settles/upgrades)
+   - SELF_LOOKAHEAD_BUDGET = 200  # max simulation nodes used for self-only lookahead per decide
+   - TOP_K_1PLY = 6  (keep)
+   - OP_MAX_ACTIONS = 10  (keep)
+   - MAX_SIMULATION_NODES = 4000  (keep)
+   - MIN_EVAL_SUCCESS_RATE_FOR_2PLY = 0.80  (keep)
+   - MIN_SPECTRUM_SUCCESS_RATE = 0.60  (keep)
+   - SCORE_AMBIGUITY_THRESHOLD = 0.05  (keep)
+
+2) New metric: expected_settlement_gain (algorithmic, adapter-driven)
+   - Definition: expected number of additional settlements (or settlement opportunities) the agent can realize within SELF_LOOKAHEAD_DEPTH turns if it follows a best self-only sequence starting with candidate action a.
+   - Computation method:
+     - Use copy_game(game), simulate action a.
+     - From each outcome branch (spectrum or deterministic) compute probability p_i and outcome_game_i.
+     - For each outcome_game_i, run a bounded forward search up to depth SELF_LOOKAHEAD_DEPTH where only moves by our color are simulated (simulate our best plausible build sequence assuming opponents do nothing). For branching inside the self-only search, sample/prune playable actions deterministically with phase-aware _sample_actions but limited by SELF_LOOKAHEAD_BUDGET. Count the maximum number of settlements gained or settlement slots reached across sequences; average with probabilities p_i to compute expected_settlement_gain for a.
+     - If any simulation fails, return -inf for that candidate.
+
+   - Implementation pseudocode (ready to paste):
+     ```
+     def _compute_expected_settlement_gain(self, game: Game, action) -> float:
+         # returns expected number of additional settlements reachable within SELF_LOOKAHEAD_DEPTH
+         try:
+             gc = copy_game(game)
+         except Exception:
+             return -float('inf')
+         # get outcome branches for action a
+         outcomes = _simulate_action_branches(gc, action)  # returns list of (outcome_game, prob)
+         if not outcomes:
+             return -float('inf')
+         total_gain = 0.0
+         sim_nodes_used = 0
+         for og, p in outcomes:
+             # run bounded self-only DFS/BFS up to depth SELF_LOOKAHEAD_DEPTH
+             best_gain_for_branch = 0
+             stack = [(og, 0, 0)]  # (game_state, depth, settlements_gained)
+             while stack and sim_nodes_used < SELF_LOOKAHEAD_BUDGET:
+                 state, depth, gained = stack.pop()
+                 sim_nodes_used += 1
+                 # derive playable actions for our color in state
+                 plays = self._derive_opponent_actions(state, self.color) or []
+                 # filter to actions that are build/road/upgrade/dev (we only simulate building)
+                 candidates = [act for act in plays if self._is_build_or_upgrade(act) or self._is_road_action(act)]
+                 # if no build actions, update best_gain_for_branch using base_fn difference if needed
+                 for act in self._sample_actions(candidates, state):
+                     # simulate deterministic application; prefer deterministic simulation for self-only lookahead
+                     try:
+                         det = execute_deterministic(copy_game(state), act)
+                         next_state = det[0][0] if isinstance(det[0], tuple) else det[0]
+                     except Exception:
+                         continue
+                     new_gained = gained + (1 if self._is_settlement_build(act) else 0)
+                     if depth+1 < SELF_LOOKAHEAD_DEPTH:
+                         stack.append((next_state, depth+1, new_gained))
+                     else:
+                         best_gain_for_branch = max(best_gain_for_branch, new_gained)
+                 # also update best_gain_for_branch w/ current gained
+                 best_gain_for_branch = max(best_gain_for_branch, gained)
+             total_gain += p * best_gain_for_branch
+         return float(total_gain)
+     ```
+     - Notes:
+       - _simulate_action_branches should reuse existing code that returns spectrum/deterministic outcomes, capped/sorted by prob.
+       - _is_settlement_build(action) should detect BUILD_SETTLEMENT type.
+       - Keep sim_nodes_used tracked and abort early if SELF_LOOKAHEAD_BUDGET exceeded; in that case return current best estimate.
+
+3) Integrate expected_settlement_gain into candidate selection and tie-breaks
+   - Candidate pool construction:
+     - Keep top_by_1ply and expansion_potential inclusion as before.
+     - Additionally compute expected_settlement_gain for all remaining candidates; include top candidates by this metric (fill up to TOP_K_1PLY).
+     - Guarantee at least one road candidate as before.
+   - Tie-break order (exact):
+     1. expected_value (2-ply expected adversarial value) — primary
+     2. expected_settlement_gain — promote multi-turn expansion sequences
+     3. expansion_potential (avg playable actions) — mobility
+     4. robber_opponent_impact (if applicable) — defensive/disruptive value
+     5. future_build_count (avg immediate build actions) — short-term buildability
+     6. 1-ply vp_delta
+     7. repr(action) as absolute last resort
+   - Implementation: replace the candidate comparison block with a tuple compare using the above ordering (higher better). For numeric -inf handling, treat lower as strictly worse.
+
+4) Opponent-simulation robustness improvements
+   - When simulating opponent responses inside 2-ply:
+     - If execute_spectrum fails for an opponent action, try execute_deterministic(next_state, opp_action). If that succeeds, use that outcome; if both fail, use safe_eval_base_fn(og, self.color) as the value for that branch (this approximates opponent effect rather than skipping it).
+     - Aggregation rule: where previously you used min_b(score_after_b) (fully adversarial), consider using a conservative hybrid:
+       - If opponent simulations succeeded for at least one action in the sampled set, use min_b(score_after_b).
+       - If none succeeded, fallback to safe_eval_base_fn(og, self.color) rather than skipping or using +inf/0.
+     - This reduces candidate elimination due to simulation brittleness.
+
+5) Adaptive 2-ply activation refinement
+   - Keep existing reliability thresholds but also allow 2-ply when expected_settlement_gain or expansion_potential shows strong disparity between top candidates (i.e., when multi-turn expansion matters).
+   - Use SCORE_AMBIGUITY_THRESHOLD as before but also:
+     - If max(expected_settlement_gain) among candidates >= 0.5, set allow_2ply = True (we expect at least a half settlement expected).
+     - This focuses deeper search on expansion-critical decisions.
+
+6) Diagnostics to collect (must be printed when debug=True)
+   - Per decide:
+     - expected_settlement_gain for each candidate (print top 6).
+     - Whether 2-ply ran, sim_count used for 2-ply, and sim nodes used for SELF_LOOKAHEAD_TOTAL across candidates.
+     - Number of road candidates included and whether guaranteed road was inserted.
+     - Count of opponent-sim failures and whether deterministic fallback used.
+   - Per game aggregate (after batch):
+     - avg expected_settlement_gain for chosen actions.
+     - avg roads built by FooPlayer.
+     - times 2-ply ran vs skipped and reasons, avg sim_count per 2-ply invocation.
+     - proportion of opponent-sim branches that used deterministic fallback vs spectrum.
+
+7) Safety & resource constraints
+   - Enforce SELF_LOOKAHEAD_BUDGET and MAX_SIMULATION_NODES hard caps. If budget exceeded during computing expected_settlement_gain for too many candidates, prioritize computing it only for candidates that are near the top_by_1ply or for road/robber candidates (deterministic order) to remain within budget.
+   - If more than 50% of candidate simulations fail or budget hits hard cap before finishing, skip 2-ply for this decide and fall back to best 1-ply.
+
+8) Success criteria (concrete)
+   - After running 30-game batch:
+     - avg roads for FooPlayer increases to >= 0.5
+     - win rate improves toward >= 50% (or VP gap within 0.5)
+     - diagnostics show expected_settlement_gain > 0 for majority of chosen actions when they are expansion choices
+     - 2-ply executed more often on ambiguous/expansion-critical decisions and not executed when unreliable
+
+9) Deliverable for CODER (exact)
+   - Implement _compute_expected_settlement_gain and integrate it into candidate pool and tie-break code exactly as described.
+   - Add the opponent-simulation fallback and hybrid aggregation rule.
+   - Add the diagnostics prints and budget enforcement described above.
+   - Run 3 debug games (player.debug = True) and return:
+     - Per-decision logs showing expected_settlement_gain, road guarantees, and whether 2-ply ran.
+     - Up to 5 stack traces if any adapter exceptions occur.
+   - If diagnostics look healthy (expected_settlement_gain computed regularly for top candidates and sim budget not exceeded), run 30-game batch and return metrics and aggregate diagnostics.
+
+Would you like me to produce exact ready-to-paste code snippets for:
+- _compute_expected_settlement_gain (including helper _simulate_action_branches),
+- integration points in decide() (candidate pool and tie-break tuple),
+- opponent-simulation fallback code,
+- and the diagnostic printouts?
+
+If yes, I will produce the snippets next.
+================================ Human Message =================================
+
+STRATEGIZER
+**Ready-to-Paste Code Snippets for Multi-Turn Expansion Strategy**
+
+---
+### **1. Add New Parameters**
+Add the following parameters to the `FooPlayer` class:
+```python
+# Multi-turn expansion planning
+SELF_LOOKAHEAD_DEPTH: int = 3      # Simulate up to 3 consecutive self actions
+SELF_LOOKAHEAD_BUDGET: int = 200   # Max simulation nodes for self-only lookahead
+```
+
+---
+### **2. Add `_simulate_action_branches` Helper**
+```python
+def _simulate_action_branches(self, game: Game, action) -> List[Tuple[Game, float]]:
+    """Simulate action and return outcome branches (spectrum or deterministic)."""
+    try:
+        game_copy = copy_game(game)
+    except Exception:
+        if self.debug:
+            print("_simulate_action_branches: copy_game failed")
+            traceback.print_exc()
+        return []
+
+    outcomes = []
+    try:
+        if self._is_robber_or_chance(action):
+            spec = None
+            try:
+                spec = execute_spectrum(game_copy, action)
+            except Exception:
+                try:
+                    spec_map = expand_spectrum(game_copy, [action])
+                    if isinstance(spec_map, dict):
+                        spec = spec_map.get(action, None)
+                except Exception:
+                    spec = None
+            if spec:
+                outcomes = self._normalize_and_cap_spectrum(spec, self.SPECTRUM_MAX_OUTCOMES)
+        else:
+            det_res = execute_deterministic(game_copy, action)
+            if det_res:
+                outcomes = [(det_res[0][0], 1.0)] if isinstance(det_res[0], tuple) else [(det_res[0], 1.0)]
+    except Exception:
+        if self.debug:
+            print("_simulate_action_branches: failed to simulate action")
+            traceback.print_exc()
+        return []
+
+    return outcomes
+```
+
+---
+### **3. Add `_is_settlement_build` Helper**
+```python
+def _is_settlement_build(self, action) -> bool:
+    """Detect settlement-building actions."""
+    at = getattr(action, "action_type", None)
+    try:
+        return at == ActionType.BUILD_SETTLEMENT
+    except Exception:
+        name = getattr(action, "name", None) or getattr(action, "type", None) or action.__class__.__name__
+        return "settle" in str(name).lower()
+```
+
+---
+### **4. Add `_compute_expected_settlement_gain` Method**
+```python
+def _compute_expected_settlement_gain(self, game: Game, action) -> float:
+    """Compute expected number of additional settlements reachable within SELF_LOOKAHEAD_DEPTH turns."""
+    try:
+        game_copy = copy_game(game)
+    except Exception:
+        if self.debug:
+            print("_compute_expected_settlement_gain: copy_game failed")
+            traceback.print_exc()
+        return -float("inf")
+
+    # Simulate action to get outcome branches
+    outcomes = self._simulate_action_branches(game_copy, action)
+    if not outcomes:
+        return -float("inf")
+
+    total_gain = 0.0
+    sim_nodes_used = 0
+
+    for outcome_game, prob in outcomes:
+        if sim_nodes_used >= self.SELF_LOOKAHEAD_BUDGET:
+            break
+
+        # Run bounded self-only DFS to estimate settlement gain
+        stack = [(outcome_game, 0, 0)]  # (game_state, depth, settlements_gained)
+        best_gain_for_branch = 0
+
+        while stack and sim_nodes_used < self.SELF_LOOKAHEAD_BUDGET:
+            state, depth, gained = stack.pop()
+            sim_nodes_used += 1
+
+            # Derive playable actions for our color
+            try:
+                playable = self._derive_opponent_actions(state, self.color) or []
+            except Exception:
+                if self.debug:
+                    print("_compute_expected_settlement_gain: failed to derive playable actions")
+                    traceback.print_exc()
+                continue
+
+            # Filter to build/road/upgrade actions
+            build_candidates = [
+                act for act in playable
+                if self._is_build_or_upgrade(act) or self._is_road_action(act)
+            ]
+
+            # Simulate each build candidate deterministically
+            for act in self._sample_actions(build_candidates, state)[:5]:  # Limit to top 5 candidates
+                try:
+                    det = execute_deterministic(copy_game(state), act)
+                    if not det:
+                        continue
+                    next_state = det[0][0] if isinstance(det[0], tuple) else det[0]
+                except Exception:
+                    continue
+
+                new_gained = gained + (1 if self._is_settlement_build(act) else 0)
+                if depth + 1 < self.SELF_LOOKAHEAD_DEPTH:
+                    stack.append((next_state, depth + 1, new_gained))
+                else:
+                    best_gain_for_branch = max(best_gain_for_branch, new_gained)
+
+        total_gain += prob * best_gain_for_branch
+
+    return total_gain
+```
+
+---
+### **5. Update Candidate Pool Construction in `decide`**
+Replace the **candidate pool construction** section in `decide` with the following:
+```python
+# Stage 3: Build candidate pool with expansion potential, settlement gain, and road guarantee
+one_ply_results.sort(key=lambda t: (t[1], t[2]), reverse=True)
+top_by_1ply = [t[0] for t in one_ply_results[:3]]  # Always include top 3 by 1-ply score
+remaining_candidates = [t[0] for t in one_ply_results[3:]]
+
+# Compute expansion potential and settlement gain for remaining candidates
+expansion_scores = {}
+settlement_gain_scores = {}
+for a in remaining_candidates:
+    exp_potential = self._compute_expansion_potential(game, a)
+    if exp_potential != -float("inf"):
+        expansion_scores[a] = exp_potential
+
+    settlement_gain = self._compute_expected_settlement_gain(game, a)
+    if settlement_gain != -float("inf"):
+        settlement_gain_scores[a] = settlement_gain
+
+# Sort remaining candidates by settlement gain, then expansion potential
+sorted_remaining = sorted(
+    settlement_gain_scores.items(),
+    key=lambda x: (x[1], expansion_scores.get(x[0], -float("inf"))),
+    reverse=True
+)
+additional_candidates = [a for a, _ in sorted_remaining[: max(0, self.TOP_K_1PLY - len(top_by_1ply))]]
+candidate_pool = top_by_1ply + additional_candidates
+
+# Guarantee inclusion of at least one high-potential road candidate
+road_candidates = [a for a in remaining_candidates if self._is_road_action(a)]
+road_scores = {a: self._compute_expected_settlement_gain(game, a) for a in road_candidates}
+best_road = None
+if road_scores:
+    best_road = max(road_scores.items(), key=lambda x: x[1])[0]
+    if best_road not in candidate_pool:
+        candidate_pool.append(best_road)
+        self._diag["n_road_candidates_included"] = self._diag.get("n_road_candidates_included", 0) + 1
+        if self.debug:
+            print(f"decide: added guaranteed road candidate {repr(best_road)} with settlement_gain={road_scores[best_road]}")
+
+if self.debug:
+    print("Candidate pool:")
+    for a in candidate_pool:
+        exp_potential = expansion_scores.get(a, "N/A")
+        settlement_gain = settlement_gain_scores.get(a, "N/A")
+        is_road = self._is_road_action(a)
+        is_robber = self._is_robber_or_chance(a)
+        print(
+            f"  {repr(a)} (is_road={is_road}, is_robber={is_robber}, "
+            f"expansion_potential={exp_potential}, settlement_gain={settlement_gain})"
+        )
+```
+
+---
+### **6. Update Opponent Simulation Fallbacks**
+Replace the **opponent simulation loop** in `decide` with the following:
+```python
+# Adversarial opponent: they choose the action minimizing our final score
+min_score_after_opp = float("inf")
+opp_successes = 0
+for b in opp_sampled:
+    if sim_count >= SIMULATION_HARD_LIMIT:
+        break
+
+    # Try spectrum first for opponent chance actions
+    if self._is_robber_or_chance(b):
+        try:
+            opp_spec = execute_spectrum(og, b)
+            if opp_spec:
+                opp_outcomes = self._normalize_and_cap_spectrum(opp_spec, self.SPECTRUM_MAX_OUTCOMES)
+                opp_scores = []
+                for opp_og, opp_p in opp_outcomes:
+                    opp_sc = self._safe_eval_base_fn(opp_og, self.color)
+                    if opp_sc is not None:
+                        opp_scores.append(opp_p * opp_sc)
+                if opp_scores:
+                    opp_val = sum(opp_scores)
+                    min_score_after_opp = min(min_score_after_opp, opp_val)
+                    opp_successes += 1
+                    continue
+        except Exception:
+            pass
+
+    # Fallback to deterministic simulation
+    try:
+        opp_det = execute_deterministic(og, b)
+        if opp_det:
+            opp_det_og = opp_det[0][0] if isinstance(opp_det[0], tuple) else opp_det[0]
+            opp_sc = self._safe_eval_base_fn(opp_det_og, self.color)
+            if opp_sc is not None:
+                min_score_after_opp = min(min_score_after_opp, opp_sc)
+                opp_successes += 1
+                continue
+    except Exception:
+        pass
+
+    # Last resort: evaluate og directly (no opponent action effect)
+    tmp = self._simulate_and_evaluate(og, None, self.color)
+    if tmp is not None:
+        min_score_after_opp = min(min_score_after_opp, tmp)
+        opp_successes += 1
+
+# If no opponent simulations succeeded, evaluate the post-my-action state
+if opp_successes == 0:
+    min_score_after_opp = self._simulate_and_evaluate(og, None, self.color) or 0.0
+```
+
+---
+### **7. Update Tie-Break Logic**
+Replace the **candidate comparison block** in `decide` with the following:
+```python
+# Compare candidate using updated tie-breaks
+if self.debug:
+    print(
+        f"Candidate {repr(a)}: expected_value={expected_value_a}, "
+        f"settlement_gain={settlement_gain_scores.get(a, 'N/A')}, "
+        f"expansion_potential={expansion_potential_a}, "
+        f"robber_impact={robber_impact_a}, "
+        f"future_build_count={future_build_count_a}, "
+        f"1-ply vp_delta={one_ply_vp_delta}"
+    )
+
+is_better = False
+if best_action is None:
+    is_better = True
+elif expected_value_a > best_value:
+    is_better = True
+elif expected_value_a == best_value:
+    # Secondary: expected_settlement_gain
+    gain_a = settlement_gain_scores.get(a, -float("inf"))
+    best_gain = settlement_gain_scores.get(best_action, -float("inf"))
+    if gain_a > best_gain:
+        is_better = True
+    elif gain_a == best_gain:
+        # Tertiary: expansion_potential
+        if expansion_potential_a > best_expansion:
+            is_better = True
+        elif expansion_potential_a == best_expansion:
+            # Quaternary: robber_impact (if applicable)
+            if robber_impact_a > best_robber_impact:
+                is_better = True
+            elif robber_impact_a == best_robber_impact:
+                # Quinary: future_build_count
+                if future_build_count_a > best_future_build:
+                    is_better = True
+                elif future_build_count_a == best_future_build:
+                    # Senary: 1-ply vp_delta
+                    if one_ply_vp_delta > best_vp_delta:
+                        is_better = True
+                    elif one_ply_vp_delta == best_vp_delta:
+                        # Septenary: repr tie-break
+                        if best_repr is None or repr(a) < best_repr:
+                            is_better = True
+
+if is_better:
+    best_action = a
+    best_value = expected_value_a
+    best_expansion = expansion_potential_a
+    best_robber_impact = robber_impact_a
+    best_future_build = future_build_count_a
+    best_vp_delta = one_ply_vp_delta
+    best_repr = repr(a)
+```
+
+---
+### **8. Add Debug Diagnostics**
+Add the following to the `decide` method after the 2-ply evaluation loop:
+```python
+if self.debug:
+    print("2-ply diagnostics:")
+    print(f"  n_2ply_runs: {self._diag.get('n_2ply_runs', 0)}")
+    print(f"  n_2ply_skipped: {self._diag.get('n_2ply_skipped', 0)}")
+    print(f"  sim_count: {sim_count} / {SIMULATION_HARD_LIMIT}")
+    print(f"  best_action: {repr(best_action)}")
+    print(f"  best_value: {best_value}")
+    print(f"  best_settlement_gain: {settlement_gain_scores.get(best_action, 'N/A')}")
+    print(f"  best_expansion: {best_expansion}")
+    print(f"  best_robber_impact: {best_robber_impact}")
+    print(f"  best_future_build: {best_future_build}")
+    print(f"  n_road_candidates_included: {self._diag.get('n_road_candidates_included', 0)}")
+```
+
+---
+### **9. Deliverable for CODER**
+1. **Implement the provided snippets** in `foo_player.py`.
+2. **Run 3 games with `debug=True`** and share logs.
+3. **Run the 30-game batch** and report metrics.
+
+---
+### **Expected Outcome**
+- **Avg Roads**: ≥0.5.
+- **Win Rate**: ≥50%.
+- **Avg VP**: Within 0.5 of the opponent.
+- **Diagnostics**: Show `expected_settlement_gain` > 0 for expansion choices and 2-ply running on ambiguous/expansion-critical decisions.
+
+END STRATEGIZER
+================================== Ai Message ==================================
+
+- META THOUGHTS:
+  - The Analyzer shows FooPlayer regressed: roads and expansion remain the key weaknesses and the last 2-ply attempts increased complexity without improving expansion. We must now implement a narrowly scoped, algorithmic remedy — a short self-only forward search that measures expected_settlement_gain (roads→settlements potential) and integrate that metric into candidate selection and tie-breaking. This uses only adapters and search (not handcrafted heuristics) and should be deterministic and budgeted.
+  - Keep changes minimal, defensive, and instrumented so we can measure whether the metric increases roads and VP. Run a short debug experiment (3 games) to verify diagnostics before a 30-game batch.
+
+- META GOAL:
+  - Implement the STRATEGIZER's multi-turn expansion snippets exactly (simulate_action_branches, is_settlement_build, compute_expected_settlement_gain, candidate pool integration, opponent simulation fallbacks, tie-break changes, diagnostics and budgets). Run 3 debug games with debug=True, return raw logs and up to 5 stack traces if failures. If diagnostics meet criteria, run 30-game batch and return JSON metrics plus aggregate diagnostics.
+
+- CHOSEN AGENT: CODER
+
+- AGENT OBJECTIVE:
+Implement the STRATEGIZER-ready snippets and run the prescribed experiments. Follow these exact steps and constraints.
+
+1) Code to implement (apply exactly as provided by STRATEGIZER):
+   - Add parameters:
+     - SELF_LOOKAHEAD_DEPTH = 3
+     - SELF_LOOKAHEAD_BUDGET = 200
+     - Keep existing parameters (TOP_K_1PLY, OP_MAX_ACTIONS, MAX_SIMULATION_NODES, MIN_EVAL_SUCCESS_RATE_FOR_2PLY, MIN_SPECTRUM_SUCCESS_RATE, SCORE_AMBIGUITY_THRESHOLD, etc.)
+   - Add helpers:
+     - _simulate_action_branches(game, action) — use copy_game, execute_spectrum/expand_spectrum, execute_deterministic; return list of (Game, prob).
+     - _is_settlement_build(action) — detect BUILD_SETTLEMENT.
+   - Add:
+     - _compute_expected_settlement_gain(game, action) exactly as provided: bounded self-only DFS using execute_deterministic for self actions, using _sample_actions to prune branches, respect SELF_LOOKAHEAD_BUDGET, return -float("inf") on failures.
+   - Integrate into decide():
+     - Replace candidate pool construction with the provided Stage 3 snippet: compute expansion_scores and settlement_gain_scores; sort remaining candidates by settlement_gain then expansion; choose additional_candidates up to TOP_K_1PLY; guarantee inclusion of best_road by settlement_gain; update self._diag["n_road_candidates_included"] when guaranteed road added; print candidate pool diagnostics when debug True.
+     - Replace opponent simulation loop in 2-ply with provided fallbacks (try spectrum → deterministic → evaluate og directly), track opp_successes, and if none succeeded use simulate_and_evaluate(og, None) or 0.0.
+     - Replace the candidate comparison block with the new tie-break hierarchy (expected_value, expected_settlement_gain, expansion_potential, robber_impact, future_build_count, 1-ply vp_delta, repr) exactly as given.
+     - Add the debug diagnostics block after 2-ply loop (print sim_count, best_settlement_gain, n_road_candidates_included, etc.)
+   - Ensure helper names are referenced consistently:
+     - _simulate_action_branches, _compute_expected_settlement_gain, _is_settlement_build, settlement_gain_scores local dict used in comparison.
+   - Defensive coding:
+     - Wrap every adapter call (copy_game, execute_spectrum, expand_spectrum, execute_deterministic, base_fn/safe_eval, derive_playable_actions/_derive_opponent_actions) with try/except; print traceback when self.debug True.
+     - If more than 50% of candidate sims fail or SIMULATION_HARD_LIMIT / SELF_LOOKAHEAD_BUDGET hit before finishing, skip 2-ply and fallback to best 1-ply deterministically.
+     - Never let decide() raise; always return a playable action (best 1-ply or actions[0]).
+
+2) Diagnostics & counters:
+   - Maintain/update self._diag keys (add if needed): n_road_candidates_included, n_2ply_runs, n_2ply_skipped, simulated_nodes_total, self_lookahead_nodes_total, opponent_sim_fallbacks_count.
+   - Print per-decision:
+     - settlement_gain for top candidates (up to TOP_K_1PLY)
+     - whether guaranteed road was added and its settlement_gain
+     - whether 2-ply ran, sim_count used, and whether sim caps were hit
+     - opponent-sim fallback counts and whether deterministic fallback was used
+   - Aggregate these counters across the run for reporting after the batch.
+
+3) Determinism:
+   - Preserve deterministic RNG seeding where used (random.Random(self.RNG_SEED + stable_color_hash)).
+   - No use of non-deterministic randomness in 2-ply or lookahead choices.
+
+4) Execution plan — run now:
+   A) Debug smoke test:
+     - Set player.debug = True.
+     - Run 3 games vs AlphaBetaPlayer.
+     - Collect and return:
+       - Full raw debug logs (stdout) including per-decision prints, candidate pool prints, settlement_gain, expansion_potential, robber_impact, sim_count and reasons 2-ply ran/skipped.
+       - Up to the first 5 full stack traces if any unhandled adapter exceptions occur.
+   B) Diagnostics gate:
+     - Criteria to proceed to 30-game batch:
+       - expected_settlement_gain computed for top candidates in most decisions (i.e., not consistently -inf).
+       - avg self_lookahead_nodes_total per decide < SELF_LOOKAHEAD_BUDGET (or at least not exhausting budget each time).
+       - eval_success_rate >= MIN_EVAL_SUCCESS_RATE_FOR_2PLY (0.80) OR the number of decisions where allowed_by_ambiguity/road/robber is >0 (i.e., 2-ply useful).
+       - No persistent adapter signature errors.
+     - If diagnostics fail (many -inf, adapter failures, sim budget exhausted early), stop and return logs and up to 5 traces so we can call RESEARCHER.
+   C) Full experiment (if gate passes):
+     - Set player.debug = False.
+     - Run 30-game batch.
+     - Return:
+       - The JSON metrics (Player Summary & Game Summary) as before.
+       - Aggregate diagnostics: times_2ply_run, times_2ply_skipped (with reasons), avg_simulated_nodes_per_2ply, avg_self_lookahead_nodes, avg expected_settlement_gain for chosen actions, avg roads for FooPlayer, opponent-sim fallback counts.
+
+5) Reporting:
+   - For the 3-game debug run return raw logs and up to 5 stack traces.
+   - For the 30-game batch return JSON metrics and a short bullet summary with the requested aggregated diagnostics.
+
+6) If any unhandled exceptions occur while running the debug tests:
+   - Stop immediately and return the full stack traces (up to 5).
+   - Don’t proceed to the batch. We will call RESEARCHER if adapter signature mismatches or missing functions appear.
+
+Please proceed to:
+- Implement the STRATEGIZER snippets exactly as specified (ensure names match), compile/run the code environment, and run the 3 debug games (player.debug=True). Return the full raw logs and up to 5 stack traces (if any). After we inspect logs, we will instruct whether to run the 30-game batch.
+================================ Human Message =================================
+
+I have updated foo_player.py with the STRATEGIZER's multi-turn expansion strategy, helper functions, integration into candidate selection and tie-breaking, diagnostics, and safety guards. Changes include:
+
+- Added SELF_LOOKAHEAD_DEPTH and SELF_LOOKAHEAD_BUDGET.
+- Implemented _simulate_action_branches, _is_settlement_build, and _compute_expected_settlement_gain.
+- Integrated expected_settlement_gain into candidate pool and tie-breaking per your snippets.
+- Added robust opponent-simulation fallbacks and tightened diagnostics.
+- Ensured all adapter interactions are defensive and deterministic.
+
+Next step: run the 3-game debug experiment (player.debug = True). Do you want me to run it now?
+================================ Human Message =================================
+
+GAME RESULTS:
+
+{
+  "Player Summary": {
+    "AlphaBetaPlayer:RED(depth=2,value_fn=base_fn,prunning=False)": {
+      "WINS": 21,
+      "AVG VP": 8.866666666666667,
+      "AVG SETTLES": 2.8333333333333335,
+      "AVG CITIES": 2.3,
+      "AVG ROAD": 0.7,
+      "AVG ARMY": 0.0,
+      "AVG DEV VP": 0.03333333333333333
+    },
+    "FooPlayer:BLUE": {
+      "WINS": 9,
+      "AVG VP": 7.133333333333334,
+      "AVG SETTLES": 2.2,
+      "AVG CITIES": 2.1,
+      "AVG ROAD": 0.3,
+      "AVG ARMY": 0.0,
+      "AVG DEV VP": 0.13333333333333333
+    }
+  },
+  "Game Summary": {
+    "AVG TICKS": 228.36666666666667,
+    "AVG TURNS": 80.16666666666667,
+    "AVG DURATION": 3.031765341758728
+  }
+}
+================================ Human Message =================================
+
+ANALYZER
+---
+After Running The New foo_player.py Player, Here is my analysis and findings:
+
+---
+### PERFORMANCE SUMMARY
+- **Outcome**: **Poor** (9 wins, 21 losses).
+- **VP Comparison**: FooPlayer (BLUE) averaged **7.13 VP** vs. AlphaBetaPlayer (RED) **8.87 VP**.
+- **VP Difference**: **-1.74** (significantly below parity).
+- **Key Counts**:
+  - FooPlayer: 2.2 settlements, 2.1 cities, 0.3 roads, 0.0 armies, 0.13 dev cards.
+  - Opponent: 2.83 settlements, 2.3 cities, 0.7 roads, 0.0 armies, 0.03 dev cards.
+  - **Total Turns**: 80.17 turns per game.
+
+---
+### VERDICT
+**Poor**: FooPlayer underperforms significantly, with a **VP difference of -1.74** and a **30% win rate**.
+
+---
+### LIKELY REASONS
+1. **Road-Building Deficiency**:
+   - FooPlayer averages **0.3 roads** compared to the opponent's **0.7 roads**, indicating a **critical lack of expansion and connectivity**.
+   - **Corroborating Log**: The opponent consistently builds more roads, which is essential for Longest Road and resource access.
+
+2. **Robber and Development Card Underutilization**:
+   - FooPlayer averages **0.0 armies** and **0.13 dev cards**, while the opponent leverages these better.
+   - **Corroborating Result**: The opponent's higher VP suggests better use of disruptive strategies (e.g., robber placement).
+
+3. **2-Ply Adversarial Evaluation Issues**:
+   - The 2-ply lookahead is **not robust enough** to counter adversarial strategies due to:
+     - **Low reliability thresholds** (`MIN_EVAL_SUCCESS_RATE_FOR_2PLY=0.80` and `MIN_SPECTRUM_SUCCESS_RATE=0.60`).
+     - **Corroborating Log**: The opponent's higher VP suggests FooPlayer's 2-ply evaluation is **not effectively simulating opponent responses**.
+
+4. **Tie-Breaking Logic**:
+   - The `decide` method (lines 500–550) uses **lexicographical tie-breaking** (`repr(action)`), which may not prioritize strategically superior actions (e.g., city upgrades over roads).
+
+5. **Road Candidate Inclusion Logic**:
+   - The `_compute_expected_settlement_gain` method (lines 600–650) is **not effectively prioritizing road-building actions**, leading to a lack of expansion.
+
+---
+### STRATEGIC FLAW
+FooPlayer's **2-ply adversarial evaluation lacks depth and robustness**, leading to suboptimal road-building, robber placement, and development card usage. The **road-building strategy is critically deficient**, and the **tie-breaking logic fails to prioritize high-impact actions**.
+
+---
+### NEXT STEP
+Send to **Strategizer** to **prioritize road-building strategies**, **refine 2-ply evaluation thresholds**, and **improve tie-breaking logic** to focus on high-impact actions.
+
+---
+Let me know if you need anything else.
+END ANALYZER
+================================== Ai Message ==================================
+
+- META THOUGHTS:
+  - The Analyzer confirms a persistent, critical weakness: FooPlayer is not building roads or exploiting expansion opportunities, and the increasingly complex 2‑ply machinery hasn’t fixed it. Repeated tuning and deeper lookaheads so far have added overhead without producing reliable expansion. We must stop adding brittle global 2‑ply complexity and instead add a narrow, algorithmic capability focused explicitly on the missing behavior: multi-turn road/settlement construction.
+  - This must remain algorithmic (simulation/search) and use only adapters. I will ask the STRATEGIZER to produce a concrete, deterministic, budgeted “road-focused rollout evaluator” that is cheap, robust to spectrum/deterministic failures, and integrated as a first-class candidate ranking signal (not an ad-hoc heuristic). It will run even when general 2‑ply is skipped, so expansion decisions are always evaluated by targeted rollouts.
+
+- META GOAL:
+  - Produce a ready-to-implement strategy: a deterministic, adapter-driven, budgeted road_rollout evaluator (stochastic rollouts over short horizons) plus precise integration rules (when to run, how to merge with existing metrics, tie-break ordering), diagnostics to collect, and safe fallbacks. The STRATEGIZER must avoid weighty heuristics; instead return an ordered set of comparison criteria (e.g., prob_settlement, expected_roads, expected_vp) and exact parameters to run and test.
+
+- CHOSEN AGENT: STRATEGIZER
+
+- AGENT OBJECTIVE:
+Design a precise, implementable plan (with pseudocode and exact parameters) for a "road-focused rollout evaluator" and describe exactly how to integrate it into foo_player.py's decision pipeline. Requirements:
+
+1) Purpose (short)
+   - Provide a lightweight, deterministic, adapter-only stochastic rollout evaluator that estimates a candidate action’s ability to produce roads and settlements within a short horizon under realistic chance events. This evaluator should be robust to adapter failures, budgeted, and used as a decisive tie-breaker and inclusion filter for candidates to fix the road-building deficiency.
+
+2) Constraints (must obey)
+   - Use only adapters already available: copy_game, execute_spectrum, expand_spectrum, execute_deterministic, derive_playable_actions/_derive_opponent_actions, base_fn/safe_eval.
+   - Deterministic behavior for sampling: use random.Random(self.RNG_SEED + stable_color_hash) for all sampling decisions.
+   - Do not invent arbitrary scalar heuristics as the primary decision rule. Instead, return a small tuple of objective metrics and use lexicographic ordering (prob_settlement, expected_roads, expected_vp) when ranking candidates.
+   - Budgeted: the rollout evaluator must respect a per-decision simulation budget and global MAX_SIMULATION_NODES.
+   - Defensive: wrap all adapter calls in try/except. On failures, use deterministic fallbacks (execute_deterministic) or safe_eval approximations.
+
+3) Exact parameters (recommend)
+   - ROAD_ROLLOUTS = 20  # number of stochastic rollouts per candidate (cap)
+   - ROAD_ROLLOUT_DEPTH = 6  # total ply depth for each rollout (turns, counting subsequent players)
+   - ROAD_ROLLOUT_SIM_BUDGET = 600  # max simulated nodes across all rollouts per decide
+   - ROAD_ROLLOUT_CANDIDATES = 4  # only run rollouts on up to 4 highest-priority candidates (deterministic selection)
+   - ROAD_SETTLEMENT_PROB_THRESHOLD = 0.20  # if any candidate has prob_settlement >= this, force road inclusion
+   - Keep existing MAX_SIMULATION_NODES and SELF_LOOKAHEAD_BUDGET; the rollout budget counts against both.
+
+4) Road rollout evaluator: algorithm (pseudocode)
+   - High-level:
+     - For a given candidate action a, run up to ROAD_ROLLOUTS short stochastic rollouts of length ROAD_ROLLOUT_DEPTH starting from applying a (simulate using execute_spectrum for chance actions when possible; fallback to execute_deterministic otherwise).
+     - During a rollout:
+        - For our turns: prefer build actions that are roads or settlement builds if available (only inside rollout policy; this is a policy-driven simulation but acceptable because it's used only for evaluation).
+        - For opponents' turns: pick actions deterministically using opponent_base_choice = use their base_fn evaluation via adapters (or sample deterministically the first N actions if base_fn not available).
+        - For chance events (robber/dice), prefer execute_spectrum when possible; if not, use deterministic fallback.
+     - Track across rollouts:
+        - roads_built_total (sum of roads built in rollout)
+        - settlement_built_flag (1 if at least one settlement built in rollout)
+        - vp_gain = final_base_fn_value - base_fn_value_before
+     - After all rollouts, compute:
+        - prob_settlement = (# rollouts with settlement) / #successful_rollouts
+        - expected_roads = roads_built_total / #successful_rollouts
+        - expected_vp = average vp_gain
+     - If many rollouts fail due to adapter errors, mark candidate as unreliable (-inf) and skip.
+
+   - Detailed pseudocode (ready to implement):
+     ```
+     def _road_rollout_evaluator(self, game, candidate, sim_budget_remaining):
+         # returns None on unreliability (too many failures) else tuple (prob_settlement, expected_roads, expected_vp, sims_used)
+         rng = random.Random(self.RNG_SEED + stable_color_hash(self.color))
+         sims_used = 0
+         successful_rollouts = 0
+         settlement_count = 0
+         roads_total = 0
+         vp_total = 0.0
+
+         # Compute baseline value
+         try:
+             base_value = self._safe_eval_base_fn(game, self.color)  # must exist
+         except Exception:
+             base_value = None
+
+         for r in range(self.ROAD_ROLLOUTS):
+             if sims_used >= sim_budget_remaining:
+                 break
+             # copy and simulate candidate action branches deterministically/probabilistically
+             try:
+                 branches = self._simulate_action_branches(game, candidate)  # reuses existing helper
+                 if not branches:
+                     continue
+                 # pick one outcome for this rollout via probabilistic sampling using spec probs deterministic RNG
+                 outcome_game = self._sample_branch_by_prob(branches, rng)
+             except Exception:
+                 continue
+
+             success_this_rollout = False
+             state = outcome_game
+             roads_built = 0
+             settlement_built = False
+
+             # run depth-limited rollout (counts all players' turns)
+             for depth in range(self.ROAD_ROLLOUT_DEPTH):
+                 if sims_used >= sim_budget_remaining:
+                     break
+                 # check playable actions for current player
+                 try:
+                     current_color = self._get_current_player_color(state)
+                     playable = list(self._derive_opponent_actions(state, current_color) or [])
+                 except Exception:
+                     # can't derive actions -> abort this rollout
+                     break
+
+                 # choose action policy:
+                 if current_color == self.color:
+                     # our policy: prefer road actions, then settlement, then other builds, otherwise pass/do best 1-ply
+                     our_choices = [a for a in playable if self._is_road_action(a) or self._is_settlement_build(a)]
+                     if our_choices:
+                         chosen = deterministic_choice_by_priority(our_choices)  # deterministic using rng
+                     else:
+                         chosen = self._choose_best_1ply_from_list(state, playable)  # existing 1-ply evaluator
+                 else:
+                     # opponent policy: deterministic opponent base_fn pick or first playable action
+                     chosen = self._choose_opponent_action_deterministic(state, playable, current_color)
+
+                 # simulate chosen action: try spectrum then deterministic
+                 try:
+                     # Prefer deterministic for speed when chosen is not chance; otherwise spectrum if chance
+                     if self._is_robber_or_chance(chosen):
+                         try:
+                             spec = execute_spectrum(copy_game(state), chosen)
+                             chosen_state = self._sample_branch_by_prob(spec, rng) # if spec is map -> normalize and cap
+                         except Exception:
+                             det = execute_deterministic(copy_game(state), chosen)
+                             chosen_state = det[0][0] if isinstance(det[0], tuple) else det[0]
+                     else:
+                         det = execute_deterministic(copy_game(state), chosen)
+                         chosen_state = det[0][0] if isinstance(det[0], tuple) else det[0]
+                 except Exception:
+                     break  # abort this rollout
+                 # update stats
+                 sims_used += 1
+                 if current_color == self.color:
+                     if self._is_road_action(chosen): roads_built += 1
+                     if self._is_settlement_build(chosen): settlement_built = True
+                 state = chosen_state
+                 success_this_rollout = True
+
+             if success_this_rollout:
+                 successful_rollouts += 1
+                 settlement_count += 1 if settlement_built else 0
+                 roads_total += roads_built
+                 if base_value is not None:
+                     final_value = self._safe_eval_base_fn(state, self.color) or 0.0
+                     vp_total += (final_value - base_value)
+         # end rollouts
+
+         if successful_rollouts == 0:
+             return None  # unreliable
+
+         prob_settlement = settlement_count / successful_rollouts
+         expected_roads = roads_total / successful_rollouts
+         expected_vp = vp_total / successful_rollouts
+         return (prob_settlement, expected_roads, expected_vp, sims_used)
+     ```
+
+   - Notes:
+     - deterministic_choice_by_priority: implement deterministic selection using rng but stable ordering (e.g., sort by repr and pick first using rng.choice with fixed seed) — keep deterministic.
+     - _choose_best_1ply_from_list: reuse evaluate_action or 1-ply logic to choose best playable for our color; acceptable because it's adapter-driven.
+     - _choose_opponent_action_deterministic: use opponent base_fn to pick best single action deterministically; fallback to first action.
+
+5) Integration rules (exact)
+   - When to run:
+     - Run road_rollout_evaluator for up to ROAD_ROLLOUT_CANDIDATES (4) candidates per decide:
+       - Deterministically select candidates by highest 1-ply score and those that are road/settlement actions. (E.g., top 2 by 1-ply plus top 2 road-like candidates by expansion_potential or settlement_gain.)
+       - Run rollouts only if sim budget remains (sim_budget_remaining = min(ROAD_ROLLOUT_SIM_BUDGET, MAX_SIMULATION_NODES - simulated_nodes_used_so_far)).
+     - Road rollouts run regardless of whether general 2‑ply is enabled — this ensures expansion signal is always present.
+   - How to use the rollout metrics in selection:
+     - For each candidate, get rollout metrics (prob_settlement, expected_roads, expected_vp).
+     - Lexicographic ranking for tie-breakers (insert this block into the candidate comparison):
+       1) expected_value (2-ply) when available (higher better)
+       2) expected_settlement_gain (from self-lookahead) (higher better)
+       3) prob_settlement (from road_rollout) (higher better)
+       4) expected_roads (from road_rollout) (higher better)
+       5) expansion_potential (higher)
+       6) robber_impact (higher)
+       7) future_build_count
+       8) expected_vp (from rollouts)
+       9) 1-ply vp_delta
+       10) repr(action)
+     - Important: Use lexicographic comparison of tuples rather than weighted sum, to avoid manual heuristics.
+
+   - Forced inclusion rule:
+     - If no road-like candidate exists in candidate_pool and any candidate’s prob_settlement >= ROAD_SETTLEMENT_PROB_THRESHOLD, append that candidate (guaranteed road inclusion).
+     - If multiple candidates exceed threshold, choose the one with highest prob_settlement then expected_roads.
+
+6) Safety/fallbacks
+   - If road_rollout_evaluator returns None for a candidate (unreliable), treat its rollout metrics as (-inf, -inf, -inf) so it ranks low but does not crash.
+   - Deduct rollout sims_used from the global simulated_nodes_total and enforce MAX_SIMULATION_NODES.
+   - If sim budget exhausted mid-evaluation, stop rollouts and proceed with available metrics; if more than 50% of rollouts across candidates failed, skip further 2-ply and rely on 1-ply + rollout metrics only.
+   - Keep all adapter calls inside try/except and log debugging traces when self.debug True.
+
+7) Diagnostics to report (exact)
+   - Per-decision prints (when self.debug True):
+     - Which candidates were chosen for rollouts and their rollout results: prob_settlement, expected_roads, expected_vp, sims_used.
+     - Whether a road candidate was forced into candidate_pool due to prob_settlement threshold.
+     - sim nodes consumed by rollouts and remaining global budget.
+     - How many rollouts failed vs succeeded per candidate.
+   - Batch aggregates:
+     - avg prob_settlement and expected_roads across chosen actions,
+     - number of times road was forced into candidate_pool,
+     - avg simulated_nodes used by road_rollouts per decision,
+     - correlation between chosen action’s prob_settlement and whether a road was built in the game (post-game metric).
+
+8) Acceptance criteria (for next 30-game run)
+   - Primary: average roads for FooPlayer increases to >= 0.5.
+   - Secondary: win rate improves toward >= 50% or VP gap narrows to <= 0.5.
+   - Diagnostics: road_rollout evaluator returns reliable metrics (not None) for >60% of decisions where road/settlement choices were possible, and rollouts consume less than ROAD_ROLLOUT_SIM_BUDGET on average.
+
+9) Deliverable from STRATEGIZER
+   - Produce a small set of ready-to-paste code snippets implementing:
+     A) the _road_rollout_evaluator function (with exact helper calls),
+     B) deterministic candidate selection for which candidates get rollouts,
+     C) the lexicographic tie-break tuple construction and replacement of the current comparison block,
+     D) debug print lines to show rollout outcomes per decision.
+   - All code must reference only adapter functions and existing helper methods (simulate_action_branches, compute_expected_settlement_gain, etc.) and follow the safe fallbacks described.
+
+Please produce the ready-to-paste STRATEGIZER code snippets (A–D above) now, matching exactly the names used in the existing foo_player.py (e.g., use self._simulate_action_branches, self._safe_eval_base_fn, self._derive_opponent_actions, self._is_road_action, etc.). Keep the code deterministic, budgeted, and defensive to avoid causing crashes in decide().
+================================ Human Message =================================
+
+STRATEGIZER
+**Ready-to-Paste Code Snippets for Road-Focused Rollout Evaluator**
+
+---
+### **1. Add New Parameters**
+Add the following parameters to the `FooPlayer` class:
+```python
+# Road-focused rollout evaluator
+ROAD_ROLLOUTS: int = 20
+ROAD_ROLLOUT_DEPTH: int = 6
+ROAD_ROLLOUT_SIM_BUDGET: int = 600
+ROAD_ROLLOUT_CANDIDATES: int = 4
+ROAD_SETTLEMENT_PROB_THRESHOLD: float = 0.20
+```
+
+---
+### **2. Add Helper Methods for Rollouts**
+```python
+def _sample_branch_by_prob(self, branches: List[Tuple[Game, float]], rng: random.Random) -> Game:
+    """Sample a single branch from a list of (game, probability) tuples using deterministic RNG."""
+    if not branches:
+        return None
+    # Normalize probabilities
+    total_p = sum(p for _, p in branches)
+    if total_p <= 0:
+        return branches[0][0]  # uniform fallback
+    # Sample deterministically
+    r = rng.random() * total_p
+    cumulative = 0.0
+    for g, p in branches:
+        cumulative += p
+        if r <= cumulative:
+            return g
+    return branches[-1][0]  # fallback
+
+def _get_current_player_color(self, game: Game) -> Color:
+    """Deterministically extract the current player's color from the game state."""
+    try:
+        return getattr(game, "current_player", self.color)
+    except Exception:
+        return self.color
+
+def _choose_best_1ply_from_list(self, game: Game, playable: List) -> Optional[Action]:
+    """Deterministically choose the best 1-ply action from a list using existing evaluator."""
+    best_action = None
+    best_score = -float("inf")
+    for a in playable:
+        res = self._evaluate_action(game, a, self.color)
+        if res is None:
+            continue
+        sc, _ = res
+        if sc > best_score:
+            best_action = a
+            best_score = sc
+    return best_action or (playable[0] if playable else None)
+
+def _choose_opponent_action_deterministic(self, game: Game, playable: List, opp_color: Color) -> Optional[Action]:
+    """Deterministically choose an opponent action using base_fn or first playable."""
+    if not playable:
+        return None
+    # Try to use base_fn to pick the best action for opponent
+    try:
+        best_action = None
+        best_score = -float("inf")
+        for a in playable:
+            try:
+                game_copy = copy_game(game)
+                res = execute_deterministic(game_copy, a)
+                if res:
+                    outcome = res[0][0] if isinstance(res[0], tuple) else res[0]
+                    sc = self._safe_eval_base_fn(outcome, opp_color)
+                    if sc is not None and sc > best_score:
+                        best_action = a
+                        best_score = sc
+            except Exception:
+                continue
+        return best_action or playable[0]
+    except Exception:
+        return playable[0]
+```
+
+---
+### **3. Add `_road_rollout_evaluator` Method**
+```python
+def _road_rollout_evaluator(self, game: Game, candidate: Action, sim_budget_remaining: int) -> Optional[Tuple[float, float, float, int]]:
+    """Evaluate a candidate action's road/settlement potential via stochastic rollouts.
+
+    Returns (prob_settlement, expected_roads, expected_vp, sims_used) or None on failure.
+    """
+    rng = random.Random(self.RNG_SEED + self._stable_color_hash(self.color))
+    sims_used = 0
+    successful_rollouts = 0
+    settlement_count = 0
+    roads_total = 0
+    vp_total = 0.0
+
+    # Compute baseline value
+    try:
+        base_value = self._safe_eval_base_fn(game, self.color)
+    except Exception:
+        base_value = None
+
+    for _ in range(self.ROAD_ROLLOUTS):
+        if sims_used >= sim_budget_remaining:
+            break
+
+        # Simulate candidate action
+        try:
+            branches = self._simulate_action_branches(game, candidate)
+            if not branches:
+                continue
+            outcome_game = self._sample_branch_by_prob(branches, rng)
+        except Exception:
+            continue
+
+        success_this_rollout = False
+        state = outcome_game
+        roads_built = 0
+        settlement_built = False
+
+        # Run depth-limited rollout
+        for _ in range(self.ROAD_ROLLOUT_DEPTH):
+            if sims_used >= sim_budget_remaining:
+                break
+
+            try:
+                current_color = self._get_current_player_color(state)
+                playable = list(self._derive_opponent_actions(state, current_color) or [])
+            except Exception:
+                break
+
+            # Choose action policy
+            if current_color == self.color:
+                # Prefer road/settlement actions
+                our_choices = [a for a in playable if self._is_road_action(a) or self._is_settlement_build(a)]
+                if our_choices:
+                    chosen = rng.choice(our_choices)
+                else:
+                    chosen = self._choose_best_1ply_from_list(state, playable)
+            else:
+                chosen = self._choose_opponent_action_deterministic(state, playable, current_color)
+
+            # Simulate chosen action
+            try:
+                if self._is_robber_or_chance(chosen):
+                    try:
+                        spec = execute_spectrum(copy_game(state), chosen)
+                        chosen_state = self._sample_branch_by_prob(spec, rng)
+                    except Exception:
+                        det = execute_deterministic(copy_game(state), chosen)
+                        chosen_state = det[0][0] if isinstance(det[0], tuple) else det[0]
+                else:
+                    det = execute_deterministic(copy_game(state), chosen)
+                    chosen_state = det[0][0] if isinstance(det[0], tuple) else det[0]
+            except Exception:
+                break
+
+            sims_used += 1
+            if current_color == self.color:
+                if self._is_road_action(chosen):
+                    roads_built += 1
+                if self._is_settlement_build(chosen):
+                    settlement_built = True
+            state = chosen_state
+            success_this_rollout = True
+
+        if success_this_rollout:
+            successful_rollouts += 1
+            settlement_count += 1 if settlement_built else 0
+            roads_total += roads_built
+            if base_value is not None:
+                final_value = self._safe_eval_base_fn(state, self.color) or 0.0
+                vp_total += (final_value - base_value)
+
+    if successful_rollouts == 0:
+        return None
+
+    prob_settlement = settlement_count / successful_rollouts
+    expected_roads = roads_total / successful_rollouts
+    expected_vp = vp_total / successful_rollouts
+    return (prob_settlement, expected_roads, expected_vp, sims_used)
+```
+
+---
+### **4. Update `decide` Method for Road Rollout Integration**
+Replace the **candidate pool construction** section in `decide` with the following:
+```python
+# Stage 3: Build candidate pool with road rollouts
+one_ply_results.sort(key=lambda t: (t[1], t[2]), reverse=True)
+top_by_1ply = [t[0] for t in one_ply_results[:3]]  # Always include top 3 by 1-ply score
+remaining_candidates = [t[0] for t in one_ply_results[3:]]
+
+# Select candidates for road rollouts: top 1-ply + road/settlement candidates
+road_rollout_candidates = []
+road_candidates = [a for a in candidates if self._is_road_action(a)]
+settlement_candidates = [a for a in candidates if self._is_settlement_build(a)]
+road_rollout_candidates.extend(top_by_1ply)
+road_rollout_candidates.extend(road_candidates[:2])  # Top 2 road candidates
+road_rollout_candidates.extend(settlement_candidates[:2])  # Top 2 settlement candidates
+road_rollout_candidates = list(set(road_rollout_candidates))[:self.ROAD_ROLLOUT_CANDIDATES]
+
+# Run road rollouts for selected candidates
+rollout_metrics = {}
+sim_budget_remaining = min(self.ROAD_ROLLOUT_SIM_BUDGET, self.MAX_SIMULATION_NODES - self._diag.get("simulated_nodes_total", 0))
+for a in road_rollout_candidates:
+    if sim_budget_remaining <= 0:
+        break
+    metrics = self._road_rollout_evaluator(game, a, sim_budget_remaining)
+    if metrics is not None:
+        prob_settlement, expected_roads, expected_vp, sims_used = metrics
+        rollout_metrics[a] = (prob_settlement, expected_roads, expected_vp)
+        sim_budget_remaining -= sims_used
+        self._diag["simulated_nodes_total"] = self._diag.get("simulated_nodes_total", 0) + sims_used
+    else:
+        rollout_metrics[a] = (-float("inf"), -float("inf"), -float("inf"))
+
+# Build candidate pool: top 1-ply + high rollout metrics
+candidate_pool = top_by_1ply.copy()
+# Add candidates with high prob_settlement or expected_roads
+sorted_rollout_candidates = sorted(
+    rollout_metrics.items(),
+    key=lambda x: (x[1][0], x[1][1]),  # Sort by (prob_settlement, expected_roads)
+    reverse=True
+)
+additional_candidates = [a for a, _ in sorted_rollout_candidates[:max(0, self.TOP_K_1PLY - len(top_by_1ply))]]
+candidate_pool.extend(additional_candidates)
+
+# Guarantee inclusion of high-probability road candidate
+best_road_candidate = None
+best_road_metrics = (-float("inf"), -float("inf"), -float("inf"))
+for a, metrics in rollout_metrics.items():
+    if self._is_road_action(a) and metrics[0] > best_road_metrics[0]:
+        best_road_candidate = a
+        best_road_metrics = metrics
+if best_road_candidate and best_road_metrics[0] >= self.ROAD_SETTLEMENT_PROB_THRESHOLD and best_road_candidate not in candidate_pool:
+    candidate_pool.append(best_road_candidate)
+    self._diag["n_road_candidates_included"] = self._diag.get("n_road_candidates_included", 0) + 1
+    if self.debug:
+        print(f"decide: forced inclusion of road candidate {repr(best_road_candidate)} with prob_settlement={best_road_metrics[0]:.2f}")
+
+if self.debug:
+    print("Candidate pool (with rollout metrics):")
+    for a in candidate_pool:
+        metrics = rollout_metrics.get(a, (-1, -1, -1))
+        print(f"  {repr(a)} (prob_settlement={metrics[0]:.2f}, expected_roads={metrics[1]:.2f}, expected_vp={metrics[2]:.2f})")
+```
+
+---
+### **5. Update Candidate Comparison Logic**
+Replace the **candidate comparison block** in `decide` with the following:
+```python
+# Compare candidate using updated tie-breaks with rollout metrics
+if self.debug:
+    print(
+        f"Candidate {repr(a)}: expected_value={expected_value_a}, "
+        f"settlement_gain={settlement_gain_scores.get(a, -float('inf'))}, "
+        f"prob_settlement={rollout_metrics.get(a, (-1, -1, -1))[0]}, "
+        f"expected_roads={rollout_metrics.get(a, (-1, -1, -1))[1]}, "
+        f"expansion_potential={expansion_potential_a}, "
+        f"robber_impact={robber_impact_a}, "
+        f"future_build_count={future_build_count_a}, "
+        f"1-ply vp_delta={one_ply_vp_delta}"
+    )
+
+is_better = False
+if best_action is None:
+    is_better = True
+elif expected_value_a > best_value:
+    is_better = True
+elif expected_value_a == best_value:
+    # Secondary: expected_settlement_gain
+    gain_a = settlement_gain_scores.get(a, -float("inf"))
+    best_gain = settlement_gain_scores.get(best_action, -float("inf"))
+    if gain_a > best_gain:
+        is_better = True
+    elif gain_a == best_gain:
+        # Tertiary: prob_settlement (from rollouts)
+        prob_a = rollout_metrics.get(a, (-1, -1, -1))[0]
+        best_prob = rollout_metrics.get(best_action, (-1, -1, -1))[0]
+        if prob_a > best_prob:
+            is_better = True
+        elif prob_a == best_prob:
+            # Quaternary: expected_roads (from rollouts)
+            roads_a = rollout_metrics.get(a, (-1, -1, -1))[1]
+            best_roads = rollout_metrics.get(best_action, (-1, -1, -1))[1]
+            if roads_a > best_roads:
+                is_better = True
+            elif roads_a == best_roads:
+                # Quinary: expansion_potential
+                if expansion_potential_a > best_expansion:
+                    is_better = True
+                elif expansion_potential_a == best_expansion:
+                    # Senary: robber_impact
+                    if robber_impact_a > best_robber_impact:
+                        is_better = True
+                    elif robber_impact_a == best_robber_impact:
+                        # Septenary: future_build_count
+                        if future_build_count_a > best_future_build:
+                            is_better = True
+                        elif future_build_count_a == best_future_build:
+                            # Octonary: expected_vp (from rollouts)
+                            vp_a = rollout_metrics.get(a, (-1, -1, -1))[2]
+                            best_vp = rollout_metrics.get(best_action, (-1, -1, -1))[2]
+                            if vp_a > best_vp:
+                                is_better = True
+                            elif vp_a == best_vp:
+                                # Nonary: 1-ply vp_delta
+                                if one_ply_vp_delta > best_vp_delta:
+                                    is_better = True
+                                elif one_ply_vp_delta == best_vp_delta:
+                                    # Decary: repr tie-break
+                                    if best_repr is None or repr(a) < best_repr:
+                                        is_better = True
+
+if is_better:
+    best_action = a
+    best_value = expected_value_a
+    best_expansion = expansion_potential_a
+    best_robber_impact = robber_impact_a
+    best_future_build = future_build_count_a
+    best_vp_delta = one_ply_vp_delta
+    best_repr = repr(a)
+```
+
+---
+### **6. Add Debug Diagnostics**
+Add the following to the `decide` method after the 2-ply evaluation loop:
+```python
+if self.debug:
+    print("Road rollout diagnostics:")
+    print(f"  n_road_rollouts_run: {len(rollout_metrics)}")
+    print(f"  sim_budget_used: {self.ROAD_ROLLOUT_SIM_BUDGET - sim_budget_remaining}")
+    print(f"  best_road_candidate: {repr(best_road_candidate)} with prob_settlement={best_road_metrics[0]:.2f}")
+    print(f"  n_road_candidates_included: {self._diag.get('n_road_candidates_included', 0)}")
+```
+
+---
+### **7. Deliverable for CODER**
+1. **Implement the provided snippets** in `foo_player.py`.
+2. **Run 3 games with `debug=True`** and share logs.
+3. **Run the 30-game batch** and report metrics.
+
+---
+### **Expected Outcome**
+- **Avg Roads**: ≥0.5.
+- **Win Rate**: ≥50%.
+- **Avg VP**: Within 0.5 of the opponent.
+- **Diagnostics**: Road rollouts return reliable metrics for >60% of decisions.
+
+END STRATEGIZER
+================================== Ai Message ==================================
+
+- META THOUGHTS:
+  - Repeated iterations increased complexity but failed to fix the core issue: FooPlayer still builds too few roads and loses VP. The Analyzer pinpoints road-building and robustness of opponent simulation as the main problems. The STRATEGIZER's road-focused rollout evaluator is the right focused, algorithmic remedy: it uses adapter-driven stochastic rollouts (deterministic sampling) to produce objective metrics (prob_settlement, expected_roads, expected_vp) that directly measure a candidate’s multi-turn expansion potential and can be used lexicographically for selection.
+  - Keep changes tightly scoped and budgeted. Run short debug experiments first to ensure rollouts are reliable and not exhausting simulation budgets. If rollouts are unreliable (many None returns or many adapter exceptions), stop and surface traces for RESEARCHER.
+
+- META GOAL:
+  - Implement the road-focused rollout evaluator and integrate it into decide() exactly as in the STRATEGIZER snippets (parameters, helpers, rollout evaluator, candidate selection, and tie-breaks). Run 3 debug games (player.debug = True), collect raw per-decision logs and up to 5 stack traces if exceptions occur. If diagnostics meet pass criteria, run the 30-game batch and return JSON metrics and aggregate diagnostics.
+
+- CHOSEN AGENT: CODER
+
+- AGENT OBJECTIVE:
+Implement and test the STRATEGIZER-provided road-rollout evaluator and integration. Follow these exact steps and reporting requirements—do not deviate from the adapters or deterministic seeding rules.
+
+1) Code implementation (apply the STRATEGIZER snippets exactly)
+   - Add class parameters:
+     - ROAD_ROLLOUTS = 20
+     - ROAD_ROLLOUT_DEPTH = 6
+     - ROAD_ROLLOUT_SIM_BUDGET = 600
+     - ROAD_ROLLOUT_CANDIDATES = 4
+     - ROAD_SETTLEMENT_PROB_THRESHOLD = 0.20
+   - Add helper methods:
+     - _sample_branch_by_prob
+     - _get_current_player_color
+     - _choose_best_1ply_from_list
+     - _choose_opponent_action_deterministic
+   - Add the _road_rollout_evaluator method as provided.
+   - Replace candidate-pool construction in decide() with the Stage 3 snippet (road_rollout selection, running rollouts, building candidate_pool, forced road inclusion).
+   - Replace candidate comparison block with the provided lexicographic tie-break block that includes rollout_metrics.
+   - Add the Road rollout diagnostics print block after 2-ply loop.
+   - Ensure names and helper function calls match existing code: self._simulate_action_branches, self._safe_eval_base_fn, self._derive_opponent_actions, self._is_road_action, self._is_settlement_build, self._evaluate_action, self._sample_actions, self._diag keys, RNG_SEED, and self._stable_color_hash.
+   - Wrap every adapter call in try/except; on exception print full traceback only when self.debug True and handle via fallbacks as shown in snippets.
+   - Enforce and update simulation counters:
+     - Decrement sim budget and increment self._diag["simulated_nodes_total"] as bounded in snippet.
+     - Make rollout sims count against global MAX_SIMULATION_NODES; do not exceed global cap.
+
+2) Determinism and sampling
+   - Use random.Random(self.RNG_SEED + self._stable_color_hash(self.color)) inside _road_rollout_evaluator and _sample_branch_by_prob. No other randomness for decision-making.
+   - When choosing among tied actions in rollouts, select deterministically using the RNG seeded as above.
+
+3) Debug run — immediate action
+   - Set player.debug = True.
+   - Run 3 full games vs AlphaBetaPlayer with the updated foo_player.py.
+   - Collect and return:
+     - Full raw stdout debug logs for all 3 games showing per-decision prints, candidate pools, rollout metrics (prob_settlement, expected_roads, expected_vp), sim nodes used, forced road insertions, and any fallback occurrences.
+     - Up to the first 5 full stack traces (raw) if any unhandled adapter exceptions occurred.
+   - While running, stop and capture traces immediately if decide() raises any unhandled exception.
+
+4) Diagnostics gate (criteria to proceed to full batch)
+   - From the 3-game debug logs compute:
+     - rollout_success_rate: fraction of rollouts returning valid metrics (i.e., rollout_metrics[a] not equal to (-inf,...)) across decisions where rollouts were attempted. Require >= 0.60.
+     - avg_rollout_sim_nodes_per_decide <= ROAD_ROLLOUT_SIM_BUDGET (preferably <= 0.8 * budget).
+     - n_road_candidates_included > 0 across the debug runs (we should see forced inclusions sometimes).
+     - Not more than 20% of decisions have >50% rollout failures.
+   - If the above hold, proceed to step 5; otherwise stop and return logs/traces so we can analyze and possibly call RESEARCHER.
+
+5) Full batch
+   - If gate passes, set player.debug = False and run the 30-game batch vs AlphaBetaPlayer.
+   - Return:
+     - The JSON metrics: Player Summary and Game Summary (same format as previous runs).
+     - Aggregate diagnostics:
+       - times_2ply_run, times_2ply_skipped (with reasons if collected),
+       - times_rollouts_run (total candidates rollouts run),
+       - avg_rollout_sim_nodes_per_rollout and per-decision,
+       - rollout_success_rate (percentage of rollouts that returned valid metrics),
+       - n_road_candidates_forced (count),
+       - avg prob_settlement and avg expected_roads for chosen actions,
+       - avg roads for FooPlayer (target >= 0.5).
+   - If rollouts are unreliable or simulation budgets are exhausted too often, stop the batch early and return logs/traces.
+
+6) Failure handling
+   - If decide() raises any unexpected exception during debug run, immediately stop and return up to 5 stack traces.
+   - If rollouts consistently return None or (-inf) metrics for most candidates, stop and return logs for further analysis.
+
+7) Reporting format (exact)
+   - Debug run result: one combined raw text file (stdout) containing per-decision debug prints for 3 games + any stack traces.
+   - If full batch run: JSON metrics (Player Summary & Game Summary) and a short bullet summary of aggregate diagnostics (as listed in step 5).
+   - Include a one-line recommendation after results: "Proceed to full batch" or "Stop — call RESEARCHER" with reason.
+
+Proceed to implement the snippets and run the 3-game debug experiment now. Return the raw logs and up to 5 stack traces (if any). After I inspect them, I will authorize the 30-game batch or request further fixes.
+================================ Human Message =================================
+
+CODER
+
+I implemented the STRATEGIZER's road-focused rollout evaluator and integrated it into foo_player.py with the requested defensive, deterministic, and budgeted behavior.
+
+Summary of changes:
+- Added rollout parameters: ROAD_ROLLOUTS, ROAD_ROLLOUT_DEPTH, ROAD_ROLLOUT_SIM_BUDGET, ROAD_ROLLOUT_CANDIDATES, ROAD_SETTLEMENT_PROB_THRESHOLD.
+- Implemented helpers: _sample_branch_by_prob, _get_current_player_color, _choose_best_1ply_from_list, _choose_opponent_action_deterministic.
+- Implemented _road_rollout_evaluator (budgeted stochastic rollouts using execute_spectrum/execute_deterministic, deterministic RNG).
+- Integrated rollouts into decide(): deterministic candidate selection for rollouts, forced road candidate inclusion, lexicographic tie-breaking including rollout metrics, diagnostics counters and prints.
+- Ensured all adapter calls are wrapped in try/except and fallbacks are present.
+- Maintained determinism using RNG seeded with RNG_SEED + stable color hash.
+- Updated diagnostics in self._diag and printouts when self.debug is True.
+
+What I will run next after your confirmation:
+- 3-game debug experiment (player.debug = True) to collect per-decision logs and up to 5 stack traces if any errors occur.
+- After you review those logs, I can run the 30-game batch (player.debug = False) and report performance JSON and aggregate diagnostics.
+
+If you want me to run the 3 debug games now, confirm and I will execute them and return raw logs and any traces.
+
+END CODER
+================================ Human Message =================================
+
+GAME RESULTS:
+
+Playing 30 games...                                                                                     0% -:--:--
+AlphaBetaPlayer:RED(depth=2,value_fn=base_fn,prunning=False)                                            0%        
+FooPlayer:BLUE                                                                                          0%        
+Traceback (most recent call last):
+  File "/Users/nik/miniconda3/envs/strategy-game-agents/bin/catanatron-play", line 33, in <module>
+    sys.exit(load_entry_point('catanatron-experimental', 'console_scripts', 'catanatron-play')())
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nik/miniconda3/envs/strategy-game-agents/lib/python3.11/site-packages/click/core.py", line 1130, in __call__
+    return self.main(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nik/miniconda3/envs/strategy-game-agents/lib/python3.11/site-packages/click/core.py", line 1055, in main
+    rv = self.invoke(ctx)
+         ^^^^^^^^^^^^^^^^
+  File "/Users/nik/miniconda3/envs/strategy-game-agents/lib/python3.11/site-packages/click/core.py", line 1404, in invoke
+    return ctx.invoke(self.callback, **ctx.params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nik/miniconda3/envs/strategy-game-agents/lib/python3.11/site-packages/click/core.py", line 760, in invoke
+    return __callback(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nik/Library/Mobile Documents/com~apple~CloudDocs/Develop/NLP/strategy-game-agents/catanatron/catanatron_experimental/catanatron_experimental/play.py", line 197, in simulate
+    play_batch(
+  File "/Users/nik/Library/Mobile Documents/com~apple~CloudDocs/Develop/NLP/strategy-game-agents/catanatron/catanatron_experimental/catanatron_experimental/play.py", line 330, in play_batch
+    for i, game in enumerate(
+  File "/Users/nik/Library/Mobile Documents/com~apple~CloudDocs/Develop/NLP/strategy-game-agents/catanatron/catanatron_experimental/catanatron_experimental/play.py", line 259, in play_batch_core
+    game.play(accumulators)
+  File "/Users/nik/Library/Mobile Documents/com~apple~CloudDocs/Develop/NLP/strategy-game-agents/catanatron/catanatron_core/catanatron/game.py", line 132, in play
+    self.play_tick(decide_fn=decide_fn, accumulators=accumulators)
+  File "/Users/nik/Library/Mobile Documents/com~apple~CloudDocs/Develop/NLP/strategy-game-agents/catanatron/catanatron_core/catanatron/game.py", line 153, in play_tick
+    else player.decide(self, actions)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nik/Library/Mobile Documents/com~apple~CloudDocs/Develop/NLP/strategy-game-agents/agents/agentEvolver_v2/foo_player.py", line 923, in decide
+    val_after_b = self._simulate_and_evaluate(og, b, self.color)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'FooPlayer' object has no attribute '_simulate_and_evaluate'
+================================ Human Message =================================
+
+ANALYZER
+---
+After Running The New foo_player.py Player, Here is my analysis and findings:
+
+---
+### ERROR SUMMARY
+- **First Error Line**:
+  `AttributeError: 'FooPlayer' object has no attribute '_simulate_and_evaluate'`
+- **Exception Type**: `AttributeError`
+- **File**: `/Users/nik/Library/Mobile Documents/com~apple~CloudDocs/Develop/NLP/strategy-game-agents/agents/agentEvolver_v2/foo_player.py`
+- **Line Number**: 923
+- **Exact Code Line**:
+  `val_after_b = self._simulate_and_evaluate(og, b, self.color)`
+
+---
+### LIKELY CAUSE
+- The `_simulate_and_evaluate` method is **referenced in the `decide` method** but **not implemented** in the `FooPlayer` class.
+- This is likely due to a **refactoring oversight** where the method was either:
+  - **Renamed** (e.g., to `_evaluate_action`).
+  - **Removed** or **not implemented** during updates.
+
+---
+### QUICK FIX FOCUS
+- **Inspect Line 923** in `foo_player.py`:
+  - The `decide` method calls `self._simulate_and_evaluate(og, b, self.color)`, but this method is **missing**.
+  - **Solution**:
+    1. **Replace the call** with the existing `_evaluate_action` method, which has similar functionality.
+    2. **Ensure consistency** in method usage across the `decide` method to avoid further `AttributeError` issues.
+
+---
+Let me know if you need anything else.
+END ANALYZER
+
+--- Output from META at 20250925_041105 ---
+================================== Ai Message ==================================
+
+- META THOUGHTS:
+  - The Analyzer found an AttributeError: decide() calls self._simulate_and_evaluate but that helper does not exist. This is a runtime bug (missing/renamed helper), not a strategic issue. Fixing it is urgent because it stops the whole batch.
+  - We should implement a robust, defensive _simulate_and_evaluate method (small, adapter-driven) that provides the intended behavior: given a post-action game state "og" and an opponent action "b", return an evaluation (float) for our color after simulating opponent action b (using spectrum/deterministic fallbacks), or a safe approximation when simulations fail.
+  - Prefer adding this wrapper over changing many calls; also search for other references to the same missing name and ensure consistency.
+
+- META GOAL:
+  - Produce a ready-to-paste, defensive implementation of _simulate_and_evaluate(game, action, color) for FooPlayer that uses adapters (execute_spectrum, expand_spectrum, execute_deterministic, _normalize_and_cap_spectrum, _safe_eval_base_fn), respects simulation budget heuristics, logs tracebacks when self.debug True, and returns a numeric score (or None) so decide() can continue without error. Provide exact code snippet and brief integration notes for CODER to paste into foo_player.py.
+
+- CHOSEN AGENT: STRATEGIZER
+
+- AGENT OBJECTIVE:
+You must produce a short, precise plan and exact ready-to-paste code for the missing helper plus integration guidance.
+
+Requirements for the helper:
+- Name & signature: def _simulate_and_evaluate(self, game: Game, action, eval_color: Color) -> Optional[float]
+- Purpose: simulate the single action (action) applied to the provided game state (game) and return a scalar evaluation for eval_color that is usable inside decide(). If action is None, evaluate the game state directly.
+- Behavior:
+  - If action is None: return self._safe_eval_base_fn(game, eval_color) (or base_fn equivalent).
+  - Otherwise:
+    - Try execute_spectrum(copy_game(game), action); if succeeds produce normalized capped outcomes using existing self._normalize_and_cap_spectrum and compute expectation of self._safe_eval_base_fn over outcomes (sum p * score).
+    - If execute_spectrum fails or yields no outcomes, try expand_spectrum(copy_game(game), [action]) and pick the map for this action as fallback.
+    - If spectrum-based methods fail or are not available, fall back to execute_deterministic(copy_game(game), action). If deterministic returns a single game, evaluate that game's base_fn.
+    - If all adapter calls fail, as last fallback call self._safe_eval_base_fn(game, eval_color) (evaluate original state), or return None if even that is missing.
+  - Wrap every adapter call in try/except and log traceback only when self.debug True.
+  - Return None (or -float('inf')?) on total failure. Prefer returning None so callers can detect failure and act (decide() already handles None in many places).
+  - Do not consume a lot of simulation budget. The method should be cheap: cap the number of spectrum outcomes via SPECTRUM_MAX_OUTCOMES using existing normalization helper.
+
+Provide the exact code snippet to paste into FooPlayer class (use existing helper names present in file: copy_game, execute_spectrum, expand_spectrum, execute_deterministic, self._normalize_and_cap_spectrum, self._safe_eval_base_fn, self.SPECTRUM_MAX_OUTCOMES). The snippet should be defensive and self-contained.
+
+Also provide short integration checklist:
+1. Paste the helper into the FooPlayer class (near other helpers).
+2. Replace all calls to the missing function only if necessary; otherwise leaving the existing calls will work.
+3. Run a quick smoke test (1 game) to confirm the AttributeError is fixed and no other missing methods remain.
+4. If decide() expects numeric fallback values instead of None, adapt decide() to treat None as "fallback to base 1-ply evaluation" — but prefer returning numeric safe_evaluate where possible.
+
+Ready-to-paste code snippet (exact):
+```python
+def _simulate_and_evaluate(self, game: "Game", action, eval_color) -> Optional[float]:
+    """Simulate `action` applied to `game` and return an evaluation scalar for `eval_color`.
+
+    Behavior:
+    - If action is None: evaluate `game` directly with the base evaluator.
+    - Prefer execute_spectrum/expand_spectrum for chance actions and aggregate expected score.
+    - Fallback to execute_deterministic when spectrum fails.
+    - If all simulation attempts fail, fall back to evaluating the original game state.
+    - Return None only if evaluation cannot be produced.
+    """
+    # Fast path: evaluate current state when no action
+    if action is None:
+        try:
+            return self._safe_eval_base_fn(game, eval_color)
+        except Exception:
+            if self.debug:
+                print("_simulate_and_evaluate: base evaluation failed for game")
+                traceback.print_exc()
+            return None
+
+    # Try to copy game for simulation
+    try:
+        gc = copy_game(game)
+    except Exception:
+        if self.debug:
+            print("_simulate_and_evaluate: copy_game failed")
+            traceback.print_exc()
+        # fallback: try to evaluate original game state
+        try:
+            return self._safe_eval_base_fn(game, eval_color)
+        except Exception:
+            return None
+
+    # Try spectrum (chance) simulation first
+    try:
+        spec = None
+        try:
+            spec = execute_spectrum(gc, action)
+        except Exception:
+            # try expand_spectrum as fallback
+            try:
+                spec_map = expand_spectrum(gc, [action])
+                if isinstance(spec_map, dict):
+                    spec = spec_map.get(action, None)
+            except Exception:
+                spec = None
+
+        if spec:
+            # normalize and cap outcomes using existing helper
+            try:
+                outcomes = self._normalize_and_cap_spectrum(spec, self.SPECTRUM_MAX_OUTCOMES)
+            except Exception:
+                # spec might already be in list form
+                outcomes = []
+                try:
+                    for item in spec:
+                        # attempt to interpret as (game, prob) pairs
+                        if isinstance(item, tuple) and len(item) >= 2:
+                            outcomes.append((item[0], float(item[1])))
+                except Exception:
+                    outcomes = []
+
+            # aggregate expected evaluation over outcomes
+            if outcomes:
+                total = 0.0
+                success = False
+                for og, p in outcomes:
+                    try:
+                        sc = self._safe_eval_base_fn(og, eval_color)
+                        if sc is None:
+                            continue
+                        total += p * sc
+                        success = True
+                    except Exception:
+                        if self.debug:
+                            print("_simulate_and_evaluate: base eval failed for spectrum outcome")
+                            traceback.print_exc()
+                        continue
+                if success:
+                    return total
+            # if we get here, spectrum didn't yield usable outcomes — fall through to deterministic
+    except Exception:
+        if self.debug:
+            print("_simulate_and_evaluate: spectrum attempt failed")
+            traceback.print_exc()
+        # fall through to deterministic
+
+    # Fallback: deterministic execution
+    try:
+        det_res = execute_deterministic(gc, action)
+        if det_res:
+            # extract the resulting game state
+            next_game = det_res[0][0] if isinstance(det_res[0], tuple) else det_res[0]
+            try:
+                return self._safe_eval_base_fn(next_game, eval_color)
+            except Exception:
+                if self.debug:
+                    print("_simulate_and_evaluate: base eval failed for deterministic outcome")
+                    traceback.print_exc()
+                return None
+    except Exception:
+        if self.debug:
+            print("_simulate_and_evaluate: execute_deterministic failed")
+            traceback.print_exc()
+
+    # As a last resort, evaluate the original pre-action game state (conservative)
+    try:
+        return self._safe_eval_base_fn(game, eval_color)
+    except Exception:
+        if self.debug:
+            print("_simulate_and_evaluate: final fallback base eval failed")
+            traceback.print_exc()
+        return None
+```
+
+Notes and rationale:
+- Returning numeric expected value when possible allows decide() to continue adversarial min/max aggregation.
+- We deliberately prefer spectrum aggregation first (since chance actions may produce branching outcomes) and deterministic fallback second; this mirrors the existing decide() patterns.
+- Using self._safe_eval_base_fn ensures we use the same evaluation routine used elsewhere.
+- We return None when no evaluation can be computed; decide() already contains fallbacks in many places — if not, update decide() to treat None as "skip this branch" or to use base 1-ply evaluation.
+
+Integration checklist for CODER:
+1. Paste the helper into the FooPlayer class, e.g., near other simulation/evaluation helpers.
+2. Grep the file for other calls to _simulate_and_evaluate; if any exist, they will now work. If code expected a different return (e.g., -float('inf')), adjust decide() to handle None (preferable).
+3. Run a single smoke game to verify AttributeError is gone and no new AttributeErrors appear.
+4. If decide() logic relies on numeric values and not None, change the decide() site:
+   - Replace lines like:
+     val_after_b = self._simulate_and_evaluate(og, b, self.color)
+     if val_after_b is None: val_after_b = self._safe_eval_base_fn(og, self.color)
+     (or continue with other fallback code)
+5. After smoke test success, resume the planned 3-debug-game run.
+
+If you want, I can also produce an alternate shorter snippet that returns -float("inf") instead of None to guarantee numeric comparisons — but None is safer to detect failure explicitly. Tell me whether you prefer None or -inf semantics, and I will adapt the snippet accordingly.
+
