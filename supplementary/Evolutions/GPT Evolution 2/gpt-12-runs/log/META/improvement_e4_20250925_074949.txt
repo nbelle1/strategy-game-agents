@@ -1,0 +1,819 @@
+--- Input for META at 20250925_074949 ---
+================================ Human Message =================================
+
+GAME RESULTS:
+
+{
+  "Player Summary": {
+    "AlphaBetaPlayer:RED(depth=2,value_fn=base_fn,prunning=False)": {
+      "WINS": 30,
+      "AVG VP": 10.0,
+      "AVG SETTLES": 2.466666666666667,
+      "AVG CITIES": 2.7666666666666666,
+      "AVG ROAD": 1.0,
+      "AVG ARMY": 0.0,
+      "AVG DEV VP": 0.0
+    },
+    "FooPlayer:BLUE": {
+      "WINS": 0,
+      "AVG VP": 2.0,
+      "AVG SETTLES": 2.0,
+      "AVG CITIES": 0.0,
+      "AVG ROAD": 0.0,
+      "AVG ARMY": 0.0,
+      "AVG DEV VP": 0.0
+    }
+  },
+  "Game Summary": {
+    "AVG TICKS": 191.13333333333333,
+    "AVG TURNS": 71.66666666666667,
+    "AVG DURATION": 2.5781779209772746
+  }
+}
+================================ Human Message =================================
+
+ANALYZER
+---
+After Running The New foo_player.py Player, Here is my analysis and findings:
+
+### PERFORMANCE SUMMARY:
+- **Outcome**: Loss (0 wins out of 30 games).
+- **VP**: FooPlayer:BLUE averaged **2.0 VP** vs. AlphaBetaPlayer:RED's **10.0 VP**.
+- **Key Counts**:
+  - Settlements: 2.0 (FooPlayer) vs. 2.47 (Opponent).
+  - Cities: 0.0 (FooPlayer) vs. 2.77 (Opponent).
+  - Roads: 0.0 (FooPlayer) vs. 1.0 (Opponent).
+  - Development Cards: 0.0 (FooPlayer) vs. 0.0 (Opponent).
+  - Total Turns: 71.67.
+
+### VERDICT:
+- **Poor**: FooPlayer lost all games with a VP difference of **-8.0**.
+
+### LIKELY REASONS:
+1. **No Action Evaluation**: The player blindly selects the first action in `playable_actions` without any scoring or strategy.
+   - **Code Citation**: `return playable_actions[0]` (Line 25, `foo_player.py`).
+   - **Log Corroboration**: Repeated "Choosing First Action on Default" in `game_output.txt`.
+
+2. **No Lookahead or Heuristics**: The player does not use `copy_game`, `make_value_fn`, or any other tools to evaluate future states or prioritize high-value actions.
+
+3. **No Handling of Chance or Robber**: The player does not account for dice rolls, development cards, or robber placement, which are critical for long-term success.
+
+4. **No Progression Logic**: The player fails to build cities, roads, or development cards, stalling at 2 settlements and 0 VP beyond initial placement.
+
+### STRATEGIC FLAW:
+The player's logic is entirely reactive and lacks any form of evaluation or planning, resulting in suboptimal moves and no progression toward victory.
+
+### NEXT STEP:
+Send to Coder to implement a **1-ply value lookahead** and **heuristic-based action scoring** to prioritize high-reward actions.
+
+---
+Let me know if you need anything else.
+END ANALYZER
+================================== Ai Message ==================================
+
+- META THOUGHTS: Analyzer confirms the root cause: foo_player selects the first playable action with no evaluation or planning. To improve performance we must implement a 1-ply lookahead that simulates each legal action on a copied game state and scores resulting states with adapters.make_value_fn if available, otherwise use a robust heuristic combining VPs, settlements, cities, resources, and production potential. Add logging, tie-breaking, and safe fallbacks if adapters functions differ or throw. If code raises import/syntax errors during the next run, call RESEARCHER to fix adapter references. 
+- META GOAL: Replace the current action selection with a 1-ply simulation and state-evaluation pipeline so FooPlayer picks actions by estimated value rather than position in the action list, aiming to increase average VP and start winning some games.
+- CHOSEN AGENT: CODER
+- AGENT OBJECTIVE: Implement the following changes to foo_player.py:
+
+1) Replace the naive "return playable_actions[0]" behavior with a 1-ply lookahead evaluator:
+   - For each action in playable_actions:
+     - Create a copy of the current game using adapters.copy_game (use try/except to handle missing API; if not available, attempt a shallow copy approach or skip simulation).
+     - Apply the candidate action to the copied game state. Use the common adapters pattern (e.g., adapters.simulate_action or copying then calling game.apply_action). Because exact adapter function names may vary, implement a try/except sequence:
+       a) Try: adapters.copy_game(game); then call copied_game.do_action(action) or copied_game.apply_action(action) inside try/except.
+       b) If direct call fails, try adapters.apply_action(copy, action), adapters.play_action(copy, action), or simulate the action by setting up expected attributes. Catch exceptions and, on failure, skip simulation for that action (or assign a conservative low score).
+   - Evaluate the resulting state:
+     - Prefer using adapters.make_value_fn if available:
+         try: vf = adapters.make_value_fn(game=current_copied_game, ...) or adapters.make_value_fn(); score = vf(copied_game)
+         Fallback: compute heuristic_score(copied_game, player_index) using:
+           * Weighted sum: VP * 100 + settlements*20 + cities*50 + roads*5 + army*10.
+           * Add small resource potential term: sum(resource_counts) * 1.
+           * Optionally include expected production: for each hex owned by player's settlements/cities, add weight proportional to hex probability (use hardcoded die probabilities for numbers 2-12).
+   - Select the action with the highest score. Break ties randomly (use random.choice over tied best actions).
+
+2) Implementation details and functions to add:
+   - evaluate_action(game, action, player_index) -> float
+       * Performs copy, apply, evaluate, and returns a numeric score. Catches exceptions and returns -inf or a very low number on failure to ensure it's not chosen.
+   - heuristic_value(game, player_index) -> float
+       * Extract player's VP, settlements, cities, roads, resources, and compute weighted sum.
+   - robust_copy_and_apply(game, action) -> copied_game or None
+       * Encapsulates trying different adapter/application methods with informative debug logging to help diagnose failures.
+   - Use adapters.* calls within try/except; do not import catanatron internal modules directly.
+
+3) Logging and debugging:
+   - Add debug prints (or use existing logging in project) showing chosen action, scores of top candidate actions, and fallbacks used. Keep logs concise to avoid flooding.
+
+4) Safety and fallbacks:
+   - If no playable_actions, return None or the provided pass action.
+   - If simulations fail for all actions, default to original behavior (first action) to avoid stalling.
+   - Ensure code imports adapters at top and catches ImportError with a clear fallback.
+
+5) Testing/Instrumenting:
+   - Ensure code runs without syntax errors.
+   - Keep code self-contained — do not call the game runner. The test harness will run the game.
+
+6) Performance considerations:
+   - Limit simulation overhead: if playable_actions is large, cap simulations to top N actions sampled randomly or heuristically (e.g., N=12).
+   - Make evaluation fast: avoid deep copies beyond what's needed.
+
+Please implement these modifications in foo_player.py. Provide clear comments for areas where adapter function names may need adjusting based on the environment. If the next run raises attribute or import errors regarding adapters.copy_game or action application, I will call RESEARCHER to get precise adapter usage.
+================================ Human Message =================================
+
+CODER
+
+- Rewrote foo_player.py to implement a 1-ply lookahead using only the adapters API.
+- Key changes made:
+  - Added imports from .adapters (Game, Player, Color, execute_deterministic, execute_spectrum, base_fn).
+  - Implemented FooPlayer that caches adapters.base_fn() if available; falls back to a heuristic evaluator.
+  - Added helper functions:
+    - _get_player_color: robust retrieval of player's color attribute.
+    - _heuristic_value: fallback heuristic scoring based on VP, settlements, cities, roads, resources.
+    - _evaluate_game_state: uses cached value function or heuristic to score a Game for a Color.
+    - _evaluate_action_expectation: expands an action using adapters.execute_deterministic or execute_spectrum and computes expected score.
+  - Updated decide to:
+    - Convert playable_actions to a list, handle empty lists.
+    - Sample actions if the action space is large (cap 16).
+    - Evaluate each candidate action's expected value and choose the best (break ties randomly).
+    - Provide debug print statements for tracing decisions and fallback usage.
+- Debugging / logging:
+  - Multiple print statements added to aid diagnosis (value_fn availability, execution fallbacks, per-action scores, chosen action).
+- Performance safeguards:
+  - Limits simulations to MAX_SIMULATIONS=16 when the candidate list is large.
+  - Returns first playable action if all evaluations fail.
+
+Notes / Questions for next iteration:
+- I used adapters.execute_deterministic and adapters.execute_spectrum as provided. If the environment uses different adapter names for applying/validating actions, provide the exact adapter signatures so I can refine error handling.
+- The heuristic inspects game.state.players or game.players and common attribute names; if the real game model uses different attribute names for player stats, please provide them so the heuristic can be more precise.
+- If you want less verbose logging, I can reduce print statements or add a debug flag.
+
+END CODER
+================================ Human Message =================================
+
+GAME RESULTS:
+
+{
+  "Player Summary": {
+    "AlphaBetaPlayer:RED(depth=2,value_fn=base_fn,prunning=False)": {
+      "WINS": 22,
+      "AVG VP": 8.533333333333333,
+      "AVG SETTLES": 2.1333333333333333,
+      "AVG CITIES": 2.466666666666667,
+      "AVG ROAD": 0.7333333333333333,
+      "AVG ARMY": 0.0,
+      "AVG DEV VP": 0.0
+    },
+    "FooPlayer:BLUE": {
+      "WINS": 8,
+      "AVG VP": 7.066666666666666,
+      "AVG SETTLES": 2.6666666666666665,
+      "AVG CITIES": 1.8666666666666667,
+      "AVG ROAD": 0.26666666666666666,
+      "AVG ARMY": 0.06666666666666667,
+      "AVG DEV VP": 0.0
+    }
+  },
+  "Game Summary": {
+    "AVG TICKS": 191.3,
+    "AVG TURNS": 66.73333333333333,
+    "AVG DURATION": 2.9121970176696776
+  }
+}
+================================ Human Message =================================
+
+ANALYZER
+---
+After Running The New foo_player.py Player, Here is my analysis and findings:
+
+### PERFORMANCE SUMMARY:
+- **Outcome**: FooPlayer won **8 out of 30 games** (26.67% win rate).
+- **VP**: FooPlayer:BLUE averaged **7.07 VP** vs. AlphaBetaPlayer:RED's **8.53 VP** (VP diff: **-1.46**).
+- **Key Counts**:
+  - Settlements: 2.67 (FooPlayer) vs. 2.13 (Opponent).
+  - Cities: 1.87 (FooPlayer) vs. 2.47 (Opponent).
+  - Roads: 0.27 (FooPlayer) vs. 0.73 (Opponent).
+  - Development Cards: 0.0 (FooPlayer) vs. 0.0 (Opponent).
+  - Total Turns: 66.73.
+
+### VERDICT:
+- **Borderline**: FooPlayer's VP difference of **-1.46** is below the acceptable threshold.
+
+### LIKELY REASONS:
+1. **Shallow Lookahead**: The 1-ply lookahead is insufficient to capture long-term strategic benefits (e.g., road networks, city placement).
+   - **Code Citation**: `execute_deterministic` and `execute_spectrum` are used, but only for immediate outcomes (Lines 100–120, `foo_player.py`).
+   - **Log Corroboration**: Actions like `BUILD_ROAD` and `BUILD_CITY` are evaluated but lack long-term prioritization.
+
+2. **Simplistic Heuristic**: The heuristic focuses on immediate VP, settlements, and resources but lacks nuance for disruptive actions (e.g., robber placement, development cards).
+   - **Code Citation**: Heuristic weights are hardcoded (Line 70–80, `foo_player.py`).
+   - **Log Corroboration**: No evidence of prioritizing robber/knight actions or development cards.
+
+3. **Action Sampling Limitation**: The player samples only 16 actions when the action space is large, potentially missing high-value actions.
+   - **Code Citation**: `MAX_SIMULATIONS = 16` (Line 140, `foo_player.py`).
+   - **Log Corroboration**: "Large action space (27), sampling 16 actions" appears frequently in `game_output.txt`.
+
+4. **No Specialized Logic for Key Actions**: The player does not prioritize critical actions like robber placement, knight usage, or development card purchases.
+   - **Log Corroboration**: No log lines indicate strategic use of these actions.
+
+### STRATEGIC FLAW:
+The player's 1-ply lookahead and simplistic heuristic fail to capture long-term strategic value, such as road networks, resource monopolies, or disruptive actions like robber placement and development card purchases.
+
+### NEXT STEP:
+Send to Coder to **enhance the heuristic** to include long-term strategic considerations and **improve action sampling** to ensure high-value actions are not missed.
+
+---
+Let me know if you need anything else.
+END ANALYZER
+================================== Ai Message ==================================
+
+- META THOUGHTS: Analyzer shows real improvement (8 wins) but still losing on average. Root causes: 1-ply is too myopic for long-term constructs (city upgrades, road networks, robber impact) and current sampling can miss critical actions. We need targeted changes: smarter action sampling that guarantees inclusion of strategically important actions, a light multi-step lookahead (selective 2-ply or short greedy rollout) to estimate downstream value, and a richer heuristic/value function that accounts for production potential, city upgrade distance, and disruptive moves (robber/knight/dev cards). Keep fallbacks robust and keep runtime bounded.
+- META GOAL: Improve foo_player.py so it reliably picks high long-term-value moves by (a) always evaluating all high-impact actions, (b) using a short greedy rollout from simulated child states (depth 2-3) to estimate downstream effects, and (c) enhancing the heuristic/value function to include production potential, city upgrade progress, and robber/knight value. Keep simulations bounded (adaptive sampling + must-include list) and reduce noisy logging.
+
+- CHOSEN AGENT: CODER
+
+- AGENT OBJECTIVE:
+Implement the following concrete, backwards-compatible improvements in foo_player.py. Preserve the adapters-based approach and all previous fallbacks; add targeted enhancements and keep runtime safeguards.
+
+1) New high-level approach
+   - Keep the existing 1-ply simulation path as baseline but augment it with:
+     a) Prefilter/prioritization to always include high-impact actions in the simulation set.
+     b) For each simulated child state, run a short greedy rollout (depth ROLLOUT_DEPTH, default 2 or 3) using a fast heuristic policy to approximate downstream value (select best heuristic action for the acting player at each rollout step).
+     c) Use the expected value across chance branches (execute_spectrum or execute_deterministic) for the first move and then add the rollout-estimated value to get action score.
+
+2) Action prefiltering & adaptive sampling
+   - Introduce constants:
+       MAX_SIMULATIONS = 24 (cap)
+       MUST_INCLUDE_TYPES = {'BUILD_CITY','BUILD_SETTLEMENT','BUILD_ROAD','BUY_DEV_CARD','PLAY_KNIGHT','MOVE_ROBBER','TRADE'} (handle string variants)
+       PREFILTER_TOP_K = 8 (after must-includes, pick top K by cheap pre-score)
+       ROLLOUT_DEPTH = 2 (default; allow tuning)
+   - Implement prefilter_actions(playable_actions, game, player_index):
+       a) Compute a cheap pre-score for every action without copying (cheap_pre_score):
+           - Score +100 for any action that directly increases VP (BUILD_CITY, BUILD_SETTLEMENT).
+           - Score +60 for BUY_DEV_CARD.
+           - Score +40 for BUILD_ROAD if it extends existing roads or connects to potential settlement sites (best effort: check if action string contains an edge index adjacent to player's settlements).
+           - Score +50 for MOVE_ROBBER or PLAY_KNIGHT.
+           - Score adjustment for trades based on resource imbalance (e.g., if lacks key city resources).
+       b) Collect must_include actions by matching action.type, action.name, or substrings of str(action) against MUST_INCLUDE_TYPES; ensure robust matching (lowercase).
+       c) Sort remaining actions by cheap_pre_score, pick top PREFILTER_TOP_K.
+       d) Return final candidate_actions list = unique(must_includes + top_prefiltered), then if len < MAX_SIMULATIONS, append random samples from remaining actions to reach min(len(all), MAX_SIMULATIONS).
+
+   - Make matching resilient: check hasattr(action,'type') and hasattr(action,'name'), else fallback to str(action).lower() contains token.
+
+3) Rollout-based downstream estimation
+   - Implement rollout_value(copied_game, player_color, depth):
+       a) For depth = 0 return evaluate_game_state(copied_game, player_color) using cached adapters.base_fn() if available else heuristic.
+       b) Otherwise, for the current game state determine playable actions for the active player (use adapters.execute_deterministic with empty action? If you already have a method to get playable_actions from the provided game object, use that; else use game.get_playable_actions or adapters.* — robust try/except).
+       c) If playable_actions empty: return evaluate_game_state.
+       d) Choose the best action according to the cheap pre-score (no copying) for that player, apply it deterministically on a shallow copy (or use execute_deterministic to resolve chance when required), then recursively call rollout_value on the new state with depth-1.
+       e) If cannot simulate an action, skip it and try the next best; if none simulate, return evaluate_game_state.
+       f) Return the evaluation value from the leaf.
+
+   - Note: We only need a quick approximate rollout — keep copies/shallow simulations fast and avoid branching across many chance nodes during rollout (use deterministic simulation selected by adapters.execute_deterministic or one representative branch from execute_spectrum).
+
+4) Enhanced heuristic / value function
+   - Update heuristic_value(game, player_color) to include:
+       a) Base terms: Victory points * 100, settlements * 25, cities * 60, roads * 6, army size * 15, dev_vp * 50.
+       b) Production potential: For each settlement/city of player, add weight proportional to hex probability:
+           - Use die_probabilities dict: {2:1/36,3:2/36,4:3/36,5:4/36,6:5/36,8:5/36,9:4/36,10:3/36,11:2/36,12:1/36}. (Ignore 7.)
+           - City adds double production weight of a settlement.
+       c) City upgrade progress: estimate resources towards next city (e.g., if player has cities < #settlements, compute required wheat+ore shortfall and subtract from score proportionally).
+       d) Resource diversity & monopoly: reward unique resource types held (diversity_count * 2) and reward higher count for scarce city-building resources (ore, wheat).
+       e) Robber impact: penalize if a player's best-producing hex is blocked by robber (detect occupant if possible).
+   - Keep using adapters.make_value_fn() if available — prefer it. If using both, combine by weighted average: 0.8*value_fn + 0.2*heuristic for stability.
+
+5) Robber/knight specific evaluation
+   - When prefilter identifies a MOVE_ROBBER or PLAY_KNIGHT action, expand expected value taking into account:
+       a) Which opponent hex is targeted — prefer hexes that reduce opponent production score most (compute opponent production loss using die_prob).
+       b) If steal is possible, add estimated expected stolen resource value (map resources to build-weights).
+   - Ensure robber moves are always included in candidate_actions (must_include).
+
+6) Improve evaluate_action_expectation
+   - For each candidate action:
+       a) Use adapters.execute_spectrum(action, game) if it exists to get (prob, resulting_state) branches; else use adapters.execute_deterministic or try to copy/apply.
+       b) For each branch, compute branch_value = evaluate_game_state(branch_state, player_color) for immediate scoring, plus rollout_value(branch_state, player_color, ROLLOUT_DEPTH-1) if doing rollouts — sum or average appropriately.
+       c) Expected_value = sum(prob * branch_value).
+   - If execute_spectrum unavailable, fallback to deterministic path and an approximate exploration of chance: e.g., run single deterministic simulation then adjust with small variance term.
+
+7) Sampling & performance safeguards
+   - Limit total simulated branches across actions to a budget: SIMULATION_BUDGET = 60 (approx). If candidate action count * avg_branches exceeds budget, reduce ROLLOUT_DEPTH dynamically or cap per-action branches to budget / num_actions.
+   - Avoid deep copying the whole game more than necessary; reuse copy methods provided by adapters.
+
+8) Robustness & adapter compatibility
+   - Keep the existing try/except cascade for calling adapters.copy_game, game.apply_action / do_action, adapters.execute_deterministic, adapters.execute_spectrum, adapters.make_value_fn.
+   - When checking action types, handle multiple naming conventions gracefully.
+   - Add a single global DEBUG flag to control printing; default to False to reduce log noise.
+
+9) Logging & instrumentation
+   - Replace many prints with debug_print(...) that checks DEBUG flag.
+   - Log: chosen action, top 3 candidate actions with their expected scores, any fallback used (e.g., no execute_spectrum), and if sampling was used. Keep logs concise.
+
+10) Fallbacks and safe returns
+   - If all evaluations fail or candidate list empty, return the original behavior (first playable_action) to avoid stalling.
+   - Ensure none of the new helpers raise uncaught exceptions — wrap top-level decide() body in try/except and fallback gracefully.
+
+11) Tests / debug hooks (for future RESEARCHER use)
+   - Add small helper to emit a summary of why an action was included (must_include reason or pre-score) when DEBUG True.
+   - If you encounter adapter attribute errors in the next run, include the exception trace in logs and we will call RESEARCHER to map exact adapter function names.
+
+Deliverable specifics:
+   - Modify foo_player.py to add these functions: prefilter_actions, cheap_pre_score, rollout_value, evaluate_action_expectation (enhanced), enhanced heuristic_value, debug_print, and constants at top.
+   - Keep existing code structure but replace the sampling + evaluation block with the new pipeline.
+   - Maintain use of adapters and never import catanatron internals directly.
+
+If you implement this, run the next experiment. If runtime errors about adapter names or member access occur, stop and report the exact AttributeError/Traceback so I can call RESEARCHER to get precise adapter signatures.
+================================ Human Message =================================
+
+CODER
+
+- What I changed (high level)
+  - Replaced the original simple first-action behavior with an enhanced decision pipeline that:
+    - Prefilters the playable actions to ensure high-impact actions are always considered.
+    - Uses adapters.execute_spectrum / adapters.execute_deterministic to expand chance outcomes for each candidate action.
+    - Evaluates each outcome using adapters.base_fn() when available, otherwise a richer fallback heuristic.
+    - Runs a short greedy rollout (depth-limited) from each outcome to estimate downstream value.
+    - Selects the action with highest expected score and breaks ties randomly.
+  - All interactions with the game use functions exported from .adapters (per requirement).
+
+- Files changed
+  - Overwrote foo_player.py with the new implementation.
+
+- New functions and helpers added to foo_player.py
+  - debug_print(*args)
+    - Single place to gate debug prints via DEBUG flag (default False).
+  - _safe_action_name(action)
+    - Robust conversion of an action to a lowercase string for token matching.
+  - _heuristic_value(game, color)
+    - Replaced / enhanced heuristic that now includes:
+      - VP, settlements, cities, roads, dev VP, resources and resource diversity.
+      - Production potential estimated from adjacent hex roll numbers (best-effort, uses die probabilities).
+      - City-upgrade progress proxy via wheat & ore counts.
+      - Tuned weightings so the heuristic prefers production and VP.
+  - _evaluate_game_state(game, color)
+    - Uses adapters.base_fn() when available and blends it with the heuristic (0.85*value_fn + 0.15*heuristic).
+    - Falls back to heuristic if base_fn raises.
+  - cheap_pre_score(action, game, color)
+    - Fast, cheap scoring used to prioritize which actions should be simulated.
+  - prefilter_actions(actions, game, color)
+    - Builds bounded candidate list to simulate:
+      - Always includes must-include tokens (e.g., build_city, move_robber).
+      - Picks top PREFILTER_TOP_K by cheap_pre_score.
+      - Fills up to MAX_SIMULATIONS with random samples to preserve diversity.
+  - get_playable_actions_from_game(game)
+    - Best-effort extraction of playable actions via adapters.list_prunned_actions or common game fields.
+  - rollout_value(game, color, depth)
+    - Short greedy rollout (selects the best cheap_pre_score action at each step) to estimate downstream value.
+    - Uses deterministic branch (or most probable branch from spectrum) and recurses depth-1.
+  - _evaluate_action_expectation(game, action, per_action_branch_limit=8)
+    - Enhanced expectation calculator:
+      - Tries execute_spectrum first, falls back to execute_deterministic.
+      - Limits per-action branch expansion to keep runtime bounded.
+      - For each branch: compute blended branch value = 0.6*immediate_eval + 0.4*rollout_estimate.
+      - Returns normalized expected value.
+  - decide(game, playable_actions)
+    - Orchestrates prefiltering, budget allocation (SIMULATION_BUDGET), per-action evaluation, and selection with tie-breaking.
+
+- Constants and tunables added
+  - MAX_SIMULATIONS = 24
+  - PREFILTER_TOP_K = 8
+  - ROLLOUT_DEPTH = 2
+  - SIMULATION_BUDGET = 60
+  - MUST_INCLUDE_TOKENS set to prioritize high-impact action types
+  - DEBUG flag (default False) to control logging verbosity
+
+- Logging / prints added
+  - Mainly guarded by debug_print (uses DEBUG flag). Default logging remains quiet.
+  - One protected fallback print remains in the top-level exception in decide() to ensure errors are visible (this will not flood when DEBUG is False).
+  - When DEBUG=True, the player prints:
+    - Whether adapters.base_fn() was successfully used.
+    - Prefilter selection summary.
+    - Evaluation results per action and top candidates.
+    - Any fallbacks used (execute_spectrum->execute_deterministic, value_fn failures, etc).
+
+- Safety / fallbacks implemented
+  - Robust try/except around adapters calls:
+    - execute_spectrum and execute_deterministic both tried and failure returns -inf for that action (so it is unlikely to be chosen).
+  - If no playable_actions: return None.
+  - If all simulations/evaluations fail, fallback to the first playable action to avoid stalling.
+  - Decision pipeline wrapped in try/except to ensure a sensible fallback if unexpected exceptions occur.
+
+- Performance considerations
+  - Candidate actions limited via prefilter to MAX_SIMULATIONS.
+  - Branch expansion per action limited by per_action_branch_limit computed from SIMULATION_BUDGET.
+  - Rollout depth set small (default 2) for speed; rollout picks only up to 4 top actions at each step to avoid branching blowup.
+  - cheap_pre_score and prefilter are deliberately lightweight (no copying).
+
+- Debugging aids / notes for the next iteration
+  - The production estimation and location lookup are best-effort guesses: code inspects game.state.board.hexes and player settlement/city lists (settle_locations, city_locations). If your real game model uses different field names or structures for board/hexes/vertex adjacency, the production term may be inaccurate.
+  - The MUST_INCLUDE_TOKENS matching is string-based and intended to be tolerant. If the game's Action objects include ActionType enums (e.g., ActionType.BUILD_CITY), the _safe_action_name should capture .name but confirm the exact naming used by the adapters Action type in your environment.
+  - The blend weights between immediate evaluation and rollout (0.6/0.4) and between base_fn/heuristic (0.85/0.15) are heuristic and can be tuned.
+  - The DEBUG flag is off by default; set FooPlayer.DEBUG = True within tests if you want verbose logs to diagnose decisions.
+
+- Things I am unsure about / that may need RESEARCHER help next run
+  - Exact structure of player_state and board/hex adjacency in the concrete Game implementation:
+    - The code attempts to find settlement/city location lists under many common names (settlements, settle_locations, city_locations). If those attributes are named differently, production and upgrade-progression heuristics will be weakened.
+  - Action naming conventions:
+    - If the Action object exposes action_type via a different attribute name or the string repr differs significantly, must-include matching may miss some actions. If you get AttributeError or strange behavior referencing action.action_type, provide the exact Action class fields.
+  - If adapters exposes additional or different helper functions for enumerating playable actions (e.g., another exported list function), let me know and I will prefer it.
+
+- Suggested next objectives (for future iterations)
+  - Tune heuristic weights and rollout blending using small hyperparameter search (e.g., adjust production weight & city rewards).
+  - Implement smarter robber evaluation: evaluate target hex impact on opponent production and expected stolen resources to score robber moves more accurately.
+  - Add a selective 2-ply search for build_city/build_settlement actions where the second ply considers a short opponent response or a self-progression move.
+  - Add specialized logic for trading and dev-card purchases (when model shows underinvestment in dev cards).
+  - If desired, expose DEBUG via environment variable or player constructor argument.
+
+- Changes summary (concise bullets)
+  - Created new helper functions: debug_print, _safe_action_name, cheap_pre_score, prefilter_actions, get_playable_actions_from_game, rollout_value, and enhanced _evaluate_action_expectation.
+  - Replaced naive decide logic with prefilter -> evaluate (spectrum/deterministic) -> rollout -> choose best.
+  - Added improved heuristic and blending with adapters.base_fn() when present.
+  - Added guarded debug logging; default is quiet.
+
+If you run the next experiment and see AttributeError or missing adapter names (for example, execute_spectrum, list_prunned_actions, base_fn, etc.), please paste the exact traceback and I will request RESEARCHER to map the exact adapter function names or update the code to match the environment.
+
+END CODER
+================================ Human Message =================================
+
+GAME RESULTS:
+
+{
+  "Player Summary": {
+    "AlphaBetaPlayer:RED(depth=2,value_fn=base_fn,prunning=False)": {
+      "WINS": 13,
+      "AVG VP": 7.433333333333334,
+      "AVG SETTLES": 2.8333333333333335,
+      "AVG CITIES": 1.8,
+      "AVG ROAD": 0.5,
+      "AVG ARMY": 0.0,
+      "AVG DEV VP": 0.0
+    },
+    "FooPlayer:BLUE": {
+      "WINS": 17,
+      "AVG VP": 8.133333333333333,
+      "AVG SETTLES": 1.9,
+      "AVG CITIES": 2.6,
+      "AVG ROAD": 0.5,
+      "AVG ARMY": 0.0,
+      "AVG DEV VP": 0.03333333333333333
+    }
+  },
+  "Game Summary": {
+    "AVG TICKS": 194.63333333333333,
+    "AVG TURNS": 67.43333333333334,
+    "AVG DURATION": 2.556744853655497
+  }
+}
+================================ Human Message =================================
+
+ANALYZER
+---
+After Running The New foo_player.py Player, Here is my analysis and findings:
+
+### PERFORMANCE SUMMARY:
+- **Outcome**: FooPlayer won **17 out of 30 games** (56.67% win rate).
+- **VP**: FooPlayer:BLUE averaged **8.13 VP** vs. AlphaBetaPlayer:RED's **7.43 VP** (VP diff: **+0.7**).
+- **Key Counts**:
+  - Settlements: 1.90 (FooPlayer) vs. 2.83 (Opponent).
+  - Cities: 2.60 (FooPlayer) vs. 1.80 (Opponent).
+  - Roads: 0.50 (FooPlayer) vs. 0.50 (Opponent).
+  - Development Cards: 0.03 (FooPlayer) vs. 0.00 (Opponent).
+  - Total Turns: 67.43.
+
+### VERDICT:
+- **Good**: FooPlayer achieved a **positive VP difference of +0.7** and won the majority of games.
+
+---
+
+### STRENGTHS:
+1. **City Focus**: FooPlayer excels at building cities (2.60 vs. 1.80), which directly contributes to higher VP.
+2. **Action Sampling**: The prefiltering logic ensures high-impact actions (e.g., `build_city`, `build_settlement`) are prioritized.
+3. **Rollout Estimation**: The 2-ply rollout provides a short-term strategic advantage, as seen in the VP lead.
+
+---
+
+### LIKELY REASONS FOR SUBOPTIMAL PERFORMANCE:
+1. **Settlement Deficit**: FooPlayer builds fewer settlements (1.90 vs. 2.83), limiting early-game expansion and resource diversity.
+   - **Code Citation**: The heuristic prioritizes cities over settlements (Line 200, `foo_player.py`).
+   - **Log Corroboration**: No explicit log lines indicate aggressive settlement placement.
+
+2. **Road Neglect**: Roads are built at the same rate as the opponent (0.50), which may limit long-term expansion and connectivity.
+   - **Code Citation**: Road-building actions are scored lower in `cheap_pre_score` (Line 120, `foo_player.py`).
+
+3. **Development Card Underutilization**: Despite a slight edge in development cards (0.03 vs. 0.00), FooPlayer does not actively prioritize or leverage them.
+   - **Code Citation**: No specialized logic for development card actions in `cheap_pre_score` or rollout.
+
+4. **Robber/Knight Actions**: No evidence of strategic robber placement or knight usage, which could disrupt the opponent's resource flow.
+   - **Log Corroboration**: No log lines indicate robber/knight actions.
+
+---
+
+### STRATEGIC FLAW:
+FooPlayer's heuristic and rollout logic prioritize cities and immediate VP gains but neglect early-game expansion (settlements/roads) and disruptive actions (robber/knights), limiting long-term dominance.
+
+---
+
+### NEXT STEP:
+Send to Coder to **enhance the heuristic to prioritize settlements and roads early-game** and **add logic for strategic robber/knight usage**.
+
+---
+Let me know if you need anything else.
+END ANALYZER
+================================== Ai Message ==================================
+
+- META THOUGHTS: Analyzer shows we reached a strong improvement (17/30 wins) but still tilt toward city-heavy play that neglects early expansion (settlements/roads), robber/knight disruption, and dev-card investment. To push win rate higher we should add game-phase-aware decisioning: favor settlements/roads early, cities mid/ to late-game, and explicitly evaluate robber/knight moves and buy-dev-card actions. Keep the existing safe adapters-based simulation and rollout pipeline, but change cheap_pre_score and heuristic blending to be dynamic by phase, add targeted evaluators for robber/knight and settlement potential, and tune sampling to always include these action types. Keep runtime safeguards and DEBUG gating.
+
+- META GOAL: Update foo_player.py so FooPlayer:
+  1) prefers settlements and roads in the early game (so it doesn't starve resource diversity),
+  2) evaluates robber/knight actions for disruption and potential steals,
+  3) considers buying development cards when appropriate,
+  4) preserves the successful rollout + spectrum evaluation pipeline and budget limits.
+
+- CHOSEN AGENT: CODER
+
+- AGENT OBJECTIVE:
+Implement the following concrete changes in foo_player.py. Keep all adapter calls in try/except fallbacks as before. Preserve DEBUG flag (default False) and simulation-budget protections.
+
+1) Game-phase detection
+   - Add helper is_early_game(game, color_or_index):
+     - Determine the current overall progression using robust checks (try in order):
+         a) game.turn or game.tick or game.state.turn_count or game.state.tick_count
+         b) If none available, use average victory points across players: if max VP < 5 treat as early.
+     - Return True for early when turn_count < EARLY_TURN_THRESHOLD (default 25) OR when max VP < 5.
+   - Add constants:
+       EARLY_TURN_THRESHOLD = 25
+       EARLY_VP_THRESHOLD = 5
+
+2) Dynamic scoring multipliers
+   - Add dynamic multipliers applied in cheap_pre_score and _heuristic_value:
+       - If is_early_game -> settlement_multiplier = 1.6, road_multiplier = 1.4, city_multiplier = 0.9, devcard_multiplier = 1.1
+       - Else (mid/late) -> settlement_multiplier = 0.9, road_multiplier = 0.9, city_multiplier = 1.4, devcard_multiplier = 1.0
+   - Use these multipliers when scoring build actions: multiply base score for BUILD_SETTLEMENT, BUILD_ROAD, BUILD_CITY, BUY_DEV_CARD.
+
+3) Settlement & road potential evaluation
+   - Implement settlement_potential(action, game, color) returning a small float bonus estimating:
+       - Resource diversity gain: how many new resource types would the settlement add (best-effort by checking adjacent hex resource types).
+       - Production potential: sum die probability weights for adjacent hex numbers; treat city adjacency as double.
+       - Distance to existing player's network: reward connecting distant nodes less than connecting existing network more? (Simpler: slightly prefer settlement actions that increase unique resources).
+   - Implement road_connection_potential(action, game, color) returning float:
+       - Reward if road action appears to extend toward an open settlement spot (best-effort: check edges adjacent to known free vertices). If exact board API missing, reward road actions if their string contains indices near player's settlement locations.
+
+4) Robber & Knight evaluation
+   - Add evaluate_robber_action(action, game, color):
+       - When action moves robber, attempt to detect target hex id from action and estimate production loss to the most affected opponent:
+           * For each opponent, compute their production score (sum of probabilities of their settlements/cities); estimate reduction if that hex is blocked (subtract die_prob for that hex times sum of settlement/city weights).
+           * Add steal-value: if action results in a steal (detect from action or branch result), add estimated expected resource value (map resource -> build-weight; e.g., ore/wheat=3, lumber/brick/sheep=2).
+       - Return robbery_score large enough to make robbery moves be included (e.g., +40 base scaled by estimated impact).
+   - Add evaluate_play_knight(action, game, color):
+       - Similar to robber evaluation but also account for increasing largest army or potential VP from army. Include small bonus if player is close to largest army threshold.
+
+5) Development card buys
+   - In cheap_pre_score, boost BUY_DEV_CARD by devcard_multiplier and add heuristic to buy when:
+       - Player has moderate resources (e.g., enough ore + wheat and no immediate city needed) OR when early_game and strategy prefers hidden advantage.
+       - If player already has many cities, slightly deprioritize devcard buys in favor of settlement opportunities as appropriate.
+
+6) Modify prefilter_actions to guarantee inclusion
+   - Expand MUST_INCLUDE_TOKENS to ensure:
+       - build_settlement and build_road actions are always included if early_game is True (use is_early_game to decide).
+       - move_robber and play_knight included when present.
+       - buy_dev_card included when resources sufficient (check action costs if present in action object or check player resource counts).
+   - Keep existing PREFILTER_TOP_K and MAX_SIMULATIONS but ensure must-includes are always present even if they exceed PREFILTER_TOP_K (still respect MAX_SIMULATIONS cap by replacing low-scored sampled actions).
+
+7) Rollout policy tweaks
+   - In rollout_value:
+       - When early_game True and rollout depth > 0, bias greedy rollout selection toward settlement/road/build actions using cheap_pre_score with phase multipliers (so rollout represents early expansion).
+       - When mid/late-game, bias toward city upgrades and dev-card plays.
+   - Keep rollout depth default 2 but allow ROLLOUT_DEPTH to be passed from constants.
+
+8) Heuristic tuning
+   - Update _heuristic_value to incorporate dynamic multipliers and stronger production-term weighting for early game:
+       - Increase production-term weight in early game to favor settlements that increase resource flow.
+       - Slightly reduce immediate city reward during early game to avoid over-prioritizing upgrades that hamper expansion.
+   - Combine adapters.base_fn when present as before but ensure dynamic multipliers still influence final score: final_score = 0.85*value_fn + 0.15*heuristic * phase_multiplier_sum or apply phase multipliers inside heuristic then combine.
+
+9) Logging and DEBUG
+   - Keep DEBUG default False. When DEBUG True, print concise lines:
+       - "PHASE: EARLY/MID/LATE, chosen multipliers: S/R/C"
+       - Top 3 candidate actions and their expected scores
+       - If a robber action is chosen, print target hex and estimated impact.
+   - Avoid noisy per-action prints when DEBUG False.
+
+10) Testing & fallbacks
+   - Ensure all new helper functions are robust to missing attributes: check multiple attribute names for resources, victory points, settlements/cities lists (player.vp, player.victory_points, player.victory_point).
+   - If determining adjacent hexes or edge/vertex indices fails, fallback to string-based heuristics but do not crash.
+   - If evaluate_robber_action cannot find a target hex, it should return a small neutral score (not negative).
+   - Maintain final fallback behavior: if all action evaluations fail, return playable_actions[0].
+
+11) Minor tunables to expose as constants for future tuning:
+   - EARLY_TURN_THRESHOLD (default 25)
+   - EARLY_VP_THRESHOLD (default 5)
+   - settlement_multiplier_early, road_multiplier_early, etc.
+   - ROBBER_BASE_SCORE (default 40)
+   - DEV_CARD_MULTIPLIER_EARLY (default 1.1)
+
+Implementation notes for CODER:
+- Only modify foo_player.py. Do not import internal catanatron modules.
+- Use existing try/except patterns for adapters.execute_spectrum, execute_deterministic, adapters.base_fn, adapters.copy_game.
+- Keep simulation budget and per-action branch limits as before, adjusting if necessary to accommodate the extra computation but aim to keep runtime similar.
+- Add unit-level comments where you detect uncertainty about attribute names so RESEARCHER can later refine them if adapter attribute mismatches occur.
+- After implementing, leave DEBUG=False by default.
+
+If you implement these changes and the next run shows attribute/adapter errors (AttributeError, etc.), capture the traceback exactly and return it so we can call RESEARCHER to map the correct adapter names or attribute paths.
+================================ Human Message =================================
+
+CODER
+
+I updated foo_player.py with the requested phase-aware decisioning, enhanced heuristic, targeted action sampling, robber/knight evaluation, and rollout biases. Key points:
+
+- Implemented is_early_game to detect early/mid phases.
+- Adjusted cheap_pre_score and _heuristic_value to use phase multipliers favoring settlements/roads early and cities later.
+- Added settlement_potential and road_connection_potential to encourage expansion.
+- Added evaluate_robber_action and evaluate_play_knight to boost disruptive moves.
+- Prefilter ensures must-include actions and early-game settlement/road inclusion.
+- Rollout policy biases towards expansion in early game.
+- All adapters calls use the provided adapters surface and are wrapped in try/except fallbacks.
+- DEBUG flag is available (default False) to enable concise diagnostic prints.
+
+Next steps:
+- Run the experiments. If you see AttributeError traces or adapter mismatches (e.g., missing functions or different attribute names on game/player/hex objects), paste the exact traceback and I will work with RESEARCHER to adapt the code.
+
+END CODER
+================================ Human Message =================================
+
+GAME RESULTS:
+
+{
+  "Player Summary": {
+    "AlphaBetaPlayer:RED(depth=2,value_fn=base_fn,prunning=False)": {
+      "WINS": 10,
+      "AVG VP": 6.866666666666666,
+      "AVG SETTLES": 2.533333333333333,
+      "AVG CITIES": 1.7333333333333334,
+      "AVG ROAD": 0.43333333333333335,
+      "AVG ARMY": 0.0,
+      "AVG DEV VP": 0.0
+    },
+    "FooPlayer:BLUE": {
+      "WINS": 20,
+      "AVG VP": 8.633333333333333,
+      "AVG SETTLES": 2.433333333333333,
+      "AVG CITIES": 2.533333333333333,
+      "AVG ROAD": 0.5666666666666667,
+      "AVG ARMY": 0.0,
+      "AVG DEV VP": 0.0
+    }
+  },
+  "Game Summary": {
+    "AVG TICKS": 203.36666666666667,
+    "AVG TURNS": 70.86666666666666,
+    "AVG DURATION": 2.5728607972462973
+  }
+}
+================================ Human Message =================================
+
+ANALYZER
+---
+After Running The New foo_player.py Player, Here is my analysis and findings:
+
+---
+### PERFORMANCE SUMMARY:
+- **Outcome**: FooPlayer won **20 out of 30 games** (66.67% win rate).
+- **VP**: FooPlayer:BLUE averaged **8.63 VP** vs. AlphaBetaPlayer:RED's **6.87 VP** (VP diff: **+1.76**).
+- **Key Counts**:
+  - Settlements: 2.43 (FooPlayer) vs. 2.53 (Opponent).
+  - Cities: 2.53 (FooPlayer) vs. 1.73 (Opponent).
+  - Roads: 0.57 (FooPlayer) vs. 0.43 (Opponent).
+  - Development Cards: 0.0 (FooPlayer) vs. 0.0 (Opponent).
+  - Total Turns: 70.87.
+
+---
+### VERDICT:
+- **Good**: FooPlayer achieved a **positive VP difference of +1.76** and won the majority of games.
+
+---
+### STRENGTHS:
+1. **City Dominance**: FooPlayer excels at building cities (2.53 vs. 1.73), directly contributing to higher VP.
+2. **Phase-Aware Strategy**: The heuristic and rollout logic adapt to early/mid/late game phases, prioritizing cities and settlements appropriately.
+3. **Robust Action Sampling**: The prefiltering logic ensures high-impact actions (e.g., `build_city`, `build_settlement`) are prioritized.
+4. **Rollout Estimation**: The 2-ply rollout provides a short-term strategic advantage, as seen in the VP lead.
+
+---
+### LIKELY REASONS FOR SUBOPTIMAL PERFORMANCE:
+1. **Settlement Deficit**: FooPlayer builds slightly fewer settlements (2.43 vs. 2.53), which may limit early-game expansion and resource diversity.
+   - **Code Citation**: The heuristic prioritizes cities over settlements in mid/late game (Lines 200–210, `foo_player.py`).
+   - **Log Corroboration**: No explicit log lines indicate aggressive settlement placement in early game.
+
+2. **Road Neglect**: Roads are built at a similar rate to the opponent (0.57 vs. 0.43), which may limit long-term expansion and connectivity.
+   - **Code Citation**: Road-building actions are scored lower in `cheap_pre_score` (Line 120, `foo_player.py`).
+
+3. **Development Card Underutilization**: Despite a slight edge in development cards (0.0 vs. 0.0), FooPlayer does not actively prioritize or leverage them.
+   - **Code Citation**: No specialized logic for development card actions in `cheap_pre_score` or rollout.
+
+4. **Robber/Knight Actions**: No evidence of strategic robber placement or knight usage, which could disrupt the opponent's resource flow.
+   - **Log Corroboration**: No log lines indicate robber/knight actions.
+
+---
+### STRATEGIC FLAW:
+FooPlayer's heuristic and rollout logic prioritize cities and immediate VP gains but neglect early-game expansion (settlements/roads) and disruptive actions (robber/knights), limiting long-term dominance.
+
+---
+### NEXT STEP:
+Send to Coder to **enhance the heuristic to prioritize settlements and roads early-game** and **add logic for strategic robber/knight usage**.
+
+---
+Let me know if you need anything else.
+END ANALYZER
+
+--- Output from META at 20250925_075026 ---
+================================== Ai Message ==================================
+Tool Calls:
+  think_tool (call_5A7GSyS0kgF1Hx2sHjUm9PuA)
+ Call ID: call_5A7GSyS0kgF1Hx2sHjUm9PuA
+  Args:
+    reflection: Findings: FooPlayer now wins 20/30 and has positive VP diff +1.76. Remaining weaknesses: slightly fewer settlements (2.43 vs 2.53), modest road building, little dev-card usage, and few robber/knight plays. Likely cause: heuristic still slightly favors city upgrades and immediate VP; rollout biases not sufficiently aggressive early-game expansion; robber/knight evaluation not strong enough to compete for disruption. Plan: Make precise, implementable changes: (1) strengthen early-game multipliers more for settlements & roads; detect resource diversity and reward settlement actions that add new resource types; add a direct check to force at least one settlement/road candidate present in early turns; (2) add explicit dev-card buy logic and cheap_pre_score boost when buying aligns with resource state and when no urgent city/settlement available; (3) expand robber/knight evaluation to (a) compute opponent production loss when targeting a hex and (b) include steal expected value and army progression; ensure knight plays considered when they produce significant disruption or contribute to largest army; (4) tweak rollout to favor settlement actions in early rollout steps and to prefer road actions that connect to potential settlement sites; (5) small tuning and safety: better tie-breaking, adjustable constants, budget safeguards, minimal logging. Risks: adapter attribute mismatches — maintain try/except. Next step: instruct CODER with concrete function-level changes, constants, and algorithmic details to implement.
+================================= Tool Message =================================
+Name: think_tool
+
+Reflection recorded: Findings: FooPlayer now wins 20/30 and has positive VP diff +1.76. Remaining weaknesses: slightly fewer settlements (2.43 vs 2.53), modest road building, little dev-card usage, and few robber/knight plays. Likely cause: heuristic still slightly favors city upgrades and immediate VP; rollout biases not sufficiently aggressive early-game expansion; robber/knight evaluation not strong enough to compete for disruption. Plan: Make precise, implementable changes: (1) strengthen early-game multipliers more for settlements & roads; detect resource diversity and reward settlement actions that add new resource types; add a direct check to force at least one settlement/road candidate present in early turns; (2) add explicit dev-card buy logic and cheap_pre_score boost when buying aligns with resource state and when no urgent city/settlement available; (3) expand robber/knight evaluation to (a) compute opponent production loss when targeting a hex and (b) include steal expected value and army progression; ensure knight plays considered when they produce significant disruption or contribute to largest army; (4) tweak rollout to favor settlement actions in early rollout steps and to prefer road actions that connect to potential settlement sites; (5) small tuning and safety: better tie-breaking, adjustable constants, budget safeguards, minimal logging. Risks: adapter attribute mismatches — maintain try/except. Next step: instruct CODER with concrete function-level changes, constants, and algorithmic details to implement. 
+================================== Ai Message ==================================
+
+- META THOUGHTS: think_tool confirms progress and identifies remaining weaknesses: insufficient early expansion (settlements/roads), underinvestment in development cards, and weak robber/knight exploitation. We should make targeted, low-risk changes: stronger early-game multipliers favoring settlement/road, explicit dev-card buy logic when appropriate, more accurate robber/knight valuation (production loss + expected steal + army progress), and make rollout explicitly prefer expansion in the first rollout step. Keep simulation budget and adapter-fallbacks intact.
+
+- META GOAL: Modify foo_player.py to (1) more strongly prefer settlements and roads in early game, (2) add dev-card buy prioritization when beneficial, (3) improve robber/knight evaluation to capture disruption and steals, and (4) bias rollout to expansion early — while preserving performance safeguards and adapter fallback logic.
+
+- CHOSEN AGENT: CODER
+
+- AGENT OBJECTIVE:
+Implement the following precise changes inside foo_player.py. Keep all adapter calls wrapped in try/except and keep DEBUG default False.
+
+1) Stronger early-game multipliers & forced inclusion
+   - Change constants:
+       EARLY_SETTLEMENT_MULT = 2.0 (was 1.6)
+       EARLY_ROAD_MULT = 1.8 (was 1.4)
+       EARLY_CITY_MULT = 0.8
+       EARLY_DEV_MULT = 1.2
+   - In prefilter_actions, add logic:
+       - If is_early_game(game, player_color) is True:
+           * Ensure at least one BUILD_SETTLEMENT and one BUILD_ROAD action (if present in playable_actions) are included among candidates before sampling — i.e., scan playable_actions and, if found, add them to must_include set even if their cheap_pre_score is low.
+           * If no settlement or road action present, no-op (do not add missing actions).
+
+2) Settlement potential reward for new resource types
+   - In settlement_potential(action, game, color), compute:
+       - adjacent_resources = set(types of resources on hexes adjacent to the settlement vertex proposed by action)
+       - player_resources_owned_types = set(resource types adjacent to the player's existing settlements/cities)
+       - new_types = adjacent_resources - player_resources_owned_types
+       - reward = len(new_types) * 12.0 + sum(die_probabilities[number] for adjacent numbers) * 8.0
+   - Add this settlement_potential to cheap_pre_score for BUILD_SETTLEMENT actions, multiplied by EARLY_SETTLEMENT_MULT when early.
+
+3) Road connection increase for expansion
+   - road_connection_potential(action, game, color) should:
+       - Reward if the road connects from an existing player's node toward an open vertex (best-effort adjacency check).
+       - If exact adjacency unknown, use heuristic: if road action's string/index references an edge adjacent to any player settlement vertex, reward +6; if it references an edge that is not adjacent to any player structure, reward +3.
+   - Multiply by EARLY_ROAD_MULT when early.
+
+4) Development card prioritization
+   - Add function should_buy_dev_card(action, game, color):
+       - If action indicates BUY_DEV_CARD or similar:
+           * If player has at least (ORE>=1 and WHEAT>=1 and another resource) or if not enough immediate high-value build options exist, return True.
+           * If early_game: give a modest bonus (early devs can be good) but only when not blocking settlement creation.
+       - cheap_pre_score should add base +25 to BUY_DEV_CARD when should_buy_dev_card returns True; multiply by EARLY_DEV_MULT if early.
+
+5) Enhanced robber/knight evaluation
+   - evaluate_robber_action(action, game, color):
+       - Try to identify target_hex_id from action (safe parsing).
+       - For each opponent:
+           * Compute opponent_production = sum(probabilities of hex numbers adjacent to their settlements/cities, weighting cities double).
+           * If target_hex is adjacent to opponent's structures, compute production_loss = die_prob[target_hex_number] * (1 for settlement / 2 for city) summed across opponent structures affected.
+       - steal_expected_value: if steal likely (detectable in action/branch), estimate expected resource value = sum(resource_value_map[r] * probability_of_steal_resource_of_type_r).
+           * Use resource_value_map: {ore:3, wheat:3, brick:2, lumber:2, sheep:2}
+       - robber_score = ROBBER_BASE_SCORE + sum(production_loss across opponents)*30 + steal_expected_value*10
+       - Return robber_score (scale as needed).
+   - evaluate_play_knight(action, game, color):
+       - Similar to robber but include army_progress: if player.army_count exists, compute if this play will move toward largest army threshold (e.g., award +20 if it creates or increases chance).
+       - Combine with production loss and steal estimates.
+
+6) Rollout bias adjustment
+   - In rollout_value, at the first rollout step (depth == initial_rollout_depth), if is_early_game True:
+       - When selecting best action in greedy rollout, apply additional weight: settlement_bonus_for_rollout = 1.5, road_bonus_for_rollout = 1.3 to cheap_pre_score when ranking actions to choose for the rollout.
+   - For deeper steps, use normal cheap_pre_score.
+
+7) Tuning & tie-breaking
+   - When selecting the final action, prefer actions that improve resource diversity and production in event of score ties (use settlement_potential and production terms). If still tied, random.choice.
+
+8) Safety & performance
+   - Keep MAX_SIMULATIONS = 24 and SIMULATION_BUDGET = 60. If adding the new computations increases CPU, reduce per-action branch limit appropriately.
+   - Ensure any failure in parsing action details (target hex, adjacent vertices) returns neutral small score rather than exception.
+
+9) Logging
+   - When DEBUG True, print:
+       - Early-game forced includes found: yes/no, list them.
+       - For chosen action if it's BUY_DEV_CARD, MOVE_ROBBER, or PLAY_KNIGHT, print reason: e.g., "Chosen ROBBER -> expected opponent production loss X, steal_ev Y".
+       - Top 3 candidates with expected values.
+
+10) Minimal code changes pointers for CODER
+   - Update constants at top.
+   - Modify prefilter_actions to add force include logic when early_game.
+   - Update cheap_pre_score to call settlement_potential and road_connection_potential and to use new multipliers.
+   - Add should_buy_dev_card and incorporate into cheap_pre_score.
+   - Implement evaluate_robber_action and evaluate_play_knight and ensure they're invoked in cheap_pre_score or during evaluate_action_expectation to boost candidate scores for robber/knight moves.
+   - Modify rollout_value to bias first step in early_game.
+   - Ensure all functions robustly handle missing attributes and use adapters to read game/player state where possible.
+
+If you implement these changes, run the next experiment. If there are attribute errors or adapter mismatches, capture the full traceback and we'll call RESEARCHER for exact adapter signatures or attribute paths.
+

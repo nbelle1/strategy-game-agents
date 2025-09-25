@@ -1,0 +1,2112 @@
+--- Input for CODER at 20250925_074621 ---
+================================ Human Message =================================
+
+- META THOUGHTS: Analyzer confirms the root cause: foo_player selects the first playable action with no evaluation or planning. To improve performance we must implement a 1-ply lookahead that simulates each legal action on a copied game state and scores resulting states with adapters.make_value_fn if available, otherwise use a robust heuristic combining VPs, settlements, cities, resources, and production potential. Add logging, tie-breaking, and safe fallbacks if adapters functions differ or throw. If code raises import/syntax errors during the next run, call RESEARCHER to fix adapter references. 
+- META GOAL: Replace the current action selection with a 1-ply simulation and state-evaluation pipeline so FooPlayer picks actions by estimated value rather than position in the action list, aiming to increase average VP and start winning some games.
+- CHOSEN AGENT: CODER
+- AGENT OBJECTIVE: Implement the following changes to foo_player.py:
+
+1) Replace the naive "return playable_actions[0]" behavior with a 1-ply lookahead evaluator:
+   - For each action in playable_actions:
+     - Create a copy of the current game using adapters.copy_game (use try/except to handle missing API; if not available, attempt a shallow copy approach or skip simulation).
+     - Apply the candidate action to the copied game state. Use the common adapters pattern (e.g., adapters.simulate_action or copying then calling game.apply_action). Because exact adapter function names may vary, implement a try/except sequence:
+       a) Try: adapters.copy_game(game); then call copied_game.do_action(action) or copied_game.apply_action(action) inside try/except.
+       b) If direct call fails, try adapters.apply_action(copy, action), adapters.play_action(copy, action), or simulate the action by setting up expected attributes. Catch exceptions and, on failure, skip simulation for that action (or assign a conservative low score).
+   - Evaluate the resulting state:
+     - Prefer using adapters.make_value_fn if available:
+         try: vf = adapters.make_value_fn(game=current_copied_game, ...) or adapters.make_value_fn(); score = vf(copied_game)
+         Fallback: compute heuristic_score(copied_game, player_index) using:
+           * Weighted sum: VP * 100 + settlements*20 + cities*50 + roads*5 + army*10.
+           * Add small resource potential term: sum(resource_counts) * 1.
+           * Optionally include expected production: for each hex owned by player's settlements/cities, add weight proportional to hex probability (use hardcoded die probabilities for numbers 2-12).
+   - Select the action with the highest score. Break ties randomly (use random.choice over tied best actions).
+
+2) Implementation details and functions to add:
+   - evaluate_action(game, action, player_index) -> float
+       * Performs copy, apply, evaluate, and returns a numeric score. Catches exceptions and returns -inf or a very low number on failure to ensure it's not chosen.
+   - heuristic_value(game, player_index) -> float
+       * Extract player's VP, settlements, cities, roads, resources, and compute weighted sum.
+   - robust_copy_and_apply(game, action) -> copied_game or None
+       * Encapsulates trying different adapter/application methods with informative debug logging to help diagnose failures.
+   - Use adapters.* calls within try/except; do not import catanatron internal modules directly.
+
+3) Logging and debugging:
+   - Add debug prints (or use existing logging in project) showing chosen action, scores of top candidate actions, and fallbacks used. Keep logs concise to avoid flooding.
+
+4) Safety and fallbacks:
+   - If no playable_actions, return None or the provided pass action.
+   - If simulations fail for all actions, default to original behavior (first action) to avoid stalling.
+   - Ensure code imports adapters at top and catches ImportError with a clear fallback.
+
+5) Testing/Instrumenting:
+   - Ensure code runs without syntax errors.
+   - Keep code self-contained — do not call the game runner. The test harness will run the game.
+
+6) Performance considerations:
+   - Limit simulation overhead: if playable_actions is large, cap simulations to top N actions sampled randomly or heuristically (e.g., N=12).
+   - Make evaluation fast: avoid deep copies beyond what's needed.
+
+Please implement these modifications in foo_player.py. Provide clear comments for areas where adapter function names may need adjusting based on the environment. If the next run raises attribute or import errors regarding adapters.copy_game or action application, I will call RESEARCHER to get precise adapter usage.
+================================== Ai Message ==================================
+
+CODER
+
+- Rewrote foo_player.py to implement a 1-ply lookahead using only the adapters API.
+- Key changes made:
+  - Added imports from .adapters (Game, Player, Color, execute_deterministic, execute_spectrum, base_fn).
+  - Implemented FooPlayer that caches adapters.base_fn() if available; falls back to a heuristic evaluator.
+  - Added helper functions:
+    - _get_player_color: robust retrieval of player's color attribute.
+    - _heuristic_value: fallback heuristic scoring based on VP, settlements, cities, roads, resources.
+    - _evaluate_game_state: uses cached value function or heuristic to score a Game for a Color.
+    - _evaluate_action_expectation: expands an action using adapters.execute_deterministic or execute_spectrum and computes expected score.
+  - Updated decide to:
+    - Convert playable_actions to a list, handle empty lists.
+    - Sample actions if the action space is large (cap 16).
+    - Evaluate each candidate action's expected value and choose the best (break ties randomly).
+    - Provide debug print statements for tracing decisions and fallback usage.
+- Debugging / logging:
+  - Multiple print statements added to aid diagnosis (value_fn availability, execution fallbacks, per-action scores, chosen action).
+- Performance safeguards:
+  - Limits simulations to MAX_SIMULATIONS=16 when the candidate list is large.
+  - Returns first playable action if all evaluations fail.
+
+Notes / Questions for next iteration:
+- I used adapters.execute_deterministic and adapters.execute_spectrum as provided. If the environment uses different adapter names for applying/validating actions, provide the exact adapter signatures so I can refine error handling.
+- The heuristic inspects game.state.players or game.players and common attribute names; if the real game model uses different attribute names for player stats, please provide them so the heuristic can be more precise.
+- If you want less verbose logging, I can reduce print statements or add a debug flag.
+
+END CODER
+================================ Human Message =================================
+
+- META THOUGHTS: Analyzer shows real improvement (8 wins) but still losing on average. Root causes: 1-ply is too myopic for long-term constructs (city upgrades, road networks, robber impact) and current sampling can miss critical actions. We need targeted changes: smarter action sampling that guarantees inclusion of strategically important actions, a light multi-step lookahead (selective 2-ply or short greedy rollout) to estimate downstream value, and a richer heuristic/value function that accounts for production potential, city upgrade distance, and disruptive moves (robber/knight/dev cards). Keep fallbacks robust and keep runtime bounded.
+- META GOAL: Improve foo_player.py so it reliably picks high long-term-value moves by (a) always evaluating all high-impact actions, (b) using a short greedy rollout from simulated child states (depth 2-3) to estimate downstream effects, and (c) enhancing the heuristic/value function to include production potential, city upgrade progress, and robber/knight value. Keep simulations bounded (adaptive sampling + must-include list) and reduce noisy logging.
+
+- CHOSEN AGENT: CODER
+
+- AGENT OBJECTIVE:
+Implement the following concrete, backwards-compatible improvements in foo_player.py. Preserve the adapters-based approach and all previous fallbacks; add targeted enhancements and keep runtime safeguards.
+
+1) New high-level approach
+   - Keep the existing 1-ply simulation path as baseline but augment it with:
+     a) Prefilter/prioritization to always include high-impact actions in the simulation set.
+     b) For each simulated child state, run a short greedy rollout (depth ROLLOUT_DEPTH, default 2 or 3) using a fast heuristic policy to approximate downstream value (select best heuristic action for the acting player at each rollout step).
+     c) Use the expected value across chance branches (execute_spectrum or execute_deterministic) for the first move and then add the rollout-estimated value to get action score.
+
+2) Action prefiltering & adaptive sampling
+   - Introduce constants:
+       MAX_SIMULATIONS = 24 (cap)
+       MUST_INCLUDE_TYPES = {'BUILD_CITY','BUILD_SETTLEMENT','BUILD_ROAD','BUY_DEV_CARD','PLAY_KNIGHT','MOVE_ROBBER','TRADE'} (handle string variants)
+       PREFILTER_TOP_K = 8 (after must-includes, pick top K by cheap pre-score)
+       ROLLOUT_DEPTH = 2 (default; allow tuning)
+   - Implement prefilter_actions(playable_actions, game, player_index):
+       a) Compute a cheap pre-score for every action without copying (cheap_pre_score):
+           - Score +100 for any action that directly increases VP (BUILD_CITY, BUILD_SETTLEMENT).
+           - Score +60 for BUY_DEV_CARD.
+           - Score +40 for BUILD_ROAD if it extends existing roads or connects to potential settlement sites (best effort: check if action string contains an edge index adjacent to player's settlements).
+           - Score +50 for MOVE_ROBBER or PLAY_KNIGHT.
+           - Score adjustment for trades based on resource imbalance (e.g., if lacks key city resources).
+       b) Collect must_include actions by matching action.type, action.name, or substrings of str(action) against MUST_INCLUDE_TYPES; ensure robust matching (lowercase).
+       c) Sort remaining actions by cheap_pre_score, pick top PREFILTER_TOP_K.
+       d) Return final candidate_actions list = unique(must_includes + top_prefiltered), then if len < MAX_SIMULATIONS, append random samples from remaining actions to reach min(len(all), MAX_SIMULATIONS).
+
+   - Make matching resilient: check hasattr(action,'type') and hasattr(action,'name'), else fallback to str(action).lower() contains token.
+
+3) Rollout-based downstream estimation
+   - Implement rollout_value(copied_game, player_color, depth):
+       a) For depth = 0 return evaluate_game_state(copied_game, player_color) using cached adapters.base_fn() if available else heuristic.
+       b) Otherwise, for the current game state determine playable actions for the active player (use adapters.execute_deterministic with empty action? If you already have a method to get playable_actions from the provided game object, use that; else use game.get_playable_actions or adapters.* — robust try/except).
+       c) If playable_actions empty: return evaluate_game_state.
+       d) Choose the best action according to the cheap pre-score (no copying) for that player, apply it deterministically on a shallow copy (or use execute_deterministic to resolve chance when required), then recursively call rollout_value on the new state with depth-1.
+       e) If cannot simulate an action, skip it and try the next best; if none simulate, return evaluate_game_state.
+       f) Return the evaluation value from the leaf.
+
+   - Note: We only need a quick approximate rollout — keep copies/shallow simulations fast and avoid branching across many chance nodes during rollout (use deterministic simulation selected by adapters.execute_deterministic or one representative branch from execute_spectrum).
+
+4) Enhanced heuristic / value function
+   - Update heuristic_value(game, player_color) to include:
+       a) Base terms: Victory points * 100, settlements * 25, cities * 60, roads * 6, army size * 15, dev_vp * 50.
+       b) Production potential: For each settlement/city of player, add weight proportional to hex probability:
+           - Use die_probabilities dict: {2:1/36,3:2/36,4:3/36,5:4/36,6:5/36,8:5/36,9:4/36,10:3/36,11:2/36,12:1/36}. (Ignore 7.)
+           - City adds double production weight of a settlement.
+       c) City upgrade progress: estimate resources towards next city (e.g., if player has cities < #settlements, compute required wheat+ore shortfall and subtract from score proportionally).
+       d) Resource diversity & monopoly: reward unique resource types held (diversity_count * 2) and reward higher count for scarce city-building resources (ore, wheat).
+       e) Robber impact: penalize if a player's best-producing hex is blocked by robber (detect occupant if possible).
+   - Keep using adapters.make_value_fn() if available — prefer it. If using both, combine by weighted average: 0.8*value_fn + 0.2*heuristic for stability.
+
+5) Robber/knight specific evaluation
+   - When prefilter identifies a MOVE_ROBBER or PLAY_KNIGHT action, expand expected value taking into account:
+       a) Which opponent hex is targeted — prefer hexes that reduce opponent production score most (compute opponent production loss using die_prob).
+       b) If steal is possible, add estimated expected stolen resource value (map resources to build-weights).
+   - Ensure robber moves are always included in candidate_actions (must_include).
+
+6) Improve evaluate_action_expectation
+   - For each candidate action:
+       a) Use adapters.execute_spectrum(action, game) if it exists to get (prob, resulting_state) branches; else use adapters.execute_deterministic or try to copy/apply.
+       b) For each branch, compute branch_value = evaluate_game_state(branch_state, player_color) for immediate scoring, plus rollout_value(branch_state, player_color, ROLLOUT_DEPTH-1) if doing rollouts — sum or average appropriately.
+       c) Expected_value = sum(prob * branch_value).
+   - If execute_spectrum unavailable, fallback to deterministic path and an approximate exploration of chance: e.g., run single deterministic simulation then adjust with small variance term.
+
+7) Sampling & performance safeguards
+   - Limit total simulated branches across actions to a budget: SIMULATION_BUDGET = 60 (approx). If candidate action count * avg_branches exceeds budget, reduce ROLLOUT_DEPTH dynamically or cap per-action branches to budget / num_actions.
+   - Avoid deep copying the whole game more than necessary; reuse copy methods provided by adapters.
+
+8) Robustness & adapter compatibility
+   - Keep the existing try/except cascade for calling adapters.copy_game, game.apply_action / do_action, adapters.execute_deterministic, adapters.execute_spectrum, adapters.make_value_fn.
+   - When checking action types, handle multiple naming conventions gracefully.
+   - Add a single global DEBUG flag to control printing; default to False to reduce log noise.
+
+9) Logging & instrumentation
+   - Replace many prints with debug_print(...) that checks DEBUG flag.
+   - Log: chosen action, top 3 candidate actions with their expected scores, any fallback used (e.g., no execute_spectrum), and if sampling was used. Keep logs concise.
+
+10) Fallbacks and safe returns
+   - If all evaluations fail or candidate list empty, return the original behavior (first playable_action) to avoid stalling.
+   - Ensure none of the new helpers raise uncaught exceptions — wrap top-level decide() body in try/except and fallback gracefully.
+
+11) Tests / debug hooks (for future RESEARCHER use)
+   - Add small helper to emit a summary of why an action was included (must_include reason or pre-score) when DEBUG True.
+   - If you encounter adapter attribute errors in the next run, include the exception trace in logs and we will call RESEARCHER to map exact adapter function names.
+
+Deliverable specifics:
+   - Modify foo_player.py to add these functions: prefilter_actions, cheap_pre_score, rollout_value, evaluate_action_expectation (enhanced), enhanced heuristic_value, debug_print, and constants at top.
+   - Keep existing code structure but replace the sampling + evaluation block with the new pipeline.
+   - Maintain use of adapters and never import catanatron internals directly.
+
+If you implement this, run the next experiment. If runtime errors about adapter names or member access occur, stop and report the exact AttributeError/Traceback so I can call RESEARCHER to get precise adapter signatures.
+================================== Ai Message ==================================
+
+CODER
+
+- What I changed (high level)
+  - Replaced the original simple first-action behavior with an enhanced decision pipeline that:
+    - Prefilters the playable actions to ensure high-impact actions are always considered.
+    - Uses adapters.execute_spectrum / adapters.execute_deterministic to expand chance outcomes for each candidate action.
+    - Evaluates each outcome using adapters.base_fn() when available, otherwise a richer fallback heuristic.
+    - Runs a short greedy rollout (depth-limited) from each outcome to estimate downstream value.
+    - Selects the action with highest expected score and breaks ties randomly.
+  - All interactions with the game use functions exported from .adapters (per requirement).
+
+- Files changed
+  - Overwrote foo_player.py with the new implementation.
+
+- New functions and helpers added to foo_player.py
+  - debug_print(*args)
+    - Single place to gate debug prints via DEBUG flag (default False).
+  - _safe_action_name(action)
+    - Robust conversion of an action to a lowercase string for token matching.
+  - _heuristic_value(game, color)
+    - Replaced / enhanced heuristic that now includes:
+      - VP, settlements, cities, roads, dev VP, resources and resource diversity.
+      - Production potential estimated from adjacent hex roll numbers (best-effort, uses die probabilities).
+      - City-upgrade progress proxy via wheat & ore counts.
+      - Tuned weightings so the heuristic prefers production and VP.
+  - _evaluate_game_state(game, color)
+    - Uses adapters.base_fn() when available and blends it with the heuristic (0.85*value_fn + 0.15*heuristic).
+    - Falls back to heuristic if base_fn raises.
+  - cheap_pre_score(action, game, color)
+    - Fast, cheap scoring used to prioritize which actions should be simulated.
+  - prefilter_actions(actions, game, color)
+    - Builds bounded candidate list to simulate:
+      - Always includes must-include tokens (e.g., build_city, move_robber).
+      - Picks top PREFILTER_TOP_K by cheap_pre_score.
+      - Fills up to MAX_SIMULATIONS with random samples to preserve diversity.
+  - get_playable_actions_from_game(game)
+    - Best-effort extraction of playable actions via adapters.list_prunned_actions or common game fields.
+  - rollout_value(game, color, depth)
+    - Short greedy rollout (selects the best cheap_pre_score action at each step) to estimate downstream value.
+    - Uses deterministic branch (or most probable branch from spectrum) and recurses depth-1.
+  - _evaluate_action_expectation(game, action, per_action_branch_limit=8)
+    - Enhanced expectation calculator:
+      - Tries execute_spectrum first, falls back to execute_deterministic.
+      - Limits per-action branch expansion to keep runtime bounded.
+      - For each branch: compute blended branch value = 0.6*immediate_eval + 0.4*rollout_estimate.
+      - Returns normalized expected value.
+  - decide(game, playable_actions)
+    - Orchestrates prefiltering, budget allocation (SIMULATION_BUDGET), per-action evaluation, and selection with tie-breaking.
+
+- Constants and tunables added
+  - MAX_SIMULATIONS = 24
+  - PREFILTER_TOP_K = 8
+  - ROLLOUT_DEPTH = 2
+  - SIMULATION_BUDGET = 60
+  - MUST_INCLUDE_TOKENS set to prioritize high-impact action types
+  - DEBUG flag (default False) to control logging verbosity
+
+- Logging / prints added
+  - Mainly guarded by debug_print (uses DEBUG flag). Default logging remains quiet.
+  - One protected fallback print remains in the top-level exception in decide() to ensure errors are visible (this will not flood when DEBUG is False).
+  - When DEBUG=True, the player prints:
+    - Whether adapters.base_fn() was successfully used.
+    - Prefilter selection summary.
+    - Evaluation results per action and top candidates.
+    - Any fallbacks used (execute_spectrum->execute_deterministic, value_fn failures, etc).
+
+- Safety / fallbacks implemented
+  - Robust try/except around adapters calls:
+    - execute_spectrum and execute_deterministic both tried and failure returns -inf for that action (so it is unlikely to be chosen).
+  - If no playable_actions: return None.
+  - If all simulations/evaluations fail, fallback to the first playable action to avoid stalling.
+  - Decision pipeline wrapped in try/except to ensure a sensible fallback if unexpected exceptions occur.
+
+- Performance considerations
+  - Candidate actions limited via prefilter to MAX_SIMULATIONS.
+  - Branch expansion per action limited by per_action_branch_limit computed from SIMULATION_BUDGET.
+  - Rollout depth set small (default 2) for speed; rollout picks only up to 4 top actions at each step to avoid branching blowup.
+  - cheap_pre_score and prefilter are deliberately lightweight (no copying).
+
+- Debugging aids / notes for the next iteration
+  - The production estimation and location lookup are best-effort guesses: code inspects game.state.board.hexes and player settlement/city lists (settle_locations, city_locations). If your real game model uses different field names or structures for board/hexes/vertex adjacency, the production term may be inaccurate.
+  - The MUST_INCLUDE_TOKENS matching is string-based and intended to be tolerant. If the game's Action objects include ActionType enums (e.g., ActionType.BUILD_CITY), the _safe_action_name should capture .name but confirm the exact naming used by the adapters Action type in your environment.
+  - The blend weights between immediate evaluation and rollout (0.6/0.4) and between base_fn/heuristic (0.85/0.15) are heuristic and can be tuned.
+  - The DEBUG flag is off by default; set FooPlayer.DEBUG = True within tests if you want verbose logs to diagnose decisions.
+
+- Things I am unsure about / that may need RESEARCHER help next run
+  - Exact structure of player_state and board/hex adjacency in the concrete Game implementation:
+    - The code attempts to find settlement/city location lists under many common names (settlements, settle_locations, city_locations). If those attributes are named differently, production and upgrade-progression heuristics will be weakened.
+  - Action naming conventions:
+    - If the Action object exposes action_type via a different attribute name or the string repr differs significantly, must-include matching may miss some actions. If you get AttributeError or strange behavior referencing action.action_type, provide the exact Action class fields.
+  - If adapters exposes additional or different helper functions for enumerating playable actions (e.g., another exported list function), let me know and I will prefer it.
+
+- Suggested next objectives (for future iterations)
+  - Tune heuristic weights and rollout blending using small hyperparameter search (e.g., adjust production weight & city rewards).
+  - Implement smarter robber evaluation: evaluate target hex impact on opponent production and expected stolen resources to score robber moves more accurately.
+  - Add a selective 2-ply search for build_city/build_settlement actions where the second ply considers a short opponent response or a self-progression move.
+  - Add specialized logic for trading and dev-card purchases (when model shows underinvestment in dev cards).
+  - If desired, expose DEBUG via environment variable or player constructor argument.
+
+- Changes summary (concise bullets)
+  - Created new helper functions: debug_print, _safe_action_name, cheap_pre_score, prefilter_actions, get_playable_actions_from_game, rollout_value, and enhanced _evaluate_action_expectation.
+  - Replaced naive decide logic with prefilter -> evaluate (spectrum/deterministic) -> rollout -> choose best.
+  - Added improved heuristic and blending with adapters.base_fn() when present.
+  - Added guarded debug logging; default is quiet.
+
+If you run the next experiment and see AttributeError or missing adapter names (for example, execute_spectrum, list_prunned_actions, base_fn, etc.), please paste the exact traceback and I will request RESEARCHER to map the exact adapter function names or update the code to match the environment.
+
+END CODER
+================================ Human Message =================================
+
+ANALYZER
+---
+After Running The New foo_player.py Player, Here is my analysis and findings:
+
+### PERFORMANCE SUMMARY:
+- **Outcome**: FooPlayer won **8 out of 30 games** (26.67% win rate).
+- **VP**: FooPlayer:BLUE averaged **7.07 VP** vs. AlphaBetaPlayer:RED's **8.53 VP** (VP diff: **-1.46**).
+- **Key Counts**:
+  - Settlements: 2.67 (FooPlayer) vs. 2.13 (Opponent).
+  - Cities: 1.87 (FooPlayer) vs. 2.47 (Opponent).
+  - Roads: 0.27 (FooPlayer) vs. 0.73 (Opponent).
+  - Development Cards: 0.0 (FooPlayer) vs. 0.0 (Opponent).
+  - Total Turns: 66.73.
+
+### VERDICT:
+- **Borderline**: FooPlayer's VP difference of **-1.46** is below the acceptable threshold.
+
+### LIKELY REASONS:
+1. **Shallow Lookahead**: The 1-ply lookahead is insufficient to capture long-term strategic benefits (e.g., road networks, city placement).
+   - **Code Citation**: `execute_deterministic` and `execute_spectrum` are used, but only for immediate outcomes (Lines 100–120, `foo_player.py`).
+   - **Log Corroboration**: Actions like `BUILD_ROAD` and `BUILD_CITY` are evaluated but lack long-term prioritization.
+
+2. **Simplistic Heuristic**: The heuristic focuses on immediate VP, settlements, and resources but lacks nuance for disruptive actions (e.g., robber placement, development cards).
+   - **Code Citation**: Heuristic weights are hardcoded (Line 70–80, `foo_player.py`).
+   - **Log Corroboration**: No evidence of prioritizing robber/knight actions or development cards.
+
+3. **Action Sampling Limitation**: The player samples only 16 actions when the action space is large, potentially missing high-value actions.
+   - **Code Citation**: `MAX_SIMULATIONS = 16` (Line 140, `foo_player.py`).
+   - **Log Corroboration**: "Large action space (27), sampling 16 actions" appears frequently in `game_output.txt`.
+
+4. **No Specialized Logic for Key Actions**: The player does not prioritize critical actions like robber placement, knight usage, or development card purchases.
+   - **Log Corroboration**: No log lines indicate strategic use of these actions.
+
+### STRATEGIC FLAW:
+The player's 1-ply lookahead and simplistic heuristic fail to capture long-term strategic value, such as road networks, resource monopolies, or disruptive actions like robber placement and development card purchases.
+
+### NEXT STEP:
+Send to Coder to **enhance the heuristic** to include long-term strategic considerations and **improve action sampling** to ensure high-value actions are not missed.
+
+---
+Let me know if you need anything else.
+END ANALYZER
+================================== Ai Message ==================================
+
+- META THOUGHTS: Analyzer shows real improvement (8 wins) but still losing on average. Root causes: 1-ply is too myopic for long-term constructs (city upgrades, road networks, robber impact) and current sampling can miss critical actions. We need targeted changes: smarter action sampling that guarantees inclusion of strategically important actions, a light multi-step lookahead (selective 2-ply or short greedy rollout) to estimate downstream value, and a richer heuristic/value function that accounts for production potential, city upgrade distance, and disruptive moves (robber/knight/dev cards). Keep fallbacks robust and keep runtime bounded.
+- META GOAL: Improve foo_player.py so it reliably picks high long-term-value moves by (a) always evaluating all high-impact actions, (b) using a short greedy rollout from simulated child states (depth 2-3) to estimate downstream effects, and (c) enhancing the heuristic/value function to include production potential, city upgrade progress, and robber/knight value. Keep simulations bounded (adaptive sampling + must-include list) and reduce noisy logging.
+
+- CHOSEN AGENT: CODER
+
+- AGENT OBJECTIVE:
+Implement the following concrete, backwards-compatible improvements in foo_player.py. Preserve the adapters-based approach and all previous fallbacks; add targeted enhancements and keep runtime safeguards.
+
+1) New high-level approach
+   - Keep the existing 1-ply simulation path as baseline but augment it with:
+     a) Prefilter/prioritization to always include high-impact actions in the simulation set.
+     b) For each simulated child state, run a short greedy rollout (depth ROLLOUT_DEPTH, default 2 or 3) using a fast heuristic policy to approximate downstream value (select best heuristic action for the acting player at each rollout step).
+     c) Use the expected value across chance branches (execute_spectrum or execute_deterministic) for the first move and then add the rollout-estimated value to get action score.
+
+2) Action prefiltering & adaptive sampling
+   - Introduce constants:
+       MAX_SIMULATIONS = 24 (cap)
+       MUST_INCLUDE_TYPES = {'BUILD_CITY','BUILD_SETTLEMENT','BUILD_ROAD','BUY_DEV_CARD','PLAY_KNIGHT','MOVE_ROBBER','TRADE'} (handle string variants)
+       PREFILTER_TOP_K = 8 (after must-includes, pick top K by cheap pre-score)
+       ROLLOUT_DEPTH = 2 (default; allow tuning)
+   - Implement prefilter_actions(playable_actions, game, player_index):
+       a) Compute a cheap pre-score for every action without copying (cheap_pre_score):
+           - Score +100 for any action that directly increases VP (BUILD_CITY, BUILD_SETTLEMENT).
+           - Score +60 for BUY_DEV_CARD.
+           - Score +40 for BUILD_ROAD if it extends existing roads or connects to potential settlement sites (best effort: check if action string contains an edge index adjacent to player's settlements).
+           - Score +50 for MOVE_ROBBER or PLAY_KNIGHT.
+           - Score adjustment for trades based on resource imbalance (e.g., if lacks key city resources).
+       b) Collect must_include actions by matching action.type, action.name, or substrings of str(action) against MUST_INCLUDE_TYPES; ensure robust matching (lowercase).
+       c) Sort remaining actions by cheap_pre_score, pick top PREFILTER_TOP_K.
+       d) Return final candidate_actions list = unique(must_includes + top_prefiltered), then if len < MAX_SIMULATIONS, append random samples from remaining actions to reach min(len(all), MAX_SIMULATIONS).
+
+   - Make matching resilient: check hasattr(action,'type') and hasattr(action,'name'), else fallback to str(action).lower() contains token.
+
+3) Rollout-based downstream estimation
+   - Implement rollout_value(copied_game, player_color, depth):
+       a) For depth = 0 return evaluate_game_state(copied_game, player_color) using cached adapters.base_fn() if available else heuristic.
+       b) Otherwise, for the current game state determine playable actions for the active player (use adapters.execute_deterministic with empty action? If you already have a method to get playable_actions from the provided game object, use that; else use game.get_playable_actions or adapters.* — robust try/except).
+       c) If playable_actions empty: return evaluate_game_state.
+       d) Choose the best action according to the cheap pre-score (no copying) for that player, apply it deterministically on a shallow copy (or use execute_deterministic to resolve chance when required), then recursively call rollout_value on the new state with depth-1.
+       e) If cannot simulate an action, skip it and try the next best; if none simulate, return evaluate_game_state.
+       f) Return the evaluation value from the leaf.
+
+   - Note: We only need a quick approximate rollout — keep copies/shallow simulations fast and avoid branching across many chance nodes during rollout (use deterministic simulation selected by adapters.execute_deterministic or one representative branch from execute_spectrum).
+
+4) Enhanced heuristic / value function
+   - Update heuristic_value(game, player_color) to include:
+       a) Base terms: Victory points * 100, settlements * 25, cities * 60, roads * 6, army size * 15, dev_vp * 50.
+       b) Production potential: For each settlement/city of player, add weight proportional to hex probability:
+           - Use die_probabilities dict: {2:1/36,3:2/36,4:3/36,5:4/36,6:5/36,8:5/36,9:4/36,10:3/36,11:2/36,12:1/36}. (Ignore 7.)
+           - City adds double production weight of a settlement.
+       c) City upgrade progress: estimate resources towards next city (e.g., if player has cities < #settlements, compute required wheat+ore shortfall and subtract from score proportionally).
+       d) Resource diversity & monopoly: reward unique resource types held (diversity_count * 2) and reward higher count for scarce city-building resources (ore, wheat).
+       e) Robber impact: penalize if a player's best-producing hex is blocked by robber (detect occupant if possible).
+   - Keep using adapters.make_value_fn() if available — prefer it. If using both, combine by weighted average: 0.8*value_fn + 0.2*heuristic for stability.
+
+5) Robber/knight specific evaluation
+   - When prefilter identifies a MOVE_ROBBER or PLAY_KNIGHT action, expand expected value taking into account:
+       a) Which opponent hex is targeted — prefer hexes that reduce opponent production score most (compute opponent production loss using die_prob).
+       b) If steal is possible, add estimated expected stolen resource value (map resources to build-weights).
+   - Ensure robber moves are always included in candidate_actions (must_include).
+
+6) Improve evaluate_action_expectation
+   - For each candidate action:
+       a) Use adapters.execute_spectrum(action, game) if it exists to get (prob, resulting_state) branches; else use adapters.execute_deterministic or try to copy/apply.
+       b) For each branch, compute branch_value = evaluate_game_state(branch_state, player_color) for immediate scoring, plus rollout_value(branch_state, player_color, ROLLOUT_DEPTH-1) if doing rollouts — sum or average appropriately.
+       c) Expected_value = sum(prob * branch_value).
+   - If execute_spectrum unavailable, fallback to deterministic path and an approximate exploration of chance: e.g., run single deterministic simulation then adjust with small variance term.
+
+7) Sampling & performance safeguards
+   - Limit total simulated branches across actions to a budget: SIMULATION_BUDGET = 60 (approx). If candidate action count * avg_branches exceeds budget, reduce ROLLOUT_DEPTH dynamically or cap per-action branches to budget / num_actions.
+   - Avoid deep copying the whole game more than necessary; reuse copy methods provided by adapters.
+
+8) Robustness & adapter compatibility
+   - Keep the existing try/except cascade for calling adapters.copy_game, game.apply_action / do_action, adapters.execute_deterministic, adapters.execute_spectrum, adapters.make_value_fn.
+   - When checking action types, handle multiple naming conventions gracefully.
+   - Add a single global DEBUG flag to control printing; default to False to reduce log noise.
+
+9) Logging & instrumentation
+   - Replace many prints with debug_print(...) that checks DEBUG flag.
+   - Log: chosen action, top 3 candidate actions with their expected scores, any fallback used (e.g., no execute_spectrum), and if sampling was used. Keep logs concise.
+
+10) Fallbacks and safe returns
+   - If all evaluations fail or candidate list empty, return the original behavior (first playable_action) to avoid stalling.
+   - Ensure none of the new helpers raise uncaught exceptions — wrap top-level decide() body in try/except and fallback gracefully.
+
+11) Tests / debug hooks (for future RESEARCHER use)
+   - Add small helper to emit a summary of why an action was included (must_include reason or pre-score) when DEBUG True.
+   - If you encounter adapter attribute errors in the next run, include the exception trace in logs and we will call RESEARCHER to map exact adapter function names.
+
+Deliverable specifics:
+   - Modify foo_player.py to add these functions: prefilter_actions, cheap_pre_score, rollout_value, evaluate_action_expectation (enhanced), enhanced heuristic_value, debug_print, and constants at top.
+   - Keep existing code structure but replace the sampling + evaluation block with the new pipeline.
+   - Maintain use of adapters and never import catanatron internals directly.
+
+If you implement this, run the next experiment. If runtime errors about adapter names or member access occur, stop and report the exact AttributeError/Traceback so I can call RESEARCHER to get precise adapter signatures.
+================================ Human Message =================================
+
+CODER
+
+- What I changed (high level)
+  - Replaced the original simple first-action behavior with an enhanced decision pipeline that:
+    - Prefilters the playable actions to ensure high-impact actions are always considered.
+    - Uses adapters.execute_spectrum / adapters.execute_deterministic to expand chance outcomes for each candidate action.
+    - Evaluates each outcome using adapters.base_fn() when available, otherwise a richer fallback heuristic.
+    - Runs a short greedy rollout (depth-limited) from each outcome to estimate downstream value.
+    - Selects the action with highest expected score and breaks ties randomly.
+  - All interactions with the game use functions exported from .adapters (per requirement).
+
+- Files changed
+  - Overwrote foo_player.py with the new implementation.
+
+- New functions and helpers added to foo_player.py
+  - debug_print(*args)
+    - Single place to gate debug prints via DEBUG flag (default False).
+  - _safe_action_name(action)
+    - Robust conversion of an action to a lowercase string for token matching.
+  - _heuristic_value(game, color)
+    - Replaced / enhanced heuristic that now includes:
+      - VP, settlements, cities, roads, dev VP, resources and resource diversity.
+      - Production potential estimated from adjacent hex roll numbers (best-effort, uses die probabilities).
+      - City-upgrade progress proxy via wheat & ore counts.
+      - Tuned weightings so the heuristic prefers production and VP.
+  - _evaluate_game_state(game, color)
+    - Uses adapters.base_fn() when available and blends it with the heuristic (0.85*value_fn + 0.15*heuristic).
+    - Falls back to heuristic if base_fn raises.
+  - cheap_pre_score(action, game, color)
+    - Fast, cheap scoring used to prioritize which actions should be simulated.
+  - prefilter_actions(actions, game, color)
+    - Builds bounded candidate list to simulate:
+      - Always includes must-include tokens (e.g., build_city, move_robber).
+      - Picks top PREFILTER_TOP_K by cheap_pre_score.
+      - Fills up to MAX_SIMULATIONS with random samples to preserve diversity.
+  - get_playable_actions_from_game(game)
+    - Best-effort extraction of playable actions via adapters.list_prunned_actions or common game fields.
+  - rollout_value(game, color, depth)
+    - Short greedy rollout (selects the best cheap_pre_score action at each step) to estimate downstream value.
+    - Uses deterministic branch (or most probable branch from spectrum) and recurses depth-1.
+  - _evaluate_action_expectation(game, action, per_action_branch_limit=8)
+    - Enhanced expectation calculator:
+      - Tries execute_spectrum first, falls back to execute_deterministic.
+      - Limits per-action branch expansion to keep runtime bounded.
+      - For each branch: compute blended branch value = 0.6*immediate_eval + 0.4*rollout_estimate.
+      - Returns normalized expected value.
+  - decide(game, playable_actions)
+    - Orchestrates prefiltering, budget allocation (SIMULATION_BUDGET), per-action evaluation, and selection with tie-breaking.
+
+- Constants and tunables added
+  - MAX_SIMULATIONS = 24
+  - PREFILTER_TOP_K = 8
+  - ROLLOUT_DEPTH = 2
+  - SIMULATION_BUDGET = 60
+  - MUST_INCLUDE_TOKENS set to prioritize high-impact action types
+  - DEBUG flag (default False) to control logging verbosity
+
+- Logging / prints added
+  - Mainly guarded by debug_print (uses DEBUG flag). Default logging remains quiet.
+  - One protected fallback print remains in the top-level exception in decide() to ensure errors are visible (this will not flood when DEBUG is False).
+  - When DEBUG=True, the player prints:
+    - Whether adapters.base_fn() was successfully used.
+    - Prefilter selection summary.
+    - Evaluation results per action and top candidates.
+    - Any fallbacks used (execute_spectrum->execute_deterministic, value_fn failures, etc).
+
+- Safety / fallbacks implemented
+  - Robust try/except around adapters calls:
+    - execute_spectrum and execute_deterministic both tried and failure returns -inf for that action (so it is unlikely to be chosen).
+  - If no playable_actions: return None.
+  - If all simulations/evaluations fail, fallback to the first playable action to avoid stalling.
+  - Decision pipeline wrapped in try/except to ensure a sensible fallback if unexpected exceptions occur.
+
+- Performance considerations
+  - Candidate actions limited via prefilter to MAX_SIMULATIONS.
+  - Branch expansion per action limited by per_action_branch_limit computed from SIMULATION_BUDGET.
+  - Rollout depth set small (default 2) for speed; rollout picks only up to 4 top actions at each step to avoid branching blowup.
+  - cheap_pre_score and prefilter are deliberately lightweight (no copying).
+
+- Debugging aids / notes for the next iteration
+  - The production estimation and location lookup are best-effort guesses: code inspects game.state.board.hexes and player settlement/city lists (settle_locations, city_locations). If your real game model uses different field names or structures for board/hexes/vertex adjacency, the production term may be inaccurate.
+  - The MUST_INCLUDE_TOKENS matching is string-based and intended to be tolerant. If the game's Action objects include ActionType enums (e.g., ActionType.BUILD_CITY), the _safe_action_name should capture .name but confirm the exact naming used by the adapters Action type in your environment.
+  - The blend weights between immediate evaluation and rollout (0.6/0.4) and between base_fn/heuristic (0.85/0.15) are heuristic and can be tuned.
+  - The DEBUG flag is off by default; set FooPlayer.DEBUG = True within tests if you want verbose logs to diagnose decisions.
+
+- Things I am unsure about / that may need RESEARCHER help next run
+  - Exact structure of player_state and board/hex adjacency in the concrete Game implementation:
+    - The code attempts to find settlement/city location lists under many common names (settlements, settle_locations, city_locations). If those attributes are named differently, production and upgrade-progression heuristics will be weakened.
+  - Action naming conventions:
+    - If the Action object exposes action_type via a different attribute name or the string repr differs significantly, must-include matching may miss some actions. If you get AttributeError or strange behavior referencing action.action_type, provide the exact Action class fields.
+  - If adapters exposes additional or different helper functions for enumerating playable actions (e.g., another exported list function), let me know and I will prefer it.
+
+- Suggested next objectives (for future iterations)
+  - Tune heuristic weights and rollout blending using small hyperparameter search (e.g., adjust production weight & city rewards).
+  - Implement smarter robber evaluation: evaluate target hex impact on opponent production and expected stolen resources to score robber moves more accurately.
+  - Add a selective 2-ply search for build_city/build_settlement actions where the second ply considers a short opponent response or a self-progression move.
+  - Add specialized logic for trading and dev-card purchases (when model shows underinvestment in dev cards).
+  - If desired, expose DEBUG via environment variable or player constructor argument.
+
+- Changes summary (concise bullets)
+  - Created new helper functions: debug_print, _safe_action_name, cheap_pre_score, prefilter_actions, get_playable_actions_from_game, rollout_value, and enhanced _evaluate_action_expectation.
+  - Replaced naive decide logic with prefilter -> evaluate (spectrum/deterministic) -> rollout -> choose best.
+  - Added improved heuristic and blending with adapters.base_fn() when present.
+  - Added guarded debug logging; default is quiet.
+
+If you run the next experiment and see AttributeError or missing adapter names (for example, execute_spectrum, list_prunned_actions, base_fn, etc.), please paste the exact traceback and I will request RESEARCHER to map the exact adapter function names or update the code to match the environment.
+
+END CODER
+================================ Human Message =================================
+
+GAME RESULTS:
+
+{
+  "Player Summary": {
+    "AlphaBetaPlayer:RED(depth=2,value_fn=base_fn,prunning=False)": {
+      "WINS": 13,
+      "AVG VP": 7.433333333333334,
+      "AVG SETTLES": 2.8333333333333335,
+      "AVG CITIES": 1.8,
+      "AVG ROAD": 0.5,
+      "AVG ARMY": 0.0,
+      "AVG DEV VP": 0.0
+    },
+    "FooPlayer:BLUE": {
+      "WINS": 17,
+      "AVG VP": 8.133333333333333,
+      "AVG SETTLES": 1.9,
+      "AVG CITIES": 2.6,
+      "AVG ROAD": 0.5,
+      "AVG ARMY": 0.0,
+      "AVG DEV VP": 0.03333333333333333
+    }
+  },
+  "Game Summary": {
+    "AVG TICKS": 194.63333333333333,
+    "AVG TURNS": 67.43333333333334,
+    "AVG DURATION": 2.556744853655497
+  }
+}
+================================ Human Message =================================
+
+ANALYZER
+---
+After Running The New foo_player.py Player, Here is my analysis and findings:
+
+### PERFORMANCE SUMMARY:
+- **Outcome**: FooPlayer won **17 out of 30 games** (56.67% win rate).
+- **VP**: FooPlayer:BLUE averaged **8.13 VP** vs. AlphaBetaPlayer:RED's **7.43 VP** (VP diff: **+0.7**).
+- **Key Counts**:
+  - Settlements: 1.90 (FooPlayer) vs. 2.83 (Opponent).
+  - Cities: 2.60 (FooPlayer) vs. 1.80 (Opponent).
+  - Roads: 0.50 (FooPlayer) vs. 0.50 (Opponent).
+  - Development Cards: 0.03 (FooPlayer) vs. 0.00 (Opponent).
+  - Total Turns: 67.43.
+
+### VERDICT:
+- **Good**: FooPlayer achieved a **positive VP difference of +0.7** and won the majority of games.
+
+---
+
+### STRENGTHS:
+1. **City Focus**: FooPlayer excels at building cities (2.60 vs. 1.80), which directly contributes to higher VP.
+2. **Action Sampling**: The prefiltering logic ensures high-impact actions (e.g., `build_city`, `build_settlement`) are prioritized.
+3. **Rollout Estimation**: The 2-ply rollout provides a short-term strategic advantage, as seen in the VP lead.
+
+---
+
+### LIKELY REASONS FOR SUBOPTIMAL PERFORMANCE:
+1. **Settlement Deficit**: FooPlayer builds fewer settlements (1.90 vs. 2.83), limiting early-game expansion and resource diversity.
+   - **Code Citation**: The heuristic prioritizes cities over settlements (Line 200, `foo_player.py`).
+   - **Log Corroboration**: No explicit log lines indicate aggressive settlement placement.
+
+2. **Road Neglect**: Roads are built at the same rate as the opponent (0.50), which may limit long-term expansion and connectivity.
+   - **Code Citation**: Road-building actions are scored lower in `cheap_pre_score` (Line 120, `foo_player.py`).
+
+3. **Development Card Underutilization**: Despite a slight edge in development cards (0.03 vs. 0.00), FooPlayer does not actively prioritize or leverage them.
+   - **Code Citation**: No specialized logic for development card actions in `cheap_pre_score` or rollout.
+
+4. **Robber/Knight Actions**: No evidence of strategic robber placement or knight usage, which could disrupt the opponent's resource flow.
+   - **Log Corroboration**: No log lines indicate robber/knight actions.
+
+---
+
+### STRATEGIC FLAW:
+FooPlayer's heuristic and rollout logic prioritize cities and immediate VP gains but neglect early-game expansion (settlements/roads) and disruptive actions (robber/knights), limiting long-term dominance.
+
+---
+
+### NEXT STEP:
+Send to Coder to **enhance the heuristic to prioritize settlements and roads early-game** and **add logic for strategic robber/knight usage**.
+
+---
+Let me know if you need anything else.
+END ANALYZER
+================================== Ai Message ==================================
+
+- META THOUGHTS: Analyzer shows we reached a strong improvement (17/30 wins) but still tilt toward city-heavy play that neglects early expansion (settlements/roads), robber/knight disruption, and dev-card investment. To push win rate higher we should add game-phase-aware decisioning: favor settlements/roads early, cities mid/ to late-game, and explicitly evaluate robber/knight moves and buy-dev-card actions. Keep the existing safe adapters-based simulation and rollout pipeline, but change cheap_pre_score and heuristic blending to be dynamic by phase, add targeted evaluators for robber/knight and settlement potential, and tune sampling to always include these action types. Keep runtime safeguards and DEBUG gating.
+
+- META GOAL: Update foo_player.py so FooPlayer:
+  1) prefers settlements and roads in the early game (so it doesn't starve resource diversity),
+  2) evaluates robber/knight actions for disruption and potential steals,
+  3) considers buying development cards when appropriate,
+  4) preserves the successful rollout + spectrum evaluation pipeline and budget limits.
+
+- CHOSEN AGENT: CODER
+
+- AGENT OBJECTIVE:
+Implement the following concrete changes in foo_player.py. Keep all adapter calls in try/except fallbacks as before. Preserve DEBUG flag (default False) and simulation-budget protections.
+
+1) Game-phase detection
+   - Add helper is_early_game(game, color_or_index):
+     - Determine the current overall progression using robust checks (try in order):
+         a) game.turn or game.tick or game.state.turn_count or game.state.tick_count
+         b) If none available, use average victory points across players: if max VP < 5 treat as early.
+     - Return True for early when turn_count < EARLY_TURN_THRESHOLD (default 25) OR when max VP < 5.
+   - Add constants:
+       EARLY_TURN_THRESHOLD = 25
+       EARLY_VP_THRESHOLD = 5
+
+2) Dynamic scoring multipliers
+   - Add dynamic multipliers applied in cheap_pre_score and _heuristic_value:
+       - If is_early_game -> settlement_multiplier = 1.6, road_multiplier = 1.4, city_multiplier = 0.9, devcard_multiplier = 1.1
+       - Else (mid/late) -> settlement_multiplier = 0.9, road_multiplier = 0.9, city_multiplier = 1.4, devcard_multiplier = 1.0
+   - Use these multipliers when scoring build actions: multiply base score for BUILD_SETTLEMENT, BUILD_ROAD, BUILD_CITY, BUY_DEV_CARD.
+
+3) Settlement & road potential evaluation
+   - Implement settlement_potential(action, game, color) returning a small float bonus estimating:
+       - Resource diversity gain: how many new resource types would the settlement add (best-effort by checking adjacent hex resource types).
+       - Production potential: sum die probability weights for adjacent hex numbers; treat city adjacency as double.
+       - Distance to existing player's network: reward connecting distant nodes less than connecting existing network more? (Simpler: slightly prefer settlement actions that increase unique resources).
+   - Implement road_connection_potential(action, game, color) returning float:
+       - Reward if road action appears to extend toward an open settlement spot (best-effort: check edges adjacent to known free vertices). If exact board API missing, reward road actions if their string contains indices near player's settlement locations.
+
+4) Robber & Knight evaluation
+   - Add evaluate_robber_action(action, game, color):
+       - When action moves robber, attempt to detect target hex id from action and estimate production loss to the most affected opponent:
+           * For each opponent, compute their production score (sum of probabilities of their settlements/cities); estimate reduction if that hex is blocked (subtract die_prob for that hex times sum of settlement/city weights).
+           * Add steal-value: if action results in a steal (detect from action or branch result), add estimated expected resource value (map resource -> build-weight; e.g., ore/wheat=3, lumber/brick/sheep=2).
+       - Return robbery_score large enough to make robbery moves be included (e.g., +40 base scaled by estimated impact).
+   - Add evaluate_play_knight(action, game, color):
+       - Similar to robber evaluation but also account for increasing largest army or potential VP from army. Include small bonus if player is close to largest army threshold.
+
+5) Development card buys
+   - In cheap_pre_score, boost BUY_DEV_CARD by devcard_multiplier and add heuristic to buy when:
+       - Player has moderate resources (e.g., enough ore + wheat and no immediate city needed) OR when early_game and strategy prefers hidden advantage.
+       - If player already has many cities, slightly deprioritize devcard buys in favor of settlement opportunities as appropriate.
+
+6) Modify prefilter_actions to guarantee inclusion
+   - Expand MUST_INCLUDE_TOKENS to ensure:
+       - build_settlement and build_road actions are always included if early_game is True (use is_early_game to decide).
+       - move_robber and play_knight included when present.
+       - buy_dev_card included when resources sufficient (check action costs if present in action object or check player resource counts).
+   - Keep existing PREFILTER_TOP_K and MAX_SIMULATIONS but ensure must-includes are always present even if they exceed PREFILTER_TOP_K (still respect MAX_SIMULATIONS cap by replacing low-scored sampled actions).
+
+7) Rollout policy tweaks
+   - In rollout_value:
+       - When early_game True and rollout depth > 0, bias greedy rollout selection toward settlement/road/build actions using cheap_pre_score with phase multipliers (so rollout represents early expansion).
+       - When mid/late-game, bias toward city upgrades and dev-card plays.
+   - Keep rollout depth default 2 but allow ROLLOUT_DEPTH to be passed from constants.
+
+8) Heuristic tuning
+   - Update _heuristic_value to incorporate dynamic multipliers and stronger production-term weighting for early game:
+       - Increase production-term weight in early game to favor settlements that increase resource flow.
+       - Slightly reduce immediate city reward during early game to avoid over-prioritizing upgrades that hamper expansion.
+   - Combine adapters.base_fn when present as before but ensure dynamic multipliers still influence final score: final_score = 0.85*value_fn + 0.15*heuristic * phase_multiplier_sum or apply phase multipliers inside heuristic then combine.
+
+9) Logging and DEBUG
+   - Keep DEBUG default False. When DEBUG True, print concise lines:
+       - "PHASE: EARLY/MID/LATE, chosen multipliers: S/R/C"
+       - Top 3 candidate actions and their expected scores
+       - If a robber action is chosen, print target hex and estimated impact.
+   - Avoid noisy per-action prints when DEBUG False.
+
+10) Testing & fallbacks
+   - Ensure all new helper functions are robust to missing attributes: check multiple attribute names for resources, victory points, settlements/cities lists (player.vp, player.victory_points, player.victory_point).
+   - If determining adjacent hexes or edge/vertex indices fails, fallback to string-based heuristics but do not crash.
+   - If evaluate_robber_action cannot find a target hex, it should return a small neutral score (not negative).
+   - Maintain final fallback behavior: if all action evaluations fail, return playable_actions[0].
+
+11) Minor tunables to expose as constants for future tuning:
+   - EARLY_TURN_THRESHOLD (default 25)
+   - EARLY_VP_THRESHOLD (default 5)
+   - settlement_multiplier_early, road_multiplier_early, etc.
+   - ROBBER_BASE_SCORE (default 40)
+   - DEV_CARD_MULTIPLIER_EARLY (default 1.1)
+
+Implementation notes for CODER:
+- Only modify foo_player.py. Do not import internal catanatron modules.
+- Use existing try/except patterns for adapters.execute_spectrum, execute_deterministic, adapters.base_fn, adapters.copy_game.
+- Keep simulation budget and per-action branch limits as before, adjusting if necessary to accommodate the extra computation but aim to keep runtime similar.
+- Add unit-level comments where you detect uncertainty about attribute names so RESEARCHER can later refine them if adapter attribute mismatches occur.
+- After implementing, leave DEBUG=False by default.
+
+If you implement these changes and the next run shows attribute/adapter errors (AttributeError, etc.), capture the traceback exactly and return it so we can call RESEARCHER to map the correct adapter names or attribute paths.
+================================ Human Message =================================
+
+This is the old foo_player.py file
+Now It is your turn to update it with the new recommendations from META
+
+import random
+from typing import Iterable, List, Optional, Any
+
+# MUST use the adapters surface to interact with the game environment
+from .adapters import (
+    Game,
+    Player,
+    Color,
+    copy_game,
+    execute_deterministic,
+    execute_spectrum,
+    expand_spectrum,
+    list_prunned_actions,
+    prune_robber_actions,
+    base_fn,
+    value_production,
+    get_value_fn,
+)
+
+
+class FooPlayer(Player):
+    """A Foo player with improved action sampling, 1-ply expansion + short rollouts,
+    and an enhanced heuristic fallback.
+
+    Key ideas implemented:
+    - Prefilter actions to always include high-impact moves (city/settlement/robber/etc.).
+    - Use adapters.execute_spectrum / execute_deterministic to expand chance outcomes.
+    - For each outcome, evaluate with adapters.base_fn() when available, otherwise a
+      richer heuristic that includes production potential and city-upgrade progress.
+    - Run a short greedy rollout (depth-limited) from each outcome to estimate
+      downstream value.
+    - Keep many robust try/except fallbacks so the player still returns an action
+      if parts of the adapters API differ in the environment.
+
+    Notes on adapters usage:
+    - We only call functions exposed by .adapters. If the next run raises AttributeError
+      for an adapters function used here (e.g., expand_spectrum), report the traceback
+      so RESEARCHER can map the exact adapter surface.
+    """
+
+    # Tunable constants
+    MAX_SIMULATIONS = 24  # cap actions to evaluate per decision
+    PREFILTER_TOP_K = 8  # after must-includes, take this many top cheap-scored actions
+    ROLLOUT_DEPTH = 2  # depth for short greedy rollout
+    SIMULATION_BUDGET = 60  # approximate cap on total expanded branches across actions
+    DEBUG = False  # Set True to enable debug printing
+
+    # Action tokens we consider high-impact (match against action type/name/str)
+    MUST_INCLUDE_TOKENS = {
+        "build_city",
+        "build_settlement",
+        "build_road",
+        "buy_dev",
+        "buy_dev_card",
+        "play_knight",
+        "move_robber",
+        "move_robber_action",
+        "trade",
+    }
+
+    def __init__(self, name: Optional[str] = None):
+        super().__init__(Color.BLUE, name)
+        # Try to cache a base value function from adapters
+        try:
+            self._value_fn = base_fn()
+            self.debug_print("FooPlayer: Using adapters.base_fn() for evaluation")
+        except Exception as e:
+            self._value_fn = None
+            self.debug_print("FooPlayer: adapters.base_fn() not available, will use heuristic. Error:", e)
+
+    # ------------------- Debug helper -------------------
+    def debug_print(self, *args: Any) -> None:
+        if self.DEBUG:
+            print(*args)
+
+    # ------------------- Utility helpers -------------------
+    def _get_player_color(self) -> Color:
+        """Return this player's color. Try common attribute names."""
+        if hasattr(self, "color"):
+            return getattr(self, "color")
+        if hasattr(self, "_color"):
+            return getattr(self, "_color")
+        return Color.BLUE
+
+    def _safe_action_name(self, action: Any) -> str:
+        """Produce a lowercase string name for the action for robust matching."""
+        try:
+            # action.action_type may be an enum with .name
+            at = getattr(action, "action_type", None)
+            if at is None:
+                at = getattr(action, "type", None)
+            if at is not None:
+                try:
+                    # enum values often have .name
+                    return str(at.name).lower()
+                except Exception:
+                    return str(at).lower()
+        except Exception:
+            pass
+        # Fallback to stringifying the action
+        try:
+            return str(action).lower()
+        except Exception:
+            return ""
+
+    # ------------------- Heuristic / evaluation -------------------
+    def _heuristic_value(self, game: Game, color: Color) -> float:
+        """Enhanced heuristic including production potential and city-upgrade progress.
+
+        This is deliberately defensive to handle variations in the game model.
+        """
+        # Die probabilities for numbers 2..12 ignoring 7
+        die_prob = {2: 1 / 36, 3: 2 / 36, 4: 3 / 36, 5: 4 / 36, 6: 5 / 36, 8: 5 / 36, 9: 4 / 36, 10: 3 / 36, 11: 2 / 36, 12: 1 / 36}
+
+        # Helper to find player object/state
+        player_state = None
+        try:
+            players_container = getattr(getattr(game, "state", game), "players", None)
+            if players_container is None:
+                players_container = getattr(game, "players", None)
+
+            if isinstance(players_container, dict):
+                # Keys might be Color or string
+                player_state = players_container.get(color) or players_container.get(str(color))
+            elif isinstance(players_container, (list, tuple)):
+                for p in players_container:
+                    if getattr(p, "color", None) == color or getattr(p, "color", None) == str(color):
+                        player_state = p
+                        break
+        except Exception:
+            player_state = None
+
+        def _safe_get(obj, *names, default=0):
+            if obj is None:
+                return default
+            for name in names:
+                try:
+                    val = getattr(obj, name)
+                    if val is not None:
+                        return val
+                except Exception:
+                    try:
+                        val = obj[name]
+                        if val is not None:
+                            return val
+                    except Exception:
+                        continue
+            return default
+
+        # Base counts
+        vp = _safe_get(player_state, "victory_points", "vp", default=0)
+        settlements = _safe_get(player_state, "settlements", "settle_count", default=0)
+        if isinstance(settlements, (list, tuple)):
+            settlements = len(settlements)
+        cities = _safe_get(player_state, "cities", "city_count", default=0)
+        if isinstance(cities, (list, tuple)):
+            cities = len(cities)
+        roads = _safe_get(player_state, "roads", "road_count", default=0)
+        if isinstance(roads, (list, tuple)):
+            roads = len(roads)
+        dev_vp = _safe_get(player_state, "dev_vp", "dev_victory_points", default=0)
+
+        # Resources summary
+        resources_obj = _safe_get(player_state, "resources", default=0)
+        resources_total = 0
+        resource_diversity = 0
+        try:
+            if isinstance(resources_obj, dict):
+                resources_total = sum(resources_obj.values())
+                resource_diversity = sum(1 for v in resources_obj.values() if v > 0)
+            elif isinstance(resources_obj, (list, tuple)):
+                resources_total = sum(resources_obj)
+                resource_diversity = sum(1 for v in resources_obj if v > 0)
+            else:
+                resources_total = int(resources_obj)
+                resource_diversity = 1 if resources_total > 0 else 0
+        except Exception:
+            resources_total = 0
+            resource_diversity = 0
+
+        # Production potential estimation: look for player's settlements/cities on hexes
+        prod_value = 0.0
+        try:
+            # Try common structures: game.state.board.hexes or game.state.board
+            board = getattr(getattr(game, "state", game), "board", None) or getattr(game, "board", None)
+            if board is not None:
+                # hexes might be a list or dict keyed by index
+                hexes = getattr(board, "hexes", None) or getattr(board, "tiles", None) or []
+                # Player locations might be stored on player_state as lists of vertex indices
+                settlements_list = _safe_get(player_state, "settlements", "settle_locations", default=[])
+                if isinstance(settlements_list, (list, tuple)):
+                    for s in settlements_list:
+                        # try to map s -> adjacent hex indices
+                        try:
+                            # Heuristic: if hexes is list and s is indexable, check neighbors attribute
+                            # Many implementations store vertex->hex adjacency; this is best-effort.
+                            hex_indices = []
+                            if isinstance(hexes, (list, tuple)):
+                                # Search hexes for ones annotated with adjacency to this vertex
+                                for h in hexes:
+                                    neighbors = getattr(h, "vertices", None) or getattr(h, "adjacent_vertices", None) or []
+                                    if s in neighbors:
+                                        num = getattr(h, "roll", None) or getattr(h, "number", None) or getattr(h, "value", None)
+                                        try:
+                                            num = int(num)
+                                        except Exception:
+                                            num = None
+                                        if num in die_prob:
+                                            prod_value += die_prob[num] * 1.0  # settlement weight
+                            else:
+                                # hexes may be dict-like; attempt adjacency lookup
+                                pass
+                        except Exception:
+                            continue
+                # City production double-weight (best-effort: if cities stored separately)
+                cities_list = _safe_get(player_state, "cities", "city_locations", default=[])
+                if isinstance(cities_list, (list, tuple)):
+                    for c in cities_list:
+                        try:
+                            for h in hexes:
+                                neighbors = getattr(h, "vertices", None) or getattr(h, "adjacent_vertices", None) or []
+                                if c in neighbors:
+                                    num = getattr(h, "roll", None) or getattr(h, "number", None) or getattr(h, "value", None)
+                                    try:
+                                        num = int(num)
+                                    except Exception:
+                                        num = None
+                                    if num in die_prob:
+                                        prod_value += die_prob[num] * 2.0  # city weight
+                        except Exception:
+                            continue
+        except Exception:
+            prod_value = 0.0
+
+        # City upgrade progress heuristic: reward having resources that contribute to city (ore + wheat)
+        city_resource_val = 0.0
+        try:
+            if isinstance(resources_obj, dict):
+                wheat = resources_obj.get("wheat", 0) + resources_obj.get("grain", 0)
+                ore = resources_obj.get("ore", 0) + resources_obj.get("metal", 0)
+                city_resource_val = min(wheat, ore)  # rough proxy towards ability to upgrade
+        except Exception:
+            city_resource_val = 0.0
+
+        # Compose weighted sum - tuned to prefer VPs and production
+        score = (
+            float(vp) * 100.0
+            + float(settlements) * 25.0
+            + float(cities) * 60.0
+            + float(roads) * 6.0
+            + float(dev_vp) * 50.0
+            + float(resources_total) * 1.0
+            + float(resource_diversity) * 2.0
+            + float(city_resource_val) * 5.0
+            + float(prod_value) * 40.0
+        )
+
+        return float(score)
+
+    def _evaluate_game_state(self, game: Game, color: Color) -> float:
+        """Evaluate a single game state for the given player color.
+
+        Prefer adapters.base_fn() if available (cached in self._value_fn). If available, combine
+        it with the heuristic for stability: 0.85*value_fn + 0.15*heuristic.
+        """
+        heuristic = self._heuristic_value(game, color)
+        if self._value_fn is not None:
+            try:
+                vf_val = float(self._value_fn(game, color))
+                # Blend for stability
+                return 0.85 * vf_val + 0.15 * heuristic
+            except Exception as e:
+                self.debug_print("FooPlayer: value_fn failed during evaluate_game_state, falling back to heuristic. Error:", e)
+        return float(heuristic)
+
+    # ------------------- Action sampling / prefilter -------------------
+    def cheap_pre_score(self, action: Any, game: Game, color: Color) -> float:
+        """Cheap, very fast scoring used to prioritize actions for simulation.
+
+        This must be fast and not perform copying or heavy simulation.
+        """
+        s = 0.0
+        name = self._safe_action_name(action)
+        # Reward direct VP gains
+        if any(tok in name for tok in ("build_city", "build_settlement", "build_sett")):
+            s += 100.0
+        if "buy_dev" in name or "buycard" in name or "buy_dev_card" in name:
+            s += 60.0
+        if "build_road" in name or "road" in name:
+            s += 20.0
+        if "knight" in name or "play_knight" in name or "play_kn" in name:
+            s += 70.0
+        if "robber" in name or "move_robber" in name:
+            s += 50.0
+        if "trade" in name or "offer_trade" in name:
+            s += 10.0
+
+        # Minor random tie-break to diversify decisions when cheap scores equal
+        s += random.random() * 1e-3
+        return s
+
+    def prefilter_actions(self, actions: List[Any], game: Game, color: Color) -> List[Any]:
+        """Return a bounded list of candidate actions to evaluate thoroughly.
+
+        Steps:
+        - Always include must-include actions by token match.
+        - Score remaining actions with cheap_pre_score and pick top PREFILTER_TOP_K.
+        - Fill up with random samples up to MAX_SIMULATIONS to keep diversity.
+        """
+        if not actions:
+            return []
+
+        # Normalize action list
+        all_actions = list(actions)
+
+        musts = []
+        others = []
+        for a in all_actions:
+            name = self._safe_action_name(a)
+            if any(tok in name for tok in self.MUST_INCLUDE_TOKENS):
+                musts.append(a)
+            else:
+                others.append(a)
+
+        # Score others quickly
+        scored = [(self.cheap_pre_score(a, game, color), a) for a in others]
+        scored.sort(key=lambda x: x[0], reverse=True)
+
+        top_k = [a for (_s, a) in scored[: self.PREFILTER_TOP_K]]
+
+        # Combine unique musts + top_k preserving order with uniqueness
+        candidates = []
+        for a in musts + top_k:
+            if a not in candidates:
+                candidates.append(a)
+
+        # Fill up with random remaining samples until MAX_SIMULATIONS or out of actions
+        remaining = [a for a in all_actions if a not in candidates]
+        random.shuffle(remaining)
+        while len(candidates) < min(len(all_actions), self.MAX_SIMULATIONS) and remaining:
+            candidates.append(remaining.pop())
+
+        # If still empty for some reason, fallback to a small random sample
+        if not candidates and all_actions:
+            candidates = random.sample(all_actions, min(len(all_actions), self.MAX_SIMULATIONS))
+
+        self.debug_print(f"FooPlayer: Prefilter selected {len(candidates)} candidates (musts={len(musts)})")
+        return candidates
+
+    # ------------------- Playable actions extraction -------------------
+    def get_playable_actions_from_game(self, game: Game) -> List[Any]:
+        """Try a number of adapters/game methods to extract playable actions in this state.
+
+        We prefer adapters.list_prunned_actions(game) if available.
+        """
+        try:
+            actions = list_prunned_actions(game)
+            if actions:
+                return actions
+        except Exception as e:
+            self.debug_print("FooPlayer: list_prunned_actions unavailable or failed. Error:", e)
+
+        # Try common game-provided methods/attributes
+        try:
+            if hasattr(game, "get_playable_actions"):
+                return list(game.get_playable_actions())
+        except Exception:
+            pass
+        try:
+            if hasattr(game, "playable_actions"):
+                return list(getattr(game, "playable_actions"))
+        except Exception:
+            pass
+        try:
+            state = getattr(game, "state", None)
+            if state is not None and hasattr(state, "playable_actions"):
+                return list(getattr(state, "playable_actions"))
+        except Exception:
+            pass
+
+        return []
+
+    # ------------------- Rollout logic -------------------
+    def rollout_value(self, game: Game, color: Color, depth: int) -> float:
+        """Perform a short greedy rollout from `game` for `depth` steps and return an evaluation.
+
+        The rollout picks the best cheap_pre_score action for the active player at each step,
+        simulates a deterministic branch, and continues. This is fast and approximate.
+        """
+        try:
+            if depth <= 0:
+                return self._evaluate_game_state(game, color)
+
+            # Get playable actions for the current active player
+            actions = self.get_playable_actions_from_game(game)
+            if not actions:
+                return self._evaluate_game_state(game, color)
+
+            # Rank actions cheaply and try to simulate the top few until one succeeds
+            actions_sorted = sorted(actions, key=lambda a: self.cheap_pre_score(a, game, color), reverse=True)
+            # Limit branching inside rollout to a small constant for speed
+            for a in actions_sorted[:4]:
+                try:
+                    outcomes = execute_deterministic(game, a)
+                except Exception:
+                    try:
+                        outcomes = execute_spectrum(game, a)
+                    except Exception:
+                        outcomes = []
+                if not outcomes:
+                    continue
+                # Choose the most probable branch
+                best_branch = max(outcomes, key=lambda bp: float(bp[1]))
+                next_game = best_branch[0]
+                # Recurse
+                return self.rollout_value(next_game, color, depth - 1)
+
+            # If none simulated, fallback to evaluation
+            return self._evaluate_game_state(game, color)
+        except Exception as e:
+            self.debug_print("FooPlayer: rollout_value exception, falling back to evaluate_game_state. Error:", e)
+            return self._evaluate_game_state(game, color)
+
+    # ------------------- Evaluate action expectation (enhanced) -------------------
+    def _evaluate_action_expectation(self, game: Game, action: Any, per_action_branch_limit: int = 8) -> float:
+        """Compute expected value of taking `action` in `game` for this player.
+
+        Expands chance outcomes (execute_spectrum preferred), evaluates each branch and
+        adds a short rollout estimate to approximate downstream value.
+        """
+        color = self._get_player_color()
+
+        # Try spectrum first for a full branching view
+        branches = None
+        try:
+            branches = execute_spectrum(game, action)
+            if not branches:
+                raise RuntimeError("execute_spectrum returned no branches")
+        except Exception as e_s:
+            self.debug_print("FooPlayer: execute_spectrum failed or unavailable for action; trying deterministic. Error:", e_s)
+            try:
+                branches = execute_deterministic(game, action)
+                if not branches:
+                    raise RuntimeError("execute_deterministic returned no outcomes")
+            except Exception as e_d:
+                self.debug_print("FooPlayer: Both execute_spectrum and execute_deterministic failed for action. Errors:", e_s, e_d)
+                return float("-inf")
+
+        # Limit branches to keep runtime bounded
+        if len(branches) > per_action_branch_limit:
+            # Keep most probable branches
+            branches = sorted(branches, key=lambda bp: float(bp[1]), reverse=True)[:per_action_branch_limit]
+
+        expected = 0.0
+        total_prob = 0.0
+        for (out_game, prob) in branches:
+            try:
+                # Immediate evaluation
+                immediate = self._evaluate_game_state(out_game, color)
+                # Add rollout estimate from this branch (depth-1)
+                rollout_est = self.rollout_value(out_game, color, max(0, self.ROLLOUT_DEPTH - 1))
+                branch_val = 0.6 * immediate + 0.4 * rollout_est
+            except Exception as e:
+                self.debug_print("FooPlayer: evaluation failed for branch, using heuristic. Error:", e)
+                branch_val = self._heuristic_value(out_game, color)
+            expected += float(prob) * float(branch_val)
+            total_prob += float(prob)
+
+        if total_prob > 0:
+            expected = expected / total_prob
+        return float(expected)
+
+    # ------------------- Main decision function -------------------
+    def decide(self, game: Game, playable_actions: Iterable) -> Optional[object]:
+        """Choose an action from playable_actions using enhanced sampling + rollout estimation."""
+        try:
+            playable_actions = list(playable_actions)
+            if not playable_actions:
+                self.debug_print("FooPlayer: No playable actions available, returning None")
+                return None
+
+            color = self._get_player_color()
+
+            # Prefilter candidate actions to evaluate
+            candidates = self.prefilter_actions(playable_actions, game, color)
+
+            # If many candidates remain, cap to MAX_SIMULATIONS
+            if len(candidates) > self.MAX_SIMULATIONS:
+                candidates = candidates[: self.MAX_SIMULATIONS]
+
+            # If still empty, fall back to random subset of playable_actions
+            if not candidates:
+                candidates = random.sample(playable_actions, min(len(playable_actions), self.MAX_SIMULATIONS))
+
+            # Distribute simulation budget across candidates
+            per_action_budget = max(1, self.SIMULATION_BUDGET // max(1, len(candidates)))
+
+            best_score = float("-inf")
+            best_actions: List[Any] = []
+            scores_debug = []
+
+            for a in candidates:
+                try:
+                    score = self._evaluate_action_expectation(game, a, per_action_branch_limit=per_action_budget)
+                except Exception as e:
+                    self.debug_print("FooPlayer: Exception during action evaluation, skipping action. Error:", e)
+                    score = float("-inf")
+
+                scores_debug.append((score, a))
+                self.debug_print(f"FooPlayer: Action {a} -> expected score {score}")
+
+                if score > best_score:
+                    best_score = score
+                    best_actions = [a]
+                elif score == best_score:
+                    best_actions.append(a)
+
+            # If no action had a finite score, fallback to first playable action
+            if not best_actions:
+                self.debug_print("FooPlayer: All evaluations failed, defaulting to first playable action")
+                return playable_actions[0]
+
+            # Log top 3 candidates when debugging
+            if self.DEBUG:
+                scores_debug.sort(key=lambda x: x[0], reverse=True)
+                topn = scores_debug[:3]
+                self.debug_print("FooPlayer: Top candidates:")
+                for sc, act in topn:
+                    self.debug_print(f"  score={sc:.2f} action={act}")
+
+            chosen = random.choice(best_actions)
+            self.debug_print(f"FooPlayer: Chosen action {chosen} with expected score {best_score}")
+            return chosen
+        except Exception as e:
+            # Protect against unexpected errors in the decision pipeline
+            print("FooPlayer: Unexpected error in decide(), defaulting to first playable action. Error:", e)
+            try:
+                return list(playable_actions)[0]
+            except Exception:
+                return None
+
+================================ Human Message =================================
+
+This is the current adapters.py file that you must use to interact with the Catanatron API
+
+"""Unified adapter for Catanatron agents.
+
+Expose a small, stable surface for multi-agent systems to:
+- Inspect game state
+- Enumerate legal actions
+- Execute hypothetical moves (with/without validation)
+- Expand chance outcomes (dice, dev cards, robber)
+- Use pruning helpers
+- Build/evaluate heuristics
+
+Everything here is a thin re-export or trivial wrapper from catanatron & friends.
+"""
+
+from typing import Callable, List, Optional, Tuple, Dict, Any
+
+# CORE RE-EXPORTS
+from catanatron.game import Game  # Game instance with .state, .copy(), .execute(action), .winning_color()
+from catanatron.models.player import Player, Color  # Player and Color types
+from catanatron.models.enums import Action, ActionType  # Action = namedtuple("Action", ["color", "action_type", "value"]) 
+
+# Player and debug node classes (re-exported so consumers can import them from adapters)
+from catanatron_experimental.machine_learning.players.minimax import (
+    AlphaBetaPlayer,  # Player that executes an AlphaBeta search with expected value calculation
+    SameTurnAlphaBetaPlayer,  # AlphaBeta constrained to the same turn
+    DebugStateNode,  # Node for debugging the AlphaBeta search tree
+    DebugActionNode,  # Node representing an action in the AlphaBeta search tree
+)
+from catanatron_experimental.machine_learning.players.value import (
+    ValueFunctionPlayer,  # Player using heuristic value functions
+    DEFAULT_WEIGHTS,  # Default weight set for value functions
+)
+
+# Underlying implementation imports (underscore aliases to avoid recursion)
+from catanatron_experimental.machine_learning.players.tree_search_utils import (
+    execute_deterministic as _execute_deterministic,
+    execute_spectrum as _execute_spectrum,
+    expand_spectrum as _expand_spectrum,
+    list_prunned_actions as _list_prunned_actions,  # spelling verified in source
+    prune_robber_actions as _prune_robber_actions,
+)
+from catanatron_experimental.machine_learning.players.minimax import render_debug_tree as _render_debug_tree
+
+from catanatron_experimental.machine_learning.players.value import (
+    base_fn as _base_fn,
+    contender_fn as _contender_fn,
+    value_production as _value_production,
+    get_value_fn as _get_value_fn,
+)
+
+# Public API
+__all__ = [
+    "Game",
+    "Player",
+    "Color",
+    "Action",
+    "ActionType",
+    "AlphaBetaPlayer",
+    "SameTurnAlphaBetaPlayer",
+    "ValueFunctionPlayer",
+    "DebugStateNode",
+    "DebugActionNode",
+    "copy_game",
+    "execute_deterministic",
+    "execute_spectrum",
+    "expand_spectrum",
+    "list_prunned_actions",
+    "prune_robber_actions",
+    "render_debug_tree",
+    "base_fn",
+    "contender_fn",
+    "value_production",
+    "get_value_fn",
+]
+
+# THIN CONVENIENCE WRAPPERS
+def copy_game(game: Game) -> Game:
+    '''Create a deep copy of the game state.'''
+    return game.copy()
+
+def execute_deterministic(game: Game, action: Action) -> List[Tuple[Game, float]]:
+    '''Execute a deterministic action and return the resulting game state with probability 1.'''
+    return _execute_deterministic(game, action)
+
+def execute_spectrum(game: Game, action: Action) -> List[Tuple[Game, float]]:
+    '''Return a list of (game_copy, probability) tuples for all possible outcomes of an action.'''
+    return _execute_spectrum(game, action)
+
+def expand_spectrum(game: Game, actions: List[Action]) -> Dict[Action, List[Tuple[Game, float]]]:
+    '''Expand a game state into all possible outcomes for a list of actions.'''
+    return _expand_spectrum(game, actions)
+
+def list_prunned_actions(game: Game) -> List[Action]:
+    '''Returns a pruned list of actions to reduce the search space.'''
+    return _list_prunned_actions(game)
+
+def prune_robber_actions(current_color: Color, game: Game, actions: List[Action]) -> List[Action]:
+    '''Prunes robber actions to keep only the most impactful ones.'''
+    return _prune_robber_actions(current_color, game, actions)
+
+def render_debug_tree(node: DebugStateNode) -> str:
+    '''Renders the AlphaBeta search tree using Graphviz.'''
+    return _render_debug_tree(node)
+
+# HEURISTIC BUILDERS
+def base_fn(params=DEFAULT_WEIGHTS) -> Callable[[Game, Color], float]:
+    '''Base value function factory for evaluating game states.'''
+    return _base_fn(params)
+
+def contender_fn(params) -> Callable[[Game, Color], float]:
+    '''Alternative value function factory with tuned weights.'''
+    return _contender_fn(params)
+
+def value_production(sample, player_name: str = "P0", include_variety: bool = True) -> float:
+    '''Compute the production value of a player's state.'''
+    return _value_production(sample, player_name, include_variety)
+
+def get_value_fn(name: str, params, value_function=None) -> Callable[[Game, Color], float]:
+    '''Factory that returns a value function by name and parameters.'''
+    return _get_value_fn(name, params, value_function)
+
+
+--- Output from CODER at 20250925_074813 ---
+================================== Ai Message ==================================
+Tool Calls:
+  write_foo (call_bWXYbjFjI8PSyMqAqp9cgXqB)
+ Call ID: call_bWXYbjFjI8PSyMqAqp9cgXqB
+  Args:
+    new_text: import random
+from typing import Iterable, List, Optional, Any, Tuple
+
+# MUST use the adapters surface to interact with the game environment
+from .adapters import (
+    Game,
+    Player,
+    Color,
+    copy_game,
+    execute_deterministic,
+    execute_spectrum,
+    expand_spectrum,
+    list_prunned_actions,
+    prune_robber_actions,
+    base_fn,
+    value_production,
+    get_value_fn,
+)
+
+
+class FooPlayer(Player):
+    """A Foo player with game-phase aware decisioning, improved sampling,
+    short rollouts, and richer heuristics.
+
+    This implementation is defensive: it uses only the adapters surface and
+    contains many fallbacks when attributes or adapter helpers are missing.
+
+    Key new features vs earlier versions:
+    - Game-phase detection (early/mid/late) to bias settlement/road vs city/dev-card choices
+    - Settlement & road potential heuristics to encourage early expansion
+    - Robber/knight evaluation to value disruptive moves and steals
+    - Must-include guarantees for critical action types (settlement/road/robber/dev)
+    - Rollout policy biased by phase to approximate downstream effects
+
+    NOTE: Many game model attribute names vary across environments. This code
+    attempts multiple common attribute names and falls back to string-based
+    heuristics when necessary. If the next run raises AttributeError for an
+    adapters function or a specific attribute, provide the traceback so it can
+    be patched to the concrete environment.
+    """
+
+    # Tunable constants (exposed to edit for experimentation)
+    MAX_SIMULATIONS = 24
+    PREFILTER_TOP_K = 8
+    ROLLOUT_DEPTH = 2
+    SIMULATION_BUDGET = 60
+    DEBUG = False
+
+    # Phase thresholds
+    EARLY_TURN_THRESHOLD = 25
+    EARLY_VP_THRESHOLD = 5
+
+    # Must-include action tokens (robust, lowercase matching)
+    MUST_INCLUDE_TOKENS = {
+        "build_city",
+        "build_settlement",
+        "build_sett",
+        "build_road",
+        "buy_dev",
+        "buy_dev_card",
+        "buycard",
+        "play_knight",
+        "knight",
+        "move_robber",
+        "move_robber_action",
+        "robber",
+        "trade",
+        "offer_trade",
+    }
+
+    # Robber scoring base
+    ROBBER_BASE_SCORE = 40.0
+
+    def __init__(self, name: Optional[str] = None):
+        super().__init__(Color.BLUE, name)
+        # Try to cache a base value function from adapters
+        try:
+            self._value_fn = base_fn()
+            self.debug_print("FooPlayer: Using adapters.base_fn() for evaluation")
+        except Exception as e:
+            self._value_fn = None
+            self.debug_print("FooPlayer: adapters.base_fn() not available, will use heuristic. Error:", e)
+
+    # ------------------- Debug helper -------------------
+    def debug_print(self, *args: Any) -> None:
+        if self.DEBUG:
+            print(*args)
+
+    # ------------------- Utility helpers -------------------
+    def _get_player_color(self) -> Color:
+        """Return this player's color. Try common attribute names."""
+        if hasattr(self, "color"):
+            return getattr(self, "color")
+        if hasattr(self, "_color"):
+            return getattr(self, "_color")
+        return Color.BLUE
+
+    def _safe_action_name(self, action: Any) -> str:
+        """Produce a lowercase string name for the action for robust matching."""
+        try:
+            at = getattr(action, "action_type", None)
+            if at is None:
+                at = getattr(action, "type", None)
+            if at is not None:
+                try:
+                    return str(at.name).lower()
+                except Exception:
+                    return str(at).lower()
+        except Exception:
+            pass
+        try:
+            # Some Action objects have a .name or .action_name
+            name = getattr(action, "name", None) or getattr(action, "action_name", None)
+            if name is not None:
+                return str(name).lower()
+        except Exception:
+            pass
+        try:
+            return str(action).lower()
+        except Exception:
+            return ""
+
+    # ------------------- Phase detection -------------------
+    def is_early_game(self, game: Game) -> bool:
+        """Heuristic to detect early phase of the game.
+
+        Prefer explicit turn counts if available, else fallback to max VP.
+        """
+        # Try turn/tick fields
+        try:
+            state = getattr(game, "state", game)
+            turn_count = getattr(state, "turn", None) or getattr(state, "tick", None) or getattr(state, "turn_count", None) or getattr(state, "tick_count", None)
+            if isinstance(turn_count, (int, float)):
+                return int(turn_count) < self.EARLY_TURN_THRESHOLD
+        except Exception:
+            pass
+
+        # Fallback: use maximum VP among players
+        try:
+            players = getattr(state, "players", None) or getattr(game, "players", None) or []
+            max_vp = 0
+            if isinstance(players, dict):
+                for p in players.values():
+                    vp = getattr(p, "victory_points", None) or getattr(p, "vp", None) or 0
+                    try:
+                        vp = int(vp)
+                    except Exception:
+                        vp = 0
+                    if vp > max_vp:
+                        max_vp = vp
+            else:
+                for p in players:
+                    vp = getattr(p, "victory_points", None) or getattr(p, "vp", None) or 0
+                    try:
+                        vp = int(vp)
+                    except Exception:
+                        vp = 0
+                    if vp > max_vp:
+                        max_vp = vp
+            return max_vp < self.EARLY_VP_THRESHOLD
+        except Exception:
+            # Conservative fallback: treat as mid-game
+            return False
+
+    # ------------------- Heuristic / evaluation (phase-aware) -------------------
+    def _heuristic_value(self, game: Game, color: Color) -> float:
+        """Phase-aware heuristic including production potential and city-upgrade progress.
+
+        Many attribute names are attempted to be robust across different game models.
+        """
+        # Die probabilities for numbers 2..12 ignoring 7
+        die_prob = {2: 1 / 36, 3: 2 / 36, 4: 3 / 36, 5: 4 / 36, 6: 5 / 36, 8: 5 / 36, 9: 4 / 36, 10: 3 / 36, 11: 2 / 36, 12: 1 / 36}
+
+        # Player lookup
+        player_state = None
+        try:
+            state = getattr(game, "state", game)
+            players = getattr(state, "players", None) or getattr(game, "players", None)
+            if isinstance(players, dict):
+                player_state = players.get(color) or players.get(str(color))
+            elif isinstance(players, (list, tuple)):
+                for p in players:
+                    if getattr(p, "color", None) == color or getattr(p, "color", None) == str(color):
+                        player_state = p
+                        break
+        except Exception:
+            player_state = None
+
+        def _safe_get(obj, *names, default=0):
+            if obj is None:
+                return default
+            for name in names:
+                try:
+                    val = getattr(obj, name)
+                    if val is not None:
+                        return val
+                except Exception:
+                    try:
+                        val = obj[name]
+                        if val is not None:
+                            return val
+                    except Exception:
+                        continue
+            return default
+
+        vp = _safe_get(player_state, "victory_points", "vp", default=0)
+        settlements = _safe_get(player_state, "settlements", "settle_count", "settle_locations", default=0)
+        if isinstance(settlements, (list, tuple)):
+            settlements = len(settlements)
+        cities = _safe_get(player_state, "cities", "city_count", "city_locations", default=0)
+        if isinstance(cities, (list, tuple)):
+            cities = len(cities)
+        roads = _safe_get(player_state, "roads", "road_count", default=0)
+        if isinstance(roads, (list, tuple)):
+            roads = len(roads)
+        dev_vp = _safe_get(player_state, "dev_vp", "dev_victory_points", default=0)
+
+        # Resources summary
+        resources_obj = _safe_get(player_state, "resources", default=0)
+        resources_total = 0
+        resource_diversity = 0
+        try:
+            if isinstance(resources_obj, dict):
+                resources_total = sum(resources_obj.values())
+                resource_diversity = sum(1 for v in resources_obj.values() if v > 0)
+            elif isinstance(resources_obj, (list, tuple)):
+                resources_total = sum(resources_obj)
+                resource_diversity = sum(1 for v in resources_obj if v > 0)
+            else:
+                resources_total = int(resources_obj)
+                resource_diversity = 1 if resources_total > 0 else 0
+        except Exception:
+            resources_total = 0
+            resource_diversity = 0
+
+        # Production potential estimation
+        prod_value = 0.0
+        try:
+            board = getattr(state, "board", None) or getattr(game, "board", None)
+            hexes = getattr(board, "hexes", None) or getattr(board, "tiles", None) or []
+            settlements_list = _safe_get(player_state, "settlements", "settle_locations", default=[])
+            if isinstance(settlements_list, (list, tuple)):
+                for s in settlements_list:
+                    try:
+                        for h in hexes:
+                            neighbors = getattr(h, "vertices", None) or getattr(h, "adjacent_vertices", None) or []
+                            if s in neighbors:
+                                num = getattr(h, "roll", None) or getattr(h, "number", None) or getattr(h, "value", None)
+                                try:
+                                    num = int(num)
+                                except Exception:
+                                    num = None
+                                if num in die_prob:
+                                    prod_value += die_prob[num] * 1.0
+                    except Exception:
+                        continue
+            cities_list = _safe_get(player_state, "cities", "city_locations", default=[])
+            if isinstance(cities_list, (list, tuple)):
+                for c in cities_list:
+                    try:
+                        for h in hexes:
+                            neighbors = getattr(h, "vertices", None) or getattr(h, "adjacent_vertices", None) or []
+                            if c in neighbors:
+                                num = getattr(h, "roll", None) or getattr(h, "number", None) or getattr(h, "value", None)
+                                try:
+                                    num = int(num)
+                                except Exception:
+                                    num = None
+                                if num in die_prob:
+                                    prod_value += die_prob[num] * 2.0
+                    except Exception:
+                        continue
+        except Exception:
+            prod_value = 0.0
+
+        # City upgrade progress heuristic
+        city_resource_val = 0.0
+        try:
+            if isinstance(resources_obj, dict):
+                wheat = resources_obj.get("wheat", 0) + resources_obj.get("grain", 0)
+                ore = resources_obj.get("ore", 0) + resources_obj.get("metal", 0)
+                city_resource_val = min(wheat, ore)
+        except Exception:
+            city_resource_val = 0.0
+
+        # Phase multipliers
+        early = self.is_early_game(game)
+        if early:
+            settlement_mul = 1.6
+            road_mul = 1.4
+            city_mul = 0.9
+            dev_mul = 1.1
+            prod_weight = 60.0
+        else:
+            settlement_mul = 0.9
+            road_mul = 0.9
+            city_mul = 1.4
+            dev_mul = 1.0
+            prod_weight = 40.0
+
+        # Compose weighted sum
+        score = (
+            float(vp) * 100.0
+            + float(settlements) * 25.0 * settlement_mul
+            + float(cities) * 60.0 * city_mul
+            + float(roads) * 6.0 * road_mul
+            + float(dev_vp) * 50.0
+            + float(resources_total) * 1.0
+            + float(resource_diversity) * 2.0
+            + float(city_resource_val) * 5.0
+            + float(prod_value) * prod_weight
+        )
+
+        return float(score)
+
+    def _evaluate_game_state(self, game: Game, color: Color) -> float:
+        """Evaluate a single game state for the given player color.
+
+        Prefer adapters.base_fn() if available (cached in self._value_fn). If available, combine
+        it with the heuristic for stability. We keep phase multipliers inside the heuristic so
+        they influence the final blended value.
+        """
+        heuristic = self._heuristic_value(game, color)
+        if self._value_fn is not None:
+            try:
+                vf_val = float(self._value_fn(game, color))
+                return 0.85 * vf_val + 0.15 * heuristic
+            except Exception as e:
+                self.debug_print("FooPlayer: value_fn failed during evaluate_game_state, falling back to heuristic. Error:", e)
+        return float(heuristic)
+
+    # ------------------- Cheap scoring & potentials -------------------
+    def settlement_potential(self, action: Any, game: Game, color: Color) -> float:
+        """Estimate benefit of a settlement action: new resource types and production.
+
+        Best-effort: try to parse adjacent hexes from action or fallback to zero.
+        """
+        bonus = 0.0
+        try:
+            name = self._safe_action_name(action)
+            # If action string contains resource hints or vertex index, give tiny bonus
+            if any(tok in name for tok in ("build_settlement", "build_sett", "settle")):
+                bonus += 5.0
+        except Exception:
+            pass
+        return bonus
+
+    def road_connection_potential(self, action: Any, game: Game, color: Color) -> float:
+        """Estimate if a road action helps expansion. Best-effort string heuristic."""
+        bonus = 0.0
+        try:
+            name = self._safe_action_name(action)
+            if "build_road" in name or "road" in name:
+                bonus += 2.0
+        except Exception:
+            pass
+        return bonus
+
+    def cheap_pre_score(self, action: Any, game: Game, color: Color) -> float:
+        """Cheap, fast scoring used to prioritize actions for simulation (phase-aware)."""
+        s = 0.0
+        name = self._safe_action_name(action)
+
+        early = self.is_early_game(game)
+        # multipliers
+        if early:
+            settlement_mul = 1.6
+            road_mul = 1.4
+            city_mul = 0.9
+            dev_mul = 1.1
+        else:
+            settlement_mul = 0.9
+            road_mul = 0.9
+            city_mul = 1.4
+            dev_mul = 1.0
+
+        # Reward direct VP gains
+        if any(tok in name for tok in ("build_city",)):
+            s += 100.0 * city_mul
+        if any(tok in name for tok in ("build_settlement", "build_sett")):
+            s += 90.0 * settlement_mul
+        if "buy_dev" in name or "buycard" in name or "buy_dev_card" in name:
+            s += 60.0 * dev_mul
+        if "build_road" in name or ("road" in name and "build" in name):
+            s += 20.0 * road_mul
+        if "knight" in name or "play_knight" in name:
+            s += 70.0
+        if "robber" in name or "move_robber" in name:
+            s += 50.0
+        if "trade" in name or "offer_trade" in name:
+            s += 10.0
+
+        # Add small potentials
+        s += self.settlement_potential(action, game, color)
+        s += self.road_connection_potential(action, game, color)
+
+        # Minor random tie-break
+        s += random.random() * 1e-3
+        return s
+
+    # ------------------- Prefilter actions (phase-aware guarantees) -------------------
+    def prefilter_actions(self, actions: List[Any], game: Game, color: Color) -> List[Any]:
+        """Return a bounded list of candidate actions to evaluate thoroughly.
+
+        Guarantees inclusion of must-include tokens and early-game settlement/road actions.
+        """
+        if not actions:
+            return []
+
+        all_actions = list(actions)
+        early = self.is_early_game(game)
+
+        musts = []
+        others = []
+        for a in all_actions:
+            name = self._safe_action_name(a)
+            if any(tok in name for tok in self.MUST_INCLUDE_TOKENS):
+                # Early-game guarantee: ensure settlement/road included
+                if early and any(tok in name for tok in ("build_settlement", "build_sett", "build_road", "road")):
+                    if a not in musts:
+                        musts.append(a)
+                else:
+                    if a not in musts:
+                        musts.append(a)
+            else:
+                others.append(a)
+
+        # Score and pick top-K from others
+        scored = [(self.cheap_pre_score(a, game, color), a) for a in others]
+        scored.sort(key=lambda x: x[0], reverse=True)
+        top_k = [a for (_s, a) in scored[: self.PREFILTER_TOP_K]]
+
+        # Combine unique musts + top_k preserving order
+        candidates = []
+        for a in musts + top_k:
+            if a not in candidates:
+                candidates.append(a)
+
+        # Fill up with random remaining samples until MAX_SIMULATIONS
+        remaining = [a for a in all_actions if a not in candidates]
+        random.shuffle(remaining)
+        while len(candidates) < min(len(all_actions), self.MAX_SIMULATIONS) and remaining:
+            candidates.append(remaining.pop())
+
+        if not candidates and all_actions:
+            candidates = random.sample(all_actions, min(len(all_actions), self.MAX_SIMULATIONS))
+
+        self.debug_print(f"FooPlayer: Prefilter selected {len(candidates)} candidates (musts={len(musts)}, early={early})")
+        return candidates
+
+    # ------------------- Playable actions extraction -------------------
+    def get_playable_actions_from_game(self, game: Game) -> List[Any]:
+        """Try adapters.list_prunned_actions first, then common game attributes."""
+        try:
+            acts = list_prunned_actions(game)
+            if acts:
+                return acts
+        except Exception as e:
+            self.debug_print("FooPlayer: list_prunned_actions unavailable or failed. Error:", e)
+
+        try:
+            if hasattr(game, "get_playable_actions"):
+                return list(game.get_playable_actions())
+        except Exception:
+            pass
+        try:
+            if hasattr(game, "playable_actions"):
+                return list(getattr(game, "playable_actions"))
+        except Exception:
+            pass
+        try:
+            state = getattr(game, "state", None)
+            if state is not None and hasattr(state, "playable_actions"):
+                return list(getattr(state, "playable_actions"))
+        except Exception:
+            pass
+
+        return []
+
+    # ------------------- Robber / Knight evaluation -------------------
+    def evaluate_robber_action(self, action: Any, game: Game, color: Color) -> float:
+        """Estimate the value of moving the robber (best-effort)."""
+        score = 0.0
+        try:
+            # Base preference to include robber moves
+            score += self.ROBBER_BASE_SCORE
+            # Try to detect a target hex id from action string
+            name = self._safe_action_name(action)
+            # If action contains a hex index, reward it slightly
+            # (Concrete parsing depends on action repr; this is best-effort)
+            for tok in name.split():
+                if tok.isdigit():
+                    score += 5.0
+                    break
+        except Exception:
+            pass
+        return score
+
+    def evaluate_play_knight(self, action: Any, game: Game, color: Color) -> float:
+        """Estimate the value of playing a knight (best-effort)."""
+        score = 10.0
+        # Stronger if it could lead to Largest Army or steal
+        try:
+            name = self._safe_action_name(action)
+            if "steal" in name or "rob" in name:
+                score += 10.0
+        except Exception:
+            pass
+        return score
+
+    # ------------------- Rollout logic (phase-biased) -------------------
+    def rollout_value(self, game: Game, color: Color, depth: int) -> float:
+        """Short greedy rollout with phase bias."""
+        try:
+            if depth <= 0:
+                return self._evaluate_game_state(game, color)
+
+            actions = self.get_playable_actions_from_game(game)
+            if not actions:
+                return self._evaluate_game_state(game, color)
+
+            # Bias selection by phase: early -> settlement/road favored; late -> city/dev
+            early = self.is_early_game(game)
+            sorted_actions = sorted(actions, key=lambda a: self.cheap_pre_score(a, game, color), reverse=True)
+
+            # Try top few actions until one simulates
+            for a in sorted_actions[:6]:
+                # If early, prefer settlement/road in the slice
+                if early and not any(tok in self._safe_action_name(a) for tok in ("build_settlement", "settle", "road")):
+                    continue
+                try:
+                    branches = execute_deterministic(game, a)
+                except Exception:
+                    try:
+                        branches = execute_spectrum(game, a)
+                    except Exception:
+                        branches = []
+                if not branches:
+                    continue
+                # pick most probable branch
+                best_branch = max(branches, key=lambda bp: float(bp[1]))
+                next_game = best_branch[0]
+                return self.rollout_value(next_game, color, depth - 1)
+
+            # fallback to picking any action that simulates
+            for a in sorted_actions[:6]:
+                try:
+                    branches = execute_deterministic(game, a)
+                except Exception:
+                    try:
+                        branches = execute_spectrum(game, a)
+                    except Exception:
+                        branches = []
+                if branches:
+                    next_game = max(branches, key=lambda bp: float(bp[1]))[0]
+                    return self.rollout_value(next_game, color, depth - 1)
+
+            return self._evaluate_game_state(game, color)
+        except Exception as e:
+            self.debug_print("FooPlayer: rollout_value exception, falling back to evaluate_game_state. Error:", e)
+            return self._evaluate_game_state(game, color)
+
+    # ------------------- Evaluate action expectation (enhanced) -------------------
+    def _evaluate_action_expectation(self, game: Game, action: Any, per_action_branch_limit: int = 8) -> float:
+        """Compute expected value of taking `action` in `game` for this player.
+
+        Uses execute_spectrum when available then adds a rollout estimate for depth-1.
+        """
+        color = self._get_player_color()
+
+        # Special-case robber/knight/dev scoring quick boost before heavy sim
+        name = self._safe_action_name(action)
+        preboost = 0.0
+        if any(tok in name for tok in ("move_robber", "robber")):
+            preboost += self.evaluate_robber_action(action, game, color)
+        if any(tok in name for tok in ("knight", "play_knight")):
+            preboost += self.evaluate_play_knight(action, game, color)
+
+        branches = None
+        try:
+            branches = execute_spectrum(game, action)
+            if not branches:
+                raise RuntimeError("execute_spectrum returned no branches")
+        except Exception as e_s:
+            self.debug_print("FooPlayer: execute_spectrum failed or unavailable for action; trying deterministic. Error:", e_s)
+            try:
+                branches = execute_deterministic(game, action)
+                if not branches:
+                    raise RuntimeError("execute_deterministic returned no outcomes")
+            except Exception as e_d:
+                self.debug_print("FooPlayer: Both execute_spectrum and execute_deterministic failed for action. Errors:", e_s, e_d)
+                return float("-inf")
+
+        # Limit branches to keep runtime bounded
+        if len(branches) > per_action_branch_limit:
+            branches = sorted(branches, key=lambda bp: float(bp[1]), reverse=True)[:per_action_branch_limit]
+
+        expected = 0.0
+        total_prob = 0.0
+        # Determine rollout depth possibly reduced if budget is tight
+        rollout_depth = max(0, self.ROLLOUT_DEPTH - 1)
+        for (out_game, prob) in branches:
+            try:
+                immediate = self._evaluate_game_state(out_game, color)
+                rollout_est = self.rollout_value(out_game, color, rollout_depth)
+                branch_val = 0.6 * immediate + 0.4 * rollout_est
+            except Exception as e:
+                self.debug_print("FooPlayer: evaluation failed for branch, using heuristic. Error:", e)
+                branch_val = self._heuristic_value(out_game, color)
+            expected += float(prob) * float(branch_val)
+            total_prob += float(prob)
+
+        if total_prob > 0:
+            expected = expected / total_prob
+
+        # Add any preboost (robber/knight quick estimate)
+        expected += preboost
+        return float(expected)
+
+    # ------------------- Main decision function -------------------
+    def decide(self, game: Game, playable_actions: Iterable) -> Optional[object]:
+        """Choose an action from playable_actions using phase-aware sampling + rollouts."""
+        try:
+            playable_actions = list(playable_actions)
+            if not playable_actions:
+                self.debug_print("FooPlayer: No playable actions available, returning None")
+                return None
+
+            color = self._get_player_color()
+            early = self.is_early_game(game)
+
+            # Prefilter candidate actions
+            candidates = self.prefilter_actions(playable_actions, game, color)
+
+            # Cap to MAX_SIMULATIONS
+            if len(candidates) > self.MAX_SIMULATIONS:
+                candidates = candidates[: self.MAX_SIMULATIONS]
+
+            if not candidates:
+                candidates = random.sample(playable_actions, min(len(playable_actions), self.MAX_SIMULATIONS))
+
+            # Distribute simulation budget adaptively
+            per_action_budget = max(1, self.SIMULATION_BUDGET // max(1, len(candidates)))
+
+            best_score = float("-inf")
+            best_actions: List[Any] = []
+            scores_debug: List[Tuple[float, Any]] = []
+
+            for a in candidates:
+                try:
+                    score = self._evaluate_action_expectation(game, a, per_action_branch_limit=per_action_budget)
+                except Exception as e:
+                    self.debug_print("FooPlayer: Exception during action evaluation, skipping action. Error:", e)
+                    score = float("-inf")
+
+                scores_debug.append((score, a))
+
+                if score > best_score:
+                    best_score = score
+                    best_actions = [a]
+                elif score == best_score:
+                    best_actions.append(a)
+
+            # If no action had a finite score, fallback to first playable action
+            if not best_actions:
+                self.debug_print("FooPlayer: All evaluations failed, defaulting to first playable action")
+                return playable_actions[0]
+
+            # Debug logging: phase and top candidates
+            if self.DEBUG:
+                phase = "EARLY" if early else "MID/LATE"
+                self.debug_print(f"FooPlayer: Phase={phase}, chosen multipliers: settlement/road/city based on phase")
+                scores_debug.sort(key=lambda x: x[0], reverse=True)
+                topn = scores_debug[:3]
+                self.debug_print("FooPlayer: Top candidates:")
+                for sc, act in topn:
+                    self.debug_print(f"  score={sc:.2f} action={act}")
+
+            chosen = random.choice(best_actions)
+            self.debug_print(f"FooPlayer: Chosen action {chosen} with expected score {best_score}")
+            return chosen
+        except Exception as e:
+            # Protect against unexpected errors
+            print("FooPlayer: Unexpected error in decide(), defaulting to first playable action. Error:", e)
+            try:
+                return list(playable_actions)[0]
+            except Exception:
+                return None
+================================= Tool Message =================================
+Name: write_foo
+
+foo_player.py updated successfully
+================================== Ai Message ==================================
+
+CODER
+
+I updated foo_player.py with the requested phase-aware decisioning, enhanced heuristic, targeted action sampling, robber/knight evaluation, and rollout biases. Key points:
+
+- Implemented is_early_game to detect early/mid phases.
+- Adjusted cheap_pre_score and _heuristic_value to use phase multipliers favoring settlements/roads early and cities later.
+- Added settlement_potential and road_connection_potential to encourage expansion.
+- Added evaluate_robber_action and evaluate_play_knight to boost disruptive moves.
+- Prefilter ensures must-include actions and early-game settlement/road inclusion.
+- Rollout policy biases towards expansion in early game.
+- All adapters calls use the provided adapters surface and are wrapped in try/except fallbacks.
+- DEBUG flag is available (default False) to enable concise diagnostic prints.
+
+Next steps:
+- Run the experiments. If you see AttributeError traces or adapter mismatches (e.g., missing functions or different attribute names on game/player/hex objects), paste the exact traceback and I will work with RESEARCHER to adapt the code.
+
+END CODER
+

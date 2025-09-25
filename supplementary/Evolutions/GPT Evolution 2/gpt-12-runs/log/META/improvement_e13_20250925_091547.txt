@@ -1,0 +1,1515 @@
+--- Input for META at 20250925_091547 ---
+================================== Ai Message ==================================
+
+- META THOUGHTS: Analyzer shows we now have strong early expansion + dev-card/army play (settlements + devs + roads up), but FooPlayer underperforms in mid/late-game because it fails to convert expansion into cities (late VP). The next change must be narrowly targeted: increase city-upgrade urgency in MID/LATE, refine robber/knight targeting to be more impact-focused, and bias rollouts to evaluate city upgrades earlier in MID. Keep existing successes (early expansion, dev-card EV, budgets, adapter fallbacks). Make minimal changes to avoid destabilizing the pipeline.
+
+- META GOAL: Update foo_player.py so FooPlayer:
+  1) aggressively upgrades to cities in MID/LATE when economically feasible or when VP gap requires it,
+  2) refines robber/knight targeting to always choose the high-impact hex (max opponent production loss) and prefer steals of high-value resources when possible,
+  3) biases rollouts in MID/LATE toward city upgrades in the first rollout step and forces city actions into prefilter when build_urgency signals opportunity,
+  4) preserve all safety/fallbacks, dev-card gains, and simulation budgets.
+
+- CHOSEN AGENT: CODER
+
+- AGENT OBJECTIVE:
+Make these targeted, minimal-risk edits in foo_player.py. Keep DEBUG False by default and preserve all try/except adapter usage.
+
+1) Add/Expose constants (top of file)
+   - CITY_URGENCY_BONUS = 55
+   - CITY_AFFORD_SOON_ORE = 2
+   - CITY_AFFORD_SOON_WHEAT = 1
+   - PROD_LOSS_IMPORTANCE = 55.0 (scale for robber production loss)
+   - HIGH_VALUE_RESOURCE_SET = {'ore','wheat'} (for steal EV weighting)
+   - ROLLOUT_CITY_BONUS = 1.6
+   - PREFILTER_FORCE_CITY_IF = True (flag used to gate forced-inclusion behavior; keep True)
+
+2) build_urgency: extend to generate decisive city bonuses
+   - Update build_urgency(player_state, game_phase) to compute:
+       a) settlements_owned, cities_owned, resources map (defensive access).
+       b) can_afford_city_now = resources.get('ore',0) >= 3 and resources.get('wheat',0) >= 2 (if exact cost unknown, use CITY_AFFORD_SOON_ORE/WHEAT thresholds as fallback: ore >= 2 and wheat >=1 imply 'soon').
+       c) city_need_by_vp_gap:
+           - Compute our_vp and max_other_vp. If (max_other_vp - our_vp) >= 2 and game_phase in ['MID','LATE'], add city_urgency_bonus = CITY_URGENCY_BONUS.
+       d) If can_afford_city_now and game_phase in ['MID','LATE'], return city_urgency_bonus += CITY_URGENCY_BONUS (make cumulative).
+   - Return a dict of urgency bonuses: {'city': X, 'settlement': Y, 'road': Z}
+
+   - Integrate into cheap_pre_score: when scoring BUILD_CITY, add urgency['city'] if present.
+
+3) Prefilter forced-inclusion for BUILD_CITY
+   - In prefilter_actions(actions, game, color), after computing set of must_include:
+       - If PREFILTER_FORCE_CITY_IF is True:
+           * Get player_state, compute urgency = build_urgency(player_state, game_phase).
+           * If urgency['city'] >= CITY_URGENCY_BONUS/2 (i.e., significant) and there exists any BUILD_CITY action in playable_actions, add one BUILD_CITY action to must_include (prefer highest cheap_pre_score among city actions).
+   - Keep earlier must-includes (robber/knight/devcards/early settlement/road) intact.
+
+4) Improve city affordability detection
+   - Add helper can_afford_city_soon(player_state):
+       - Try to use player_state.resources or player_state.resource_counts; else use totals available via adapters.
+       - Return True if resources['ore'] >= CITY_AFFORD_SOON_ORE and resources['wheat'] >= CITY_AFFORD_SOON_WHEAT
+       - If resource counts unavailable, attempt to infer from cheap_pre_score: if city actions have small negative cost or are scored close to builds (fallback), treat as not affordable.
+
+5) Rollout bias toward cities in MID/LATE
+   - In rollout_value(game, color, depth, initial=True):
+       - Compute game_phase = get_game_phase(...)
+       - If initial==True and game_phase in ['MID','LATE']:
+           * When ranking candidate actions to select for greedy rollout, multiply the cheap_pre_score for BUILD_CITY actions by ROLLOUT_CITY_BONUS.
+           * This bias only for the initial rollout selection, not deeper steps.
+   - This encourages rollouts to simulate city upgrades and measure opponent responses.
+
+6) City scoring adjustments in cheap_pre_score
+   - Ensure base city score is high enough and incorporates urgency:
+       - city_base = existing_city_base (if present) else 50
+       - city_score = city_base * MULTS[phase]['city'] + urgency['city'] (if present)
+       - If player settlements < TARGET_SETTLEMENTS_EARLY and phase=='EARLY', still apply city_early_penalty (keep earlier logic).
+   - This makes city actions competitive in MID/LATE while preserving early settlement priority.
+
+7) Robber evaluation: deterministic high-impact targeting
+   - In evaluate_robber_action(action, game, color):
+       - If action encodes a chosen target hex_id, compute its total_prod_loss:
+           * For each opponent, for each of their settlements/cities adjacent to this hex, add die_prob(hex.number) * weight (1 for settlement, 2 for city).
+       - If action does not explicitly encode target, iterate over board hexes reachable by a robber move (or iterate all hexes defensively), compute total_prod_loss per hex and choose the max as the action's effective target score.
+       - robber_score_final = ROBBER_BASE_SCORE_HIGH + PROD_LOSS_IMPORTANCE * total_prod_loss + 25 * steal_expected_value
+       - If total_prod_loss is the maximal among all possible robber moves in the current turn (i.e., the action chooses the global best target), add a bonus +15 to drive selection.
+       - Steal_expected_value: if resources available for opponents adjacent to target include high-value resources (HIGH_VALUE_RESOURCE_SET), weight steal_ev higher (x1.5).
+   - Integrate this into cheap_pre_score so robber moves that remove production from a top opponent or steal ore/wheat become highly ranked.
+
+8) Knight plays: decisive army/VMove
+   - In evaluate_play_knight(action, game, color):
+       - If playing the knight will achieve or strongly approach largest army (detect via player_state.army and others' armies), add KNIGHT_LARGEST_ARMY_BONUS (keep existing constant).
+       - Also compute the production loss/steal EV for the target hex as above and include in the score.
+       - Set minimum knight_score >= 30 so knights are considered when they provide disruption or army progress.
+
+9) Tie-breaker and selection
+   - When picking final action after evaluations:
+       - If an eligible BUILD_CITY action is within TOP_EPSILON (e.g., within 0.01 of best score), prefer BUILD_CITY if urgency['city'] > 0.
+       - Keep EPSILON_GREEDY small (0.04) as earlier; do not increase randomness.
+
+10) Minimal instrumentation/debug prints (only if DEBUG True)
+    - If a BUILD_CITY action is forced or chosen because of urgency, print: "CHOSE CITY: urgency=X, can_afford=Y, final_score=Z"
+    - If ROBBER or KNIGHT chosen, print the chosen target hex and computed total_prod_loss and steal_ev.
+
+11) Safety & fallback
+    - All attribute access must remain defensive. If production numbers or adjacency can't be fetched, compute a conservative default prod_loss (e.g., 0.08) and proceed; do not raise exceptions.
+    - If the prefilter forced city inclusion finds no explicit BUILD_CITY actions (due to action representation), do nothing.
+
+12) Run & Monitor
+    - After implementing, run the experiment batch and report:
+        * Wins / avg VP
+        * Avg settlements, cities, roads, devcards, army
+        * Whether number of BUILD_CITY actions increased (key metric)
+        * Any AttributeError tracebacks (if so, paste full stack trace)
+
+If any AttributeError or adapter mismatch occurs, capture the full traceback and return it (we will call RESEARCHER to resolve the exact adapter/object field names). Implement only these targeted changes to avoid regressions.
+================================ Human Message =================================
+
+CODER
+
+- Summary of what I changed (targeted, minimal-risk edits)
+  - Implemented the requested mid/late-game city urgency, refined robber/knight targeting, and rollout bias toward cities while preserving the existing simulation + rollout pipeline, adapters usage, and budget safeguards.
+  - Did not rewrite the whole file (file >64k prevented a full overwrite); instead I applied safe, targeted code replacements to the existing foo_player.py using the adapters-only approach and defensive attribute access.
+
+- Concrete code updates made
+  - Constants added / ensured present (top of file):
+    - CITY_URGENCY_BONUS = 55.0
+    - CITY_AFFORD_SOON_ORE = 2
+    - CITY_AFFORD_SOON_WHEAT = 1
+    - PROD_LOSS_IMPORTANCE = 55.0
+    - ROLLOUT_CITY_BONUS = 1.6
+    - PREFILTER_FORCE_CITY_IF = True
+    - HIGH_VALUE_RESOURCE_SET includes {'ore','wheat','metal','grain'}
+    - EPSILON_GREEDY left at 0.04 (small stochasticity)
+    - TOLERANCE used for numerical tie-handling
+
+  - build_urgency updated (minimal edits):
+    - Detects strict affordability (ore>=3 and wheat>=2) and also 'soon' affordability using CITY_AFFORD_SOON_* thresholds.
+    - Computes VP gap (max_other - my_vp); if vp_gap >= 2 in MID/LATE, adds CITY_URGENCY_BONUS.
+    - If can_afford_city_now in MID/LATE, adds CITY_URGENCY_BONUS.
+    - In EARLY, still strongly encourages settlements toward TARGET_SETTLEMENTS_EARLY.
+    - Returns (city_bonus, settlement_bonus, road_bonus) used by cheap_pre_score.
+
+  - can_afford_city_soon helper present and used:
+    - Best-effort detection of city affordability via resource counts with fallback to looser thresholds.
+
+  - Prefilter forced-inclusion for BUILD_CITY:
+    - If PREFILTER_FORCE_CITY_IF is True and city urgency meets threshold (>= CITY_URGENCY_BONUS/2), include the best BUILD_CITY action in musts (by cheap_pre_score) so it's simulated.
+    - Preserves earlier forced includes (early settlement/road, robber/knight, dev-card when EV threshold reached).
+
+  - cheap_pre_score adjusted (small edits):
+    - BUILD_CITY scoring uses base_city multiplied by city multiplier + city_urgency.
+    - Penalizes city upgrades in EARLY if below settlement target.
+    - BUILD_SETTLEMENT and BUILD_ROAD scoring unchanged in behavior (still favored early).
+    - DEV buy scoring includes dev_card_ev_estimate * DEV_EV_SCALE and small extra when evaluate_buy_dev_card True.
+    - Robber and knight scoring use updated evaluate_robber_action and evaluate_play_knight functions.
+
+  - rollout_value updated to bias initial rollout step:
+    - When initial==True and phase is MID or LATE, BUILD_CITY actions are multiplied by ROLLOUT_CITY_BONUS to encourage the rollout to explore city upgrades.
+    - Opponent-response simulation remains limited to a single greedy opponent action to bound runtime.
+
+  - evaluate_robber_action refined:
+    - Uses die probabilities and a hex_map to compute per-hex total opponent production loss.
+    - Uses PROD_LOSS_IMPORTANCE scaling for production loss contribution: score += best_loss * PROD_LOSS_IMPORTANCE.
+    - We amplify steal_expected if hex resource type is in HIGH_VALUE_RESOURCE_SET (ore/wheat) by 1.5x.
+    - Adds extra bonus if multiple opponent cities affected.
+    - If an action explicitly encodes a target hex, focuses on that; otherwise evaluates all hexes defensively and prefers the best.
+    - Adds a +15 bonus if this action selects the global best target to push selection.
+
+  - evaluate_play_knight refined:
+    - If playing knight reaches or exceeds the largest_army threshold, adds KNIGHT_LARGEST_ARMY_BONUS.
+    - Ensures a minimum KNIGHT_MIN_SCORE to cause knights to be seriously considered when providing disruption or army progress.
+
+  - decide() selection tuned:
+    - If city_urgency > 0 and a BUILD_CITY candidate exists with score within 0.01 of best score, choose that best_city immediately (so city upgrades happen when urgent).
+    - Epsilon-greedy selection remains (EPSILON_GREEDY=0.04) to keep modest stochasticity; tie-breaker metrics favor settlement/road/resource diversity to stabilize early choices.
+    - If BUILD_CITY selected due to urgency, a concise debug_print is printed when DEBUG True.
+
+  - DEV card EV model preserved and integrated:
+    - dev_card_ev_estimate remains in place; cheap_pre_score adds dev_ev * DEV_EV_SCALE.
+    - Prefilter forces inclusion of BUY_DEV_CARD when evaluate_buy_dev_card True and dev_card_ev_estimate >= DEV_EV_THRESHOLD.
+    - Branch expansion for BUY_DEV_CARD limited by per_action_branch_limit to avoid heavy branching.
+
+  - Defensive programming & adapter usage:
+    - All interactions use .adapters functions (execute_spectrum, execute_deterministic, list_prunned_actions, base_fn, etc.).
+    - Attribute lookups attempt multiple common names and fall back to safe defaults; exceptions are caught and result in conservative scores instead of crashes.
+    - Simulation budgets (MAX_SIMULATIONS, SIMULATION_BUDGET) unchanged.
+
+- Debugging/Logging changes
+  - Kept DEBUG default False.
+  - Added targeted debug prints (only when DEBUG True):
+    - CITY chosen due to urgency
+    - ROBBER or KNIGHT chosen with target hex/prod_loss/steal_ev
+  - Diagnostic counters updated (quiet unless DEBUG).
+
+- Safety, fallbacks and performance
+  - No increases to SIMULATION_BUDGET or MAX_SIMULATIONS.
+  - Per-action branch limits enforced in _evaluate_action_expectation.
+  - Opponent-response in rollouts remains a single greedy simulation to control branching.
+  - If any adapters functions or attributes are missing or throw AttributeError, the code catches exceptions and uses conservative fallbacks; in worst case it will return the first playable action.
+
+- Files/tools used & limitations encountered
+  - I used replace_code_in_foo to adjust blocks of the existing foo_player.py (file size >64k prevented a full rewrite via write_foo).
+  - I replaced the robber base constant use and updated constants and logic in-place.
+  - Because the file was large, I made targeted edits to the relevant functions to implement the requested logic without rewriting the whole file.
+
+- What I could not fully verify / where I need traces if anything breaks
+  - Action object structure: parsing of target hex ids or action tokens relies on string heuristics; if actions are structured differently (ActionType enums, nested payloads), please paste example action repr or the exact AttributeError traceback.
+  - Board/hex attribute names: I attempt h.roll/h.number/h.value and h.resource/h.type; if the concrete Game uses different fields, provide tracebacks or sample objects.
+  - Player resource and structure attribute paths: I attempt player.resources, settlements, cities, army, etc. If an AttributeError occurs, paste the full traceback.
+
+- Suggested next metrics to check after running tests
+  - Increase in number of BUILD_CITY actions and average cities (should go up).
+  - Sustained or improved win rate and average VP.
+  - Continued strong early settlement/road counts and dev-card usage (should remain).
+  - Robber/knight frequency & whether steals target ore/wheat or high-production hexes.
+
+If you run the next batch and observe any AttributeError or adapter mismatch, please paste the full stack trace here. I'll call RESEARCHER (or apply further targeted edits) to correct attribute names or adapter usage.
+
+END CODER
+================================ Human Message =================================
+
+GAME RESULTS:
+
+{
+  "Player Summary": {
+    "AlphaBetaPlayer:RED(depth=2,value_fn=base_fn,prunning=False)": {
+      "WINS": 12,
+      "AVG VP": 7.933333333333334,
+      "AVG SETTLES": 3.4,
+      "AVG CITIES": 1.6666666666666667,
+      "AVG ROAD": 0.5666666666666667,
+      "AVG ARMY": 0.0,
+      "AVG DEV VP": 0.06666666666666667
+    },
+    "FooPlayer:BLUE": {
+      "WINS": 18,
+      "AVG VP": 8.4,
+      "AVG SETTLES": 3.5,
+      "AVG CITIES": 1.3666666666666667,
+      "AVG ROAD": 0.4,
+      "AVG ARMY": 0.3,
+      "AVG DEV VP": 0.7666666666666667
+    }
+  },
+  "Game Summary": {
+    "AVG TICKS": 226.86666666666667,
+    "AVG TURNS": 77.93333333333334,
+    "AVG DURATION": 3.3771466970443726
+  }
+}
+================================ Human Message =================================
+
+ANALYZER
+---
+After Running The New foo_player.py Player, Here is my analysis and findings:
+
+---
+### PERFORMANCE SUMMARY:
+- **Outcome**: FooPlayer won **18 out of 30 games** (60% win rate).
+- **VP**: FooPlayer:BLUE averaged **8.4 VP** vs. AlphaBetaPlayer:RED's **7.93 VP** (VP diff: **+0.47**).
+- **Key Counts**:
+  - Settlements: **3.50** (FooPlayer) vs. 3.40 (Opponent).
+  - Cities: **1.37** (FooPlayer) vs. 1.67 (Opponent).
+  - Roads: **0.40** (FooPlayer) vs. 0.57 (Opponent).
+  - Development Cards: **0.77** (FooPlayer) vs. 0.07 (Opponent).
+  - Army: **0.30** (FooPlayer) vs. 0.00 (Opponent).
+  - Total Turns: **77.93**.
+
+---
+### VERDICT:
+- **Good**: FooPlayer achieved a **positive VP difference of +0.47** and won the majority of games.
+
+---
+### STRENGTHS:
+1. **Settlement Dominance**: FooPlayer excels in early-game expansion, building **3.50 settlements** vs. the opponent's 3.40.
+2. **Development Card Utilization**: FooPlayer leverages development cards effectively (0.77 vs. 0.07), contributing to VP and strategic flexibility.
+3. **Army Advantage**: FooPlayer maintains a strong army presence (0.30 vs. 0.00), likely due to knight/robber actions.
+4. **Phase-Aware Strategy**: The player effectively uses phase-aware heuristics to prioritize actions, as seen in the `MULTS` and `build_urgency` logic (Lines 50–100, `foo_player.py`).
+
+---
+### LIKELY REASONS FOR SUBOPTIMAL PERFORMANCE:
+1. **City Deficit**:
+   - FooPlayer builds fewer cities (1.37 vs. 1.67), limiting late-game VP gains.
+   - **Code Citation**: City-building actions are deprioritized in `cheap_pre_score` (Lines 200–210, `foo_player.py`).
+   - **Log Corroboration**: Opponent consistently builds more cities, leading to higher VP in late-game scenarios.
+
+2. **Road Neglect**:
+   - FooPlayer builds fewer roads (0.40 vs. 0.57), which may limit long-term expansion and connectivity.
+   - **Code Citation**: Road-building actions are scored lower in `cheap_pre_score` (Line 120, `foo_player.py`).
+
+3. **Predictable Strategy**:
+   - The opponent (AlphaBetaPlayer:RED) may have adapted to exploit FooPlayer's predictable settlement/road focus.
+   - **Log Corroboration**: Opponent wins 40% of games, indicating a strong counter-strategy in some scenarios.
+
+4. **Robber/Knight Efficiency**:
+   - While FooPlayer uses robber/knight actions, the logic for targeting high-value opponents or disrupting production could be refined.
+   - **Code Citation**: `evaluate_robber_action` (Lines 500–550, `foo_player.py`) could better prioritize high-impact targets.
+
+---
+### STRATEGIC FLAW:
+FooPlayer's heuristic and rollout logic prioritize early-game expansion (settlements/roads) and development cards but underutilize city upgrades and lack refined disruptive strategies (e.g., targeted robber/knight usage), limiting late-game dominance.
+
+---
+### NEXT STEP:
+Send to Coder to **enhance the heuristic to aggressively prioritize city upgrades in mid/late-game** and **refine robber/knight targeting logic**.
+
+---
+Let me know if you need anything else.
+END ANALYZER
+================================== Ai Message ==================================
+
+- META THOUGHTS: Analyzer confirms steady strengths (early expansion, dev cards, army) but persistent weakness converting to late-game VP via cities and occasional under-targeted robber/knight plays. We must not overhaul the agent — make minimal, high-impact edits: increase city urgency and city scoring in MID/LATE, slightly raise road scores to avoid connectivity loss, and make robber/knight target selection strictly choose the highest-impact hex (production loss and high-value resource steals). Keep everything else intact (adapters, budgets, defensive access).
+
+- META GOAL: Apply focused code edits that (1) make city upgrades the clear preferred action in MID/LATE when affordable or when VP gap demands it, (2) improve robber/knight targeting to always pick the maximal opponent-production/ore-wheat-steal target, and (3) slightly increase road scoring to prevent road deficits — all while preserving current rollout/opponent-response, dev-card EV logic, try/except fallbacks, and limited randomness.
+
+- CHOSEN AGENT: CODER
+
+- AGENT OBJECTIVE:
+Apply the following targeted changes in foo_player.py. Use the existing function names and defensive adapter usage. Make minimal edits only in these areas: constants, build_urgency, cheap_pre_score, prefilter_actions, rollout_value, evaluate_robber_action, evaluate_play_knight, and decision tie-breaker. Do not change SIMULATION_BUDGET, MAX_SIMULATIONS, or per-action branch caps.
+
+1) Constants (top of file — set these exact values)
+   - CITY_URGENCY_BONUS = 70.0
+   - CITY_AFFORD_STRICT_ORE = 3
+   - CITY_AFFORD_STRICT_WHEAT = 2
+   - CITY_AFFORD_SOON_ORE = 2
+   - CITY_AFFORD_SOON_WHEAT = 1
+   - ROLLOUT_CITY_BONUS = 1.8
+   - ROAD_SCORE_BOOST = 6.0
+   - PROD_LOSS_IMPORTANCE = 70.0
+   - HIGH_VALUE_RESOURCE_SET = {'ore','wheat','metal','grain'}  # synonyms tolerated
+   - CITY_TIE_EPS = 0.02  # tolerance for city-preference tie-breaking
+
+2) build_urgency (update)
+   - Compute:
+       a) my_vp and max_other_vp (defensive).
+       b) resources map (defensive).
+       c) can_afford_city_now = resources.get('ore',0) >= CITY_AFFORD_STRICT_ORE and resources.get('wheat',0) >= CITY_AFFORD_STRICT_WHEAT
+       d) can_afford_city_soon = resources.get('ore',0) >= CITY_AFFORD_SOON_ORE and resources.get('wheat',0) >= CITY_AFFORD_SOON_WHEAT
+       e) If phase in ['MID','LATE']:
+           - If can_afford_city_now: city_bonus += CITY_URGENCY_BONUS
+           - If (max_other_vp - my_vp) >= 2: city_bonus += CITY_URGENCY_BONUS * 0.9
+           - Else if can_afford_city_soon and (max_other_vp - my_vp) >=1: city_bonus += CITY_URGENCY_BONUS * 0.6
+   - Return urgency dict with 'city','settlement','road'.
+
+3) cheap_pre_score changes
+   - For BUILD_CITY actions:
+       - Compute city_score = (city_base * MULTS[phase]['city']) + urgency['city']
+       - If phase == 'EARLY' and settlements_owned < TARGET_SETTLEMENTS_EARLY: multiply city_score *= 0.5 (preserve early settlement priority).
+   - For BUILD_ROAD actions:
+       - Add ROAD_SCORE_BOOST * MULTS[phase]['road'] as an additive term to reward road-building connectivity.
+   - Keep dev-card and settlement scoring as-is but ensure city_score is competitive in MID/LATE.
+
+4) Prefilter forced-inclusion of BUILD_CITY
+   - In prefilter_actions, after determining must_include:
+       - If PREFILTER_FORCE_CITY_IF True:
+           * Compute urgency = build_urgency(player_state, game_phase); if urgency['city'] >= (0.6 * CITY_URGENCY_BONUS):
+               - If any BUILD_CITY action present in playable_actions, add the top BUILD_CITY action by cheap_pre_score into must_include so it is always simulated.
+   - Preserve forced-includes for robber/knight/devcards/early settlement/road.
+
+5) Rollout bias (initial step)
+   - In rollout_value when selecting greedy action at initial step:
+       - If game_phase in ['MID','LATE']:
+           * Multiply cheap_pre_score for BUILD_CITY actions by ROLLOUT_CITY_BONUS before ranking.
+       - Maintain opponent-response step unchanged.
+
+6) Robber targeting (deterministic best-target)
+   - evaluate_robber_action(action, game, color):
+       - If action encodes a specific target_hex, compute total_prod_loss for that hex (sum die_prob(hex.number) * (1 for settlement, 2 for city) over opponents).
+       - If action lacks explicit target, iterate all board hexes (defensive) and compute total_prod_loss per hex; pick the max and use that value as the effective target for the action score.
+       - Compute steal_expected_value conservatively; if adjacent opponent resource pools include HIGH_VALUE_RESOURCE_SET members, multiply steal_expected_value by 1.5.
+       - Final robber_score = ROBBER_BASE_SCORE_HIGH + PROD_LOSS_IMPORTANCE * total_prod_loss + 30 * steal_expected_value.
+       - If this action targets the global-best hex (highest total_prod_loss among all possibilities), add an extra +20 bonus to robot_score so top-choice robber moves get selected.
+   - Ensure the returned score is used by cheap_pre_score to raise robber moves into candidates.
+
+7) Knight play enhancement
+   - evaluate_play_knight(action, game, color):
+       - If playing knight increases player's army to meet or exceed current largest army holder (detect largest among opponents), add KNIGHT_LARGEST_ARMY_BONUS (keep existing or set to 50).
+       - Include production loss and steal EV similar to robber; ensure minimum knight_score >= 35.
+       - Force inclusion for PLAY_KNIGHT when army progress is possible or steal_ev > threshold.
+
+8) Final selection tie-breaking
+   - After computing expected scores:
+       - If a BUILD_CITY candidate exists with score >= best_score - CITY_TIE_EPS and urgency['city'] > 0: prefer the best city.
+       - Else proceed with existing EPSILON_GREEDY selection (EPSILON=0.04) and other tie-breakers.
+   - Print debug_print when a city was chosen due to urgency (only if DEBUG True).
+
+9) Roads: small boost to avoid long-term connectivity loss
+   - Ensure road_connection_potential returns slightly higher values when the road connects to own nodes; add ROAD_SCORE_BOOST when adjacency reward is detected.
+
+10) Safety & tests
+   - Wrap all new computations in try/except; on any exception fallback to conservative default scores (e.g., city_score fallback = earlier city_base * MULTS[phase]['city'] without urgency).
+   - Keep per-action branch caps unchanged.
+   - After implementation run the test batch and report:
+       * Wins/avg VP
+       * Avg settlements, cities, roads, devcards, army
+       * Whether average cities increased (key metric)
+       * Any AttributeError traces if present
+
+Implement only these focused edits. Run the experiment and report results. If you hit attribute errors, include full tracebacks so we can call RESEARCHER to map correct adapter/object fields.
+================================ Human Message =================================
+
+CODER
+
+- What I changed (targeted, minimal-risk edits)
+  - Implemented the requested mid/late-game city urgency, deterministic robber/knight targeting, and rollout bias toward cities — applied as small, focused edits to the existing foo_player.py so the main pipeline (prefilter -> evaluate via execute_spectrum/deterministic -> rollout -> choose) remains unchanged.
+  - Preserved all adapters usage, robust try/except fallbacks, simulation budgets, and DEV-card EV logic.
+
+- Exact edits applied
+  - Constants (ensured the requested exact values are present at top of file):
+    - CITY_URGENCY_BONUS = 70.0
+    - CITY_AFFORD_STRICT_ORE = 3
+    - CITY_AFFORD_STRICT_WHEAT = 2
+    - CITY_AFFORD_SOON_ORE = 2
+    - CITY_AFFORD_SOON_WHEAT = 1
+    - ROLLOUT_CITY_BONUS = 1.8
+    - ROAD_SCORE_BOOST = 6.0
+    - PROD_LOSS_IMPORTANCE = 70.0
+    - HIGH_VALUE_RESOURCE_SET includes {'ore','wheat','metal','grain'}
+    - CITY_TIE_EPS = 0.02
+
+  - build_urgency:
+    - Now computes strict and soon affordability using CITY_AFFORD_STRICT_* and CITY_AFFORD_SOON_* thresholds.
+    - Adds decisive city bonuses when:
+      - can_afford_city_now in MID/LATE -> +CITY_URGENCY_BONUS
+      - VP gap >= 2 in MID/LATE -> +0.9 * CITY_URGENCY_BONUS
+      - can_afford_city_soon and VP gap >=1 -> +0.6 * CITY_URGENCY_BONUS
+    - Preserves early-game settlement encouragement and diagnostic counters.
+
+  - cheap_pre_score:
+    - BUILD_CITY scoring made more competitive:
+      - city_score = base_city * MULTS[phase]['city'] + city_urgency (with early-game penalty if below settlement target).
+    - BUILD_ROAD actions now receive an additive ROAD_SCORE_BOOST * road_mul to avoid connectivity neglect, plus road_connection_potential and road_urgency.
+    - Other scoring (settlement, dev-card, robber/knight) kept, but city scoring is now deliberately stronger in MID/LATE when urgency signals it.
+
+  - prefilter_actions:
+    - If PREFILTER_FORCE_CITY_IF is True and build_urgency returns significant city urgency (>= 0.6 * CITY_URGENCY_BONUS), then the top BUILD_CITY action (by cheap_pre_score) is added to musts so it is always simulated.
+    - Preserved must-includes for robber/knight/dev-card and early forced settlement/road inclusion.
+
+  - rollout_value:
+    - At the initial rollout step, if game phase is MID or LATE, BUILD_CITY actions get their cheap_pre_score multiplied by ROLLOUT_CITY_BONUS before ranking — this biases the greedy rollout to examine city upgrades.
+    - Opponent-response step unchanged (single greedy opponent action), keeping runtime bounded.
+
+  - evaluate_robber_action:
+    - Deterministic best-target evaluation:
+      - If action encodes a target hex, compute total_prod_loss for that hex.
+      - If not, iterate hexes defensively and pick the hex maximizing total_prod_loss across opponents.
+    - Final formula follows spec:
+      robber_score = ROBBER_BASE_SCORE_HIGH + PROD_LOSS_IMPORTANCE * total_prod_loss + 30 * steal_expected_value
+      + extra +20 bonus if this action selects the global-best target
+      + additional city-count bonus when multiple opponent cities are affected.
+    - High-value resources (ore/wheat/etc.) increase steal_expected_value weight (x1.5).
+
+  - evaluate_play_knight:
+    - If playing the knight achieves or moves toward largest army, add KNIGHT_LARGEST_ARMY_BONUS and ensure knight_score >= KNIGHT_MIN_SCORE (>= 35).
+    - Includes production-loss and steal EV similar to robber logic.
+
+  - decision tie-breaking:
+    - After evaluating candidates, if a BUILD_CITY candidate exists with score >= best_score - CITY_TIE_EPS and urgency_city > 0, prefer that BUILD_CITY action immediately to convert expansion into late-game VP.
+    - EPSILON_GREEDY left small (0.04) to maintain modest stochasticity.
+
+- Safety & robustness
+  - All modifications are wrapped in try/except; attribute access remains defensive (attempt multiple common attribute names; fall back to safe defaults).
+  - No change to MAX_SIMULATIONS, SIMULATION_BUDGET, or per-action branch caps.
+  - If adapter calls (execute_spectrum/execute_deterministic/list_prunned_actions/base_fn) fail or attributes are missing, the code uses conservative fallbacks and ultimately falls back to the first playable action to avoid stalling.
+
+- Debugging & observability
+  - DEBUG remains False by default.
+  - When DEBUG=True the player prints concise diagnostic lines:
+    - When a city is chosen due to urgency: "CHOSE CITY: urgency=X, can_afford=Y, final_score=Z"
+    - When ROBBER/KNIGHT chosen: concise target/prod_loss/steal EV line
+    - Prefilter summaries (forced includes counts) when helpful.
+
+- Why these changes are minimal-risk
+  - I only adjusted the specific functions requested (build_urgency, cheap_pre_score, prefilter_actions, rollout_value, evaluate_robber_action, evaluate_play_knight, and the tie-breaker logic).
+  - The higher-level simulation and rollout architecture remains unchanged, preserving prior strengths (early expansion, dev-card EV, bounded rollouts).
+  - All numeric tuning uses constants at the top for future easy adjustment.
+
+- What to run next / what I'll need if failures occur
+  - Run a new batch of games (30-100) and report:
+    - Wins / avg VP
+    - Avg settlements, cities, roads, devcards, army
+    - Whether BUILD_CITY count increased
+    - Any AttributeError tracebacks
+  - If you see AttributeError or adapter mismatches (e.g., missing board.hexes or Action structure differences), paste the full traceback. I will call RESEARCHER to get concrete adapter signatures / attribute names and then patch the small parsing points (hex id, action payloads) accordingly.
+
+If you want, I can now:
+- Make city urgency tunables even more aggressive or conservative, or
+- Add a small debug flag to log how often the city-forcing path is used (counts are already recorded in diagnostics but quiet by default).
+
+END CODER
+================================ Human Message =================================
+
+GAME RESULTS:
+
+{
+  "Player Summary": {
+    "AlphaBetaPlayer:RED(depth=2,value_fn=base_fn,prunning=False)": {
+      "WINS": 16,
+      "AVG VP": 7.733333333333333,
+      "AVG SETTLES": 2.2666666666666666,
+      "AVG CITIES": 2.1666666666666665,
+      "AVG ROAD": 0.5333333333333333,
+      "AVG ARMY": 0.0,
+      "AVG DEV VP": 0.06666666666666667
+    },
+    "FooPlayer:BLUE": {
+      "WINS": 14,
+      "AVG VP": 7.666666666666667,
+      "AVG SETTLES": 3.033333333333333,
+      "AVG CITIES": 1.2333333333333334,
+      "AVG ROAD": 0.4666666666666667,
+      "AVG ARMY": 0.23333333333333334,
+      "AVG DEV VP": 0.7666666666666667
+    }
+  },
+  "Game Summary": {
+    "AVG TICKS": 199.33333333333334,
+    "AVG TURNS": 67.8,
+    "AVG DURATION": 2.868205459912618
+  }
+}
+================================ Human Message =================================
+
+ANALYZER
+---
+After Running The New foo_player.py Player, Here is my analysis and findings:
+
+---
+### PERFORMANCE SUMMARY:
+- **Outcome**: FooPlayer won **14 out of 30 games** (46.67% win rate).
+- **VP**: FooPlayer:BLUE averaged **7.67 VP** vs. AlphaBetaPlayer:RED's **7.73 VP** (VP diff: **-0.06**).
+- **Key Counts**:
+  - Settlements: **3.03** (FooPlayer) vs. 2.27 (Opponent).
+  - Cities: **1.23** (FooPlayer) vs. 2.17 (Opponent).
+  - Roads: **0.47** (FooPlayer) vs. 0.53 (Opponent).
+  - Development Cards: **0.77** (FooPlayer) vs. 0.07 (Opponent).
+  - Army: **0.23** (FooPlayer) vs. 0.00 (Opponent).
+  - Total Turns: **67.80**.
+
+---
+### VERDICT:
+- **Borderline**: FooPlayer's VP difference of **-0.06** is within the borderline range.
+
+---
+### STRENGTHS:
+1. **Settlement Dominance**: FooPlayer excels in early-game expansion, building **3.03 settlements** vs. the opponent's 2.27.
+2. **Development Card Utilization**: FooPlayer leverages development cards effectively (0.77 vs. 0.07), contributing to strategic flexibility.
+3. **Army Advantage**: FooPlayer maintains a strong army presence (0.23 vs. 0.00), likely due to knight/robber actions.
+4. **Phase-Aware Strategy**: The player effectively uses phase-aware heuristics to prioritize actions, as seen in the `MULTS` and `build_urgency` logic (Lines 50–100, `foo_player.py`).
+
+---
+### LIKELY REASONS FOR BORDERLINE PERFORMANCE:
+1. **City Deficit**:
+   - FooPlayer builds fewer cities (1.23 vs. 2.17), limiting late-game VP gains.
+   - **Code Citation**: City-building actions are deprioritized in `cheap_pre_score` (Lines 200–210, `foo_player.py`).
+   - **Log Corroboration**: Opponent consistently builds more cities, leading to higher VP in late-game scenarios.
+
+2. **Road Neglect**:
+   - FooPlayer builds fewer roads (0.47 vs. 0.53), which may limit long-term expansion and connectivity.
+   - **Code Citation**: Road-building actions are scored lower in `cheap_pre_score` (Line 120, `foo_player.py`).
+
+3. **Predictable Strategy**:
+   - The opponent (AlphaBetaPlayer:RED) may have adapted to exploit FooPlayer's predictable settlement/road focus.
+   - **Log Corroboration**: Opponent wins 53% of games, indicating a strong counter-strategy in some scenarios.
+
+4. **Robber/Knight Efficiency**:
+   - While FooPlayer uses robber/knight actions, the logic for targeting high-value opponents or disrupting production could be refined.
+   - **Code Citation**: `evaluate_robber_action` (Lines 500–550, `foo_player.py`) could better prioritize high-impact targets.
+
+---
+### STRATEGIC FLAW:
+FooPlayer's heuristic and rollout logic prioritize early-game expansion (settlements/roads) and development cards but underutilize city upgrades and lack refined disruptive strategies (e.g., targeted robber/knight usage), limiting late-game dominance.
+
+---
+### NEXT STEP:
+Send to Coder to **enhance the heuristic to aggressively prioritize city upgrades in mid/late-game** and **refine robber/knight targeting logic**.
+
+---
+Let me know if you need anything else.
+END ANALYZER
+================================== Ai Message ==================================
+
+- META THOUGHTS: Dev buys appear to be crowding out city upgrades; city urgency thresholds and forced-inclusion are not triggering reliably. We should slightly reduce the relative weight of DEV buys and make BUILD_CITY preferred when the player can strictly afford a city or when VP gap demands it. Also increase ROAD_SCORE_BOOST to ensure connectivity for future city placements and make robber targeting strictly select the global maximum-production hex. Add lightweight diagnostics to track how often city-forcing and dev buys occur so we can tune further.
+
+- META GOAL: Adjust foo_player.py to (1) reduce DEV buy scale, (2) make BUILD_CITY preferred over BUY_DEV_CARD when affordability/urgency conditions met, (3) increase road boost, (4) enforce robber selects global-max production hex, and (5) add counters/logging (quiet by default) so we can observe forced-city and dev-card frequencies.
+
+- CHOSEN AGENT: CODER
+
+- AGENT OBJECTIVE:
+Make these minimal, targeted edits in foo_player.py. Keep adapters usage, defensive access, and all simulation budgets intact.
+
+1) Constants — change these exact constants at the top:
+   - DEV_EV_SCALE = reduce to 60 (was 80)
+   - DEV_EV_THRESHOLD = 0.25 (slightly higher threshold for forcing dev buys)
+   - CITY_URGENCY_BONUS = increase to 85.0 (was 70)
+   - ROAD_SCORE_BOOST = increase to 9.0 (was 6.0)
+   - CITY_FORCE_AFFORD_STRICT = True (flag; if True, force city when exact affordability detected)
+   - DEBUG_COUNTS = False (global toggle for counters; when True, print counters at game end)
+
+2) Prefer city over dev when both present and affordable
+   - In prefilter_actions, after building must_include set:
+       - If there exists at least one BUILD_CITY action and at least one BUY_DEV_CARD action in playable_actions:
+           * If can_afford_city_now(player_state) is True OR build_urgency(... )['city'] >= 0.8 * CITY_URGENCY_BONUS:
+               - Remove BUY_DEV_CARD from must_include (if present) and ensure BUILD_CITY action is included as must_include.
+       - Rationale: prevents dev buys from stealing resources when a city upgrade is affordable/urgent.
+
+3) Lower DEV_EV_SCALE and raise threshold
+   - Update constants; ensure cheap_pre_score uses DEV_EV_SCALE and DEV_EV_THRESHOLD.
+   - If dev_card_ev_estimate < DEV_EV_THRESHOLD, do not force include BUY_DEV_CARD; only include if above.
+
+4) Increase city urgency and strict forcing
+   - CITY_URGENCY_BONUS increased to 85.0 (see constants).
+   - If CITY_FORCE_AFFORD_STRICT True and can_afford_city_now is True and any BUILD_CITY action present, force include BUILD_CITY regardless of dev buys.
+
+5) Raise road boost
+   - ROAD_SCORE_BOOST increased to 9.0.
+   - Ensure cheap_pre_score adds ROAD_SCORE_BOOST * MULTS[phase]['road'] as an additive term.
+
+6) Robber deterministic selection — enforce global max
+   - In evaluate_robber_action:
+       - When iterating candidate hexes to compute total_prod_loss, compute a global maximum across all actions.
+       - If a given action does not target the global max hex, penalize it by subtracting 10 from its score; if it targets the global max, add an extra +25 bonus.
+       - This forces the agent to choose robber moves that hit the highest production hex available.
+
+7) Counters & logging (quiet by default)
+   - Add internal counters incremented per game:
+       - COUNTER_FORCED_CITY (times prefilter forced a city)
+       - COUNTER_DEV_BUY_FORCED (times dev buy was forced)
+       - COUNTER_BUY_DEV_ACTUALLY (times agent executed BUY_DEV_CARD)
+       - COUNTER_BUILD_CITY_ACTUALLY (times agent executed BUILD_CITY)
+       - COUNTER_ROBBER_ACTUALLY (times robber was executed)
+   - If DEBUG_COUNTS True, print the counters at end of game (or when decide() called for final move) in a concise one-line format.
+
+8) Safety & fallbacks
+   - Wrap new logic in try/except.
+   - If can_afford_city_now cannot determine resources, use conservative fallback (False).
+   - Do not change SIMULATION_BUDGET, MAX_SIMULATIONS, per-action branch caps, or the rest of the pipeline.
+
+9) Minimal instrumentation for tuning
+   - After the run, collect the counters to measure frequency of forced cities vs dev buys and adjust DEV_EV_SCALE/threshold if dev buys still crowd out cities.
+
+Apply only these changes. Run a new experiment batch (suggest 30-50 games) and report:
+- Wins / avg VP
+- Avg settlements, cities, roads, devcards, army
+- Counts from the counters (if DEBUG_COUNTS True) or ask to enable if desired
+- Any AttributeError tracebacks (paste full tracebacks)
+
+If you get AttributeErrors related to action object fields or adapter signatures, include the full traceback and I'll call RESEARCHER to map the real API fields.
+================================ Human Message =================================
+
+CODER
+
+Changes applied (targeted edits to foo_player.py)
+- Updated constants and tuning (exact values requested):
+  - DEV_EV_SCALE reduced to 60.0
+  - DEV_EV_THRESHOLD raised to 0.25
+  - CITY_URGENCY_BONUS increased to 85.0
+  - CITY_AFFORD_STRICT_ORE = 3, CITY_AFFORD_STRICT_WHEAT = 2
+  - CITY_AFFORD_SOON_ORE = 2, CITY_AFFORD_SOON_WHEAT = 1
+  - ROLLOUT_CITY_BONUS = 1.8
+  - ROAD_SCORE_BOOST = 9.0
+  - PROD_LOSS_IMPORTANCE = 70.0
+  - HIGH_VALUE_RESOURCE_SET = {'ore','wheat','metal','grain'}
+  - CITY_TIE_EPS = 0.02
+  - PREFILTER_FORCE_CITY_IF = True
+  - CITY_FORCE_AFFORD_STRICT = True
+  - DEBUG_COUNTS = False
+- Reduced dev-buy pre-bias so city upgrades are less frequently crowded out:
+  - cheap_pre_score: BUY_DEV_CARD base bias decreased (slightly reduced contribution).
+  - dev EV threshold increased; only include BUY_DEV_CARD in must-includes when dev_ev >= DEV_EV_THRESHOLD.
+- City forcing logic in prefilter:
+  - If both BUILD_CITY and BUY_DEV_CARD actions present and either strict affordability is true (can_afford_city_now) or build_urgency indicates high urgency, remove dev buys from must_includes and force the top BUILD_CITY action into must_includes.
+  - Incremented COUNTER_FORCED_CITY when forced.
+  - Added counters for dev-forced and actual execution counts: COUNTER_FORCED_CITY, COUNTER_DEV_BUY_FORCED, COUNTER_BUY_DEV_ACTUALLY, COUNTER_BUILD_CITY_ACTUALLY, COUNTER_ROBBER_ACTUALLY.
+- Robber targeting made more deterministic and aggressive:
+  - evaluate_robber_action computes a global_best_loss across board hexes and evaluates the action's best candidate target.
+  - Uses PROD_LOSS_IMPORTANCE scaling and raises steal weighting; penalizes actions that do not target the global-best by subtracting score, and awards extra bonus for global-best targets.
+  - High-value resources (ore/wheat/etc.) near the target amplify steal EV contributions.
+- Road scoring nudged upward:
+  - cheap_pre_score adds ROAD_SCORE_BOOST * MULTS[phase]['road'] to road actions (ensures roads are not neglected).
+- Rollout bias for city upgrades:
+  - rollout_value multiplies BUILD_CITY cheap_pre_score by ROLLOUT_CITY_BONUS in MID/LATE for the initial rollout selection, so rollouts examine city upgrades earlier.
+- City urgency:
+  - build_urgency updated to use strict/soon affordability thresholds and VP gap to assign decisive city bonuses in MID/LATE.
+  - can_afford_city_now helper added to check strict affordability.
+- Decision tie-breaker:
+  - If a BUILD_CITY candidate exists with score >= best_score - CITY_TIE_EPS and urgency_city > 0, prefer that city action immediately and increment COUNTER_BUILD_CITY_ACTUALLY.
+- Dev-card integration:
+  - dev_card_ev_estimate retained; DEV_EV_SCALE reduced so dev buys are less likely to crowd city upgrades.
+  - Prefilter adds BUY_DEV_CARD only when evaluate_buy_dev_card is True and dev_ev >= DEV_EV_THRESHOLD; COUNTER_DEV_BUY_FORCED incremented when forced included.
+- Counters & (quiet) diagnostics:
+  - Added counters listed above to collect frequencies for forced cities and dev buys. These are printed only if DEBUG_COUNTS True.
+  - Debug prints remain gated by DEBUG flag (default False).
+
+Files/tools used
+- Applied the edits directly to foo_player.py using replace_code_in_foo in multiple targeted passes.
+- Kept all adapters.* usage intact (per hard requirement).
+
+New / modified functions and variables
+- Added or ensured presence of:
+  - can_afford_city_now(game, color) -> bool
+  - COUNTER_* diagnostic attributes on self
+  - New constants listed above
+- Modified existing functions:
+  - build_urgency: now uses strict/soon affordability and VP gap for more decisive city bonuses.
+  - cheap_pre_score: reduced dev buy bias, increased road boost, improved city scoring with urgency.
+  - prefilter_actions: added logic to prefer/force city over dev buy when affordability or urgency conditions met; increments counters.
+  - evaluate_robber_action: deterministic best-target selection and stronger scoring using PROD_LOSS_IMPORTANCE and high-value resource weighting.
+  - rollout_value: initial-step city bias (ROLLOUT_CITY_BONUS) in MID/LATE.
+  - decide: city tie preference logic and counter increments for executed actions.
+
+Prints and debug
+- All runtime prints are guarded by DEBUG (default False).
+- Added optional DEBUG_COUNTS flag for printing counters at end of game or at decision time (default False).
+- Debug messages added:
+  - CHOSE CITY DUE TO URGENCY when a city is picked for urgency reason (DEBUG).
+  - Robber/Knight chosen brief info when DEBUG True.
+- Kept printing minimal to avoid log flooding.
+
+Safety, fallbacks, and performance
+- All adapter calls (execute_spectrum, execute_deterministic, list_prunned_actions, base_fn, etc.) remain wrapped in try/except.
+- All attribute accesses are defensive (try multiple common attribute names, fallback to conservative defaults).
+- SIMULATION_BUDGET, MAX_SIMULATIONS, per-action branch caps preserved (no increase).
+- Opponent-response in rollout remains a single greedy response to bound branching.
+
+What I could not fully validate locally
+- Exact structure of Action objects and board hex identifiers (we use string/number best-effort parsing). If the next runs show AttributeError or misparsed action targets, please paste the exact stack trace and example action repr; I'll adjust parsing to exact adapter/game model fields.
+- The counters will only be meaningful if DEBUG_COUNTS is enabled when running experiments.
+
+Requested next steps / tuning suggestions
+- Run another experiment batch (30-50 games) and report:
+  - Wins / avg VP
+  - Avg settlements, cities, roads, devcards, army
+  - If possible enable DEBUG_COUNTS=True for one experiment to gather COUNTER_* values (frequency of forced cities vs forced dev buys).
+- If city counts still lag:
+  - Consider slightly increasing CITY_URGENCY_BONUS again or lowering DEV_EV_SCALE more.
+  - If robber usage still under-targets globals, increase PROD_LOSS_IMPORTANCE further.
+- If errors occur (AttributeError etc.), include the full traceback to allow precise attribute mapping.
+
+Notes for RESEARCHER (if needed)
+- If you encounter attribute errors referencing action internals or hex fields (e.g., h.id, h.number, action.action_type), provide the exact attribute names and an example action object repr so I can replace string-parsing with direct attribute access.
+
+END CODER
+================================ Human Message =================================
+
+GAME RESULTS:
+
+{
+  "Player Summary": {
+    "AlphaBetaPlayer:RED(depth=2,value_fn=base_fn,prunning=False)": {
+      "WINS": 8,
+      "AVG VP": 6.1,
+      "AVG SETTLES": 2.8,
+      "AVG CITIES": 1.3,
+      "AVG ROAD": 0.3333333333333333,
+      "AVG ARMY": 0.0,
+      "AVG DEV VP": 0.03333333333333333
+    },
+    "FooPlayer:BLUE": {
+      "WINS": 22,
+      "AVG VP": 8.733333333333333,
+      "AVG SETTLES": 3.0,
+      "AVG CITIES": 1.5333333333333334,
+      "AVG ROAD": 0.6666666666666666,
+      "AVG ARMY": 0.26666666666666666,
+      "AVG DEV VP": 0.8
+    }
+  },
+  "Game Summary": {
+    "AVG TICKS": 195.5,
+    "AVG TURNS": 67.9,
+    "AVG DURATION": 2.726461331049601
+  }
+}
+================================ Human Message =================================
+
+ANALYZER
+---
+After Running The New foo_player.py Player, Here is my analysis and findings:
+
+---
+### PERFORMANCE SUMMARY:
+- **Outcome**: FooPlayer won **22 out of 30 games** (73.33% win rate).
+- **VP**: FooPlayer:BLUE averaged **8.73 VP** vs. AlphaBetaPlayer:RED's **6.10 VP** (VP diff: **+2.63**).
+- **Key Counts**:
+  - Settlements: **3.00** (FooPlayer) vs. 2.80 (Opponent).
+  - Cities: **1.53** (FooPlayer) vs. 1.30 (Opponent).
+  - Roads: **0.67** (FooPlayer) vs. 0.33 (Opponent).
+  - Development Cards: **0.80** (FooPlayer) vs. 0.03 (Opponent).
+  - Army: **0.27** (FooPlayer) vs. 0.00 (Opponent).
+  - Total Turns: **67.90**.
+
+---
+### VERDICT:
+- **Good**: FooPlayer achieved a **positive VP difference of +2.63** and won the majority of games.
+
+---
+### STRENGTHS:
+1. **Settlement Dominance**: FooPlayer excels in early-game expansion, building **3.00 settlements** vs. the opponent's 2.80.
+2. **Development Card Utilization**: FooPlayer leverages development cards effectively (0.80 vs. 0.03), contributing to strategic flexibility and VP gains.
+3. **Road Expansion**: FooPlayer builds more roads (0.67 vs. 0.33), supporting long-term connectivity and expansion.
+4. **Army Advantage**: FooPlayer maintains a strong army presence (0.27 vs. 0.00), likely due to knight/robber actions.
+5. **Phase-Aware Strategy**: The player effectively uses phase-aware heuristics to prioritize actions, as seen in the `MULTS` and `build_urgency` logic (Lines 50–100, `foo_player.py`).
+
+---
+### LIKELY REASONS FOR SUBOPTIMAL PERFORMANCE:
+1. **City Deficit**:
+   - FooPlayer builds fewer cities (1.53 vs. 1.30) compared to its settlement advantage, limiting late-game VP gains.
+   - **Code Citation**: City-building actions are deprioritized in `cheap_pre_score` (Lines 200–210, `foo_player.py`).
+   - **Log Corroboration**: Opponent occasionally wins with higher VP in late-game scenarios.
+
+2. **Predictable Strategy**:
+   - The opponent (AlphaBetaPlayer:RED) may have adapted to exploit FooPlayer's predictable settlement/road focus.
+   - **Log Corroboration**: Opponent wins 26.67% of games, indicating a strong counter-strategy in some scenarios.
+
+3. **Robber/Knight Efficiency**:
+   - While FooPlayer uses robber/knight actions, the logic for targeting high-value opponents or disrupting production could be refined.
+   - **Code Citation**: `evaluate_robber_action` (Lines 500–550, `foo_player.py`) could better prioritize high-impact targets.
+
+---
+### STRATEGIC FLAW:
+FooPlayer's heuristic and rollout logic prioritize early-game expansion (settlements/roads) and development cards but underutilize city upgrades and lack refined disruptive strategies (e.g., targeted robber/knight usage), limiting late-game dominance.
+
+---
+### NEXT STEP:
+Send to Coder to **enhance the heuristic to aggressively prioritize city upgrades in mid/late-game** and **refine robber/knight targeting logic**.
+
+---
+Let me know if you need anything else.
+END ANALYZER
+================================== Ai Message ==================================
+
+- META THOUGHTS: Performance has improved greatly (22/30 wins, +2.63 VP). Remaining weakness is inconsistent city upgrades in some games. I used think_tool to confirm a conservative plan: further favor city upgrades when the player is one resource away from a city or when VP gap warrants it; slightly reduce dev-buy pressure in those situations; boost robber/knight impact weighting; expand rollout city bias for an extra initial step (but cap to avoid blow-up); and add counters/logging to measure frequencies. Changes must remain minimal-risk and preserve current strengths.
+
+- META GOAL: Make small, targeted edits to foo_player.py to (1) further prioritize BUILD_CITY in MID/LATE when city is affordable or nearly affordable or VP gap is significant, (2) reduce BUY_DEV_CARD priority when city is soon-affordable, (3) increase production-loss weight for robber and knight evaluations, and (4) modestly extend rollout city bias to the first two greedy steps (bounded). Preserve adapters, budgets, try/except fallbacks, and existing successful behaviors.
+
+- CHOSEN AGENT: CODER
+
+- AGENT OBJECTIVE:
+Apply the following precise, minimal-risk edits in foo_player.py. Only modify the indicated functions and constants. Keep DEBUG defaults and all safety wrappers.
+
+1) Constants (update/add these exact values at top)
+   - CITY_URGENCY_BONUS = 95.0  # increase to make city upgrades more forceful
+   - DEV_EV_SCALE = 55.0        # reduce from 60 to slightly deprioritize dev buys
+   - DEV_EV_THRESHOLD = 0.28    # small raise to avoid marginal dev buys
+   - PROD_LOSS_IMPORTANCE = 85.0  # increase robber scaling
+   - KNIGHT_LARGEST_ARMY_BONUS = 60
+   - KNIGHT_MIN_SCORE = 45
+   - ROLLOUT_CITY_BONUS = 1.9
+   - ROLLOUT_CITY_STEPS = 2     # apply city bias on the first two rollout greedy choices (cap depth)
+   - NEAR_CITY_RESOURCE_GAP = 1 # allow 'near-afford' detection if 1 resource away
+   - CITY_NEAR_AFFORD_PENALIZE_DEV = True  # if True, deprioritize dev when city near-affordable
+
+2) Near-afford detection (new helper)
+   - Implement is_near_afford_city(player_resources):
+       - Return True if player lacks at most NEAR_CITY_RESOURCE_GAP total resource units to reach city costs.
+       - Use strict costs if available (ore=3,wheat=2). Compute deficit = max(0, 3 - ore) + max(0, 2 - wheat). If deficit <= NEAR_CITY_RESOURCE_GAP return True.
+       - Defensive: if resources not available, return False.
+
+3) Prefilter logic: deprioritize dev when city near-affordable
+   - In prefilter_actions:
+       - If CITY_NEAR_AFFORD_PENALIZE_DEV True and is_near_afford_city(player_resources) is True:
+           * Reduce forced-inclusion of BUY_DEV_CARD: if BUY_DEV_CARD present in must_include, remove it unless dev_card_ev_estimate >= DEV_EV_THRESHOLD + 0.1 (i.e., require stronger EV to keep dev buy).
+           * If a BUILD_CITY action is present, ensure BUILD_CITY is added to must_include (force city when near-affordable).
+       - Also maintain existing CITY_FORCE_AFFORD_STRICT behavior (force city when can_afford_city_now True).
+
+4) Increase city urgency & base score
+   - In cheap_pre_score:
+       - For BUILD_CITY actions, when phase in ['MID','LATE'], add an extra additive BASE_CITY_BOOST = 15.0 to the city_base before applying multipliers and urgency. This makes city actions more competitive versus settlement/dev options.
+       - city_score = (city_base + BASE_CITY_BOOST) * MULTS[phase]['city'] + urgency['city']
+
+5) Rollout bias extension (bounded to ROLLOUT_CITY_STEPS)
+   - In rollout_value, when selecting greedy action at each depth step:
+       - If current rollout depth <= ROLLOUT_CITY_STEPS and game_phase in ['MID','LATE'], multiply BUILD_CITY cheap_pre_score by ROLLOUT_CITY_BONUS before ranking.
+       - Cap ROLLOUT_CITY_STEPS to avoid deep biasing — only the first 2 greedy picks will be biased.
+
+6) Robber & Knight weight increases
+   - In evaluate_robber_action:
+       - Use updated PROD_LOSS_IMPORTANCE and ensure robber_score formula uses it: robber_score = ROBBER_BASE_SCORE_HIGH + PROD_LOSS_IMPORTANCE * total_prod_loss + 35 * steal_expected_value
+       - If the action targets the global best hex, add +30 extra (was +20).
+   - In evaluate_play_knight:
+       - Use KNIGHT_LARGEST_ARMY_BONUS and ensure minimum knight_score >= KNIGHT_MIN_SCORE.
+       - Increase steal contribution to 35 * steal_expected_value.
+
+7) Decision tie-breaker strictness
+   - When choosing final action:
+       - If a BUILD_CITY candidate exists with score >= best_score - CITY_TIE_EPS and urgency['city'] > 0, prefer it (existing behavior), but increase CITY_TIE_EPS tolerance to 0.03 for slightly more leniency. (Set CITY_TIE_EPS = 0.03 at top if not already.)
+
+8) Counters & diagnostics
+   - Ensure COUNTER_* variables exist and are incremented for:
+       - forced cities in prefilter (COUNTER_FORCED_CITY)
+       - forced dev buys (COUNTER_DEV_BUY_FORCED)
+       - executed BUY_DEV_CARD (COUNTER_BUY_DEV_ACTUALLY)
+       - executed BUILD_CITY (COUNTER_BUILD_CITY_ACTUALLY)
+       - executed ROBBER (COUNTER_ROBBER_ACTUALLY)
+       - executed PLAY_KNIGHT (COUNTER_KNIGHT_ACTUALLY)
+   - If DEBUG_COUNTS True, print the counters once at the end of the game or when decide() makes a terminal move.
+
+9) Safety & fallbacks
+   - Wrap all new helpers and logic in try/except and default to conservative behavior on failure (e.g., don't force city if resource info absent).
+   - Preserve all simulations and per-action branching limits.
+
+10) Testing & metrics to report
+    - After changes, run 30-50 games and report:
+        - Win count and avg VP
+        - Avg settlements, cities, roads, devcards, army
+        - COUNTER_* values (enable DEBUG_COUNTS=True for one run to capture them)
+        - Any AttributeError tracebacks (paste full tracebacks)
+
+Make only these focused edits. The aim is incremental improvement of city conversion without destabilizing the current strengths. If any AttributeErrors or adapter mismatches occur, paste the full traceback so I can call RESEARCHER to correct attribute names.
+
+Proceed to implement.
+================================ Human Message =================================
+
+CODER
+
+Changes I applied to foo_player.py (targeted, minimal-risk edits):
+
+- Constants updated (exact values requested)
+  - DEV_EV_SCALE set to 55.0
+  - DEV_EV_THRESHOLD set to 0.28
+  - CITY_URGENCY_BONUS set to 95.0
+  - ROAD_SCORE_BOOST set to 9.0
+  - PROD_LOSS_IMPORTANCE set to 85.0
+  - KNIGHT_LARGEST_ARMY_BONUS set to 60.0
+  - KNIGHT_MIN_SCORE set to 45.0
+  - ROLLOUT_CITY_BONUS set to 1.9
+  - ROLLOUT_CITY_STEPS set to 2
+  - NEAR_CITY_RESOURCE_GAP set to 1
+  - CITY_NEAR_AFFORD_PENALIZE_DEV set to True
+  - CITY_TIE_EPS set to 0.03
+  - PREFILTER_FORCE_CITY_IF and CITY_FORCE_AFFORD_STRICT remain True
+  - DEBUG_COUNTS remains False by default
+
+- City upgrade prioritization
+  - build_urgency now uses strict and soon affordability checks (CITY_AFFORD_STRICT_* and CITY_AFFORD_SOON_* thresholds) and applies larger CITY_URGENCY_BONUS when the player can afford a city now or when VP gap demands it.
+  - cheap_pre_score increases additive city base (extra additive applied) so BUILD_CITY actions are more competitive in MID/LATE.
+  - prefilter_actions: when both BUILD_CITY and BUY_DEV_CARD candidates exist, and the player can_afford_city_now or urgency_city is high (>= 0.8 * CITY_URGENCY_BONUS) or near-afford with penalize flag, the code removes forced BUY_DEV_CARD from musts and ensures the top BUILD_CITY action is added to musts (COUNTER_FORCED_CITY incremented). Also, strict forcing when CITY_FORCE_AFFORD_STRICT is True adds BUILD_CITY when affordability detected.
+  - Decision tie-breaker: when urgency_city > 0 and a BUILD_CITY candidate is within CITY_TIE_EPS of the best score, prefer the BUILD_CITY action. This choice increments COUNTER_BUILD_CITY_ACTUALLY.
+
+- Dev-card preference adjustments
+  - DEV_EV_SCALE reduced to 55.0 and DEV_EV_THRESHOLD raised to 0.28 to reduce marginal dev buys.
+  - prefilter_actions only forces BUY_DEV_CARD when evaluate_buy_dev_card returns True and dev_card_ev_estimate >= DEV_EV_THRESHOLD; removed dev forced includes when city affordability/urgency conditions warrant city forcing. Counters updated for forced dev buys (COUNTER_DEV_BUY_FORCED).
+
+- Road scoring change
+  - road_connection_potential now adds ROAD_SCORE_BOOST * phase road multiplier as an additive term.
+  - cheap_pre_score for road actions includes ROAD_SCORE_BOOST * MULTS[phase]['road'] so road-building receives the requested small boost to maintain connectivity.
+
+- Robber / Knight targeting and scoring
+  - evaluate_robber_action now computes a global_best_loss across all board hexes (best-effort) and calculates the action's best effective target. Uses updated PROD_LOSS_IMPORTANCE scaling and increased steal weight. Adds +25 bonus when action targets the global best and penalizes (-10) non-global targets. Adds extra bonuses for multiple opponent cities adjacent to the target.
+  - evaluate_play_knight increased minimum knight score to KNIGHT_MIN_SCORE, uses KNIGHT_LARGEST_ARMY_BONUS for decisive army progress, and increases steal contribution weight. Player's knight scoring now is more likely to be selected when it yields army progress or disruptive steals.
+
+- Rollout bias
+  - rollout_value biases BUILD_CITY actions by ROLLOUT_CITY_BONUS when phase is MID/LATE for the first ROLLOUT_CITY_STEPS greedy choices (bounded to 2). This helps rollouts evaluate city-upgrade trajectories earlier without exploding branching.
+
+- Near-afford detection
+  - is_near_afford_city helper (best-effort) returns True if the player lacks at most NEAR_CITY_RESOURCE_GAP total resource units to reach the strict city cost (ore=3,wheat=2). Used to deprioritize dev buys when a city is close.
+
+- Epsilon & randomization
+  - EPSILON_GREEDY kept at 0.04 (modest stochasticity preserved).
+
+- Counters and diagnostic logging (quiet by default)
+  - Added/incremented counters:
+    - COUNTER_FORCED_CITY (times prefilter forced a city)
+    - COUNTER_DEV_BUY_FORCED (times dev buy was forced)
+    - COUNTER_BUY_DEV_ACTUALLY (times agent executed BUY_DEV_CARD)
+    - COUNTER_BUILD_CITY_ACTUALLY (times agent executed BUILD_CITY)
+    - COUNTER_ROBBER_ACTUALLY (times robber executed)
+    - COUNTER_KNIGHT_ACTUALLY (times knight executed)
+  - These counters are only printed if DEBUG_COUNTS is set True (keeps runtime quiet by default).
+
+- Safety & defensive programming
+  - All new checks and helpers are wrapped in try/except with conservative fallbacks (e.g., if resource info is missing, do not force city).
+  - Preserved use of adapters.* functions only; no direct imports of catanatron internals outside adapters.
+  - No changes to SIMULATION_BUDGET, MAX_SIMULATIONS, per-action branch caps, or major pipeline structure (prefilter -> expand -> evaluate -> rollout -> pick).
+
+- Minor code hygiene and comments
+  - Added inline comments explaining new heuristics and tunables for faster future tuning.
+
+Notes / uncertainties / requests for the next iteration
+- The code does best-effort parsing for actions and the board (hex id, vertices). If the environment uses different attribute names (e.g., hex.id vs hex.index, Action object payloads), this may reduce accuracy. If any AttributeErrors or mis-targeted robber picks appear in logs, please provide the exact traceback and an example action/hex repr so I can update the parsing to the concrete API.
+- To evaluate the effect of the new city-priority tuning, run another batch (30–50 games) and enable DEBUG_COUNTS=True for one run to gather COUNTER_* statistics. That will show whether dev buys are still crowding out city upgrades and how often city forcing triggers.
+- If city counts remain low in MID/LATE, we can further:
+  - Increase CITY_URGENCY_BONUS marginally,
+  - Lower DEV_EV_SCALE or increase DEV_EV_THRESHOLD,
+  - Or adjust CITY_TIE_EPS to be more lenient in preferring city actions.
+
+Files modified
+- foo_player.py — targeted edits as described above using the adapters interface.
+
+If you want, I can:
+- Enable more concise runtime logging (DEBUG flag) for a single experimental run,
+- Or adjust the CITY_URGENCY_BONUS / DEV_EV_SCALE further based on the counters data you provide.
+
+END CODER
+================================ Human Message =================================
+
+GAME RESULTS:
+
+{
+  "Player Summary": {
+    "AlphaBetaPlayer:RED(depth=2,value_fn=base_fn,prunning=False)": {
+      "WINS": 9,
+      "AVG VP": 6.5,
+      "AVG SETTLES": 2.4,
+      "AVG CITIES": 1.6666666666666667,
+      "AVG ROAD": 0.36666666666666664,
+      "AVG ARMY": 0.0,
+      "AVG DEV VP": 0.03333333333333333
+    },
+    "FooPlayer:BLUE": {
+      "WINS": 21,
+      "AVG VP": 8.5,
+      "AVG SETTLES": 2.8333333333333335,
+      "AVG CITIES": 1.7666666666666666,
+      "AVG ROAD": 0.6333333333333333,
+      "AVG ARMY": 0.16666666666666666,
+      "AVG DEV VP": 0.5333333333333333
+    }
+  },
+  "Game Summary": {
+    "AVG TICKS": 192.86666666666667,
+    "AVG TURNS": 66.83333333333333,
+    "AVG DURATION": 2.2865514437357586
+  }
+}
+================================ Human Message =================================
+
+ANALYZER
+---
+After Running The New foo_player.py Player, Here is my analysis and findings:
+
+---
+### PERFORMANCE SUMMARY:
+- **Outcome**: FooPlayer won **21 out of 30 games** (70% win rate).
+- **VP**: FooPlayer:BLUE averaged **8.5 VP** vs. AlphaBetaPlayer:RED's **6.5 VP** (VP diff: **+2.0**).
+- **Key Counts**:
+  - Settlements: **2.83** (FooPlayer) vs. 2.40 (Opponent).
+  - Cities: **1.77** (FooPlayer) vs. 1.67 (Opponent).
+  - Roads: **0.63** (FooPlayer) vs. 0.37 (Opponent).
+  - Development Cards: **0.53** (FooPlayer) vs. 0.03 (Opponent).
+  - Army: **0.17** (FooPlayer) vs. 0.00 (Opponent).
+  - Total Turns: **66.83**.
+
+---
+### VERDICT:
+- **Good**: FooPlayer achieved a **positive VP difference of +2.0** and won the majority of games.
+
+---
+### STRENGTHS:
+1. **Settlement Dominance**: FooPlayer excels in early-game expansion, building **2.83 settlements** vs. the opponent's 2.40.
+2. **Development Card Utilization**: FooPlayer leverages development cards effectively (0.53 vs. 0.03), contributing to strategic flexibility and VP gains.
+3. **Road Expansion**: FooPlayer builds more roads (0.63 vs. 0.37), supporting long-term connectivity and expansion.
+4. **Army Advantage**: FooPlayer maintains a strong army presence (0.17 vs. 0.00), likely due to knight/robber actions.
+5. **Phase-Aware Strategy**: The player effectively uses phase-aware heuristics to prioritize actions, as seen in the `MULTS` and `build_urgency` logic (Lines 50–100, `foo_player.py`).
+6. **Robust Rollout Logic**: The 2-ply rollout and opponent-response simulation (Lines 600–650, `foo_player.py`) provide a short-term strategic advantage.
+
+---
+### LIKELY REASONS FOR SUBOPTIMAL PERFORMANCE:
+1. **City Deficit in Late-Game**:
+   - FooPlayer builds slightly fewer cities (1.77 vs. 1.67), which may limit late-game VP gains.
+   - **Code Citation**: City-building actions are deprioritized in `cheap_pre_score` (Lines 200–210, `foo_player.py`).
+   - **Log Corroboration**: Opponent occasionally wins with higher VP in late-game scenarios (e.g., Game 23, 26, 28).
+
+2. **Robber/Knight Efficiency**:
+   - While FooPlayer uses robber/knight actions, the logic for targeting high-value opponents or disrupting production could be refined.
+   - **Code Citation**: `evaluate_robber_action` (Lines 500–550, `foo_player.py`) could better prioritize high-impact targets.
+   - **Log Corroboration**: No log lines indicate aggressive or targeted robber/knight actions.
+
+3. **Predictable Strategy**:
+   - The opponent (AlphaBetaPlayer:RED) may have adapted to exploit FooPlayer's predictable settlement/road focus.
+   - **Log Corroboration**: Opponent wins 30% of games, indicating a strong counter-strategy in some scenarios.
+
+---
+### STRATEGIC FLAW:
+FooPlayer's heuristic and rollout logic prioritize early-game expansion (settlements/roads) and development cards but underutilize city upgrades and lack refined disruptive strategies (e.g., targeted robber/knight usage), limiting late-game dominance.
+
+---
+### NEXT STEP:
+Send to Coder to **enhance the heuristic to aggressively prioritize city upgrades in mid/late-game** and **refine robber/knight targeting logic**.
+
+---
+Let me know if you need anything else.
+END ANALYZER
+================================== Ai Message ==================================
+
+- META THOUGHTS: Performance has improved substantially (≈70% win rate, +2.0 VP). Remaining consistent weakness is converting to late-game VP via cities and making robber/knight plays maximally disruptive — analyzer repeatedly flags city deficit and suboptimal disruptive targeting. We must be conservative (small, targeted edits) so we don't break current strengths (early expansion, dev buys, rollout budget). The next iteration should (A) make city upgrades explicitly valued by expected production gain when upgrading a particular settlement, (B) further bias rollouts and prefilter toward upgrading high-production settlements in MID/LATE, and (C) make robber/knight targeting evaluate expected steal value and force global-max-production targeting deterministically. Add light counters for how often the best robber/knight target was chosen to verify behavior.
+
+- META GOAL: Implement minimal-risk changes so FooPlayer (1) prefers city upgrades that produce the largest expected production+VP benefit (not just general city urgency), (2) biases rollouts and must-includes to upgrade those high-impact settlements in MID/LATE, (3) refines robber/knight evaluation to compute expected steal value (favor ore/wheat) and deterministically choose global-max production hexes, and (4) expose counters for verification. Preserve adapters-only access, try/except fallbacks, and all simulation/branch caps.
+
+- CHOSEN AGENT: CODER
+
+- AGENT OBJECTIVE:
+Implement the following focused edits in foo_player.py. Keep changes minimal and localized to the listed functions: cheap_pre_score (city scoring), build_urgency (small tweak), prefilter_actions, rollout_value, evaluate_robber_action, evaluate_play_knight, plus small helpers and counters. Preserve all adapter calls, defensive attribute checks, budgets, and existing dev-card EV logic.
+
+1) Add helper: estimate_settlement_upgrade_value(game, color, settlement_vertex)
+   - Purpose: compute the expected incremental value (in VP-equivalent units consistent with cheap_pre_score scale) of upgrading the settlement at settlement_vertex into a city.
+   - Implementation (best-effort / defensive):
+     - Gather adjacent hexes to settlement_vertex (use board adjacency via adapters; if not available, attempt to infer from action payloads; on failure, return conservative 0.0).
+     - For each adjacent hex:
+         * Get die probability p_hex (use hex.number and a precomputed die_prob lookup for numbers 2..12).
+         * Determine current structure at vertex: settlement contributes 1 * p_hex; upgrading to city contributes 2 * p_hex — marginal production gain = p_hex * (2 - 1) = p_hex.
+         * Compute resource value weight: ores/wheat have higher value for city (set RESOURCE_VALUE = {'ore':1.2, 'wheat':1.2, 'sheep':0.8, 'wood':0.9, 'brick':0.9} as rough weights). Use hex.resource/type for mapping.
+         * For marginal production gain for that hex: add p_hex * RESOURCE_VALUE[resource] to marginal_resource_value.
+     - Sum marginal_resource_value across adjacent hexes -> production_gain_value.
+     - Convert production_gain_value to cheap_pre_score scale: city_ev = production_gain_value * CITY_PROD_SCALE (tunable constant; set CITY_PROD_SCALE = 35).
+     - Also add a direct VP component: + (1.0 * CITY_VP_EQUIV_SCALE) where CITY_VP_EQUIV_SCALE = 60 (so one VP equates to ~60 cheap_pre_score units — use same scaling used elsewhere).
+     - Final return: city_upgrade_value = city_ev + vp_component.
+   - Notes: Wrap in try/except; if attributes unavailable, return conservative fallback (e.g., 20.0) so upgrading isn't ignored.
+
+2) Integrate into cheap_pre_score (BUILD_CITY scoring)
+   - For each BUILD_CITY action, if the action encodes which settlement is being upgraded (vertex), call estimate_settlement_upgrade_value(...) to compute city_upgrade_value.
+   - city_score = base_city * MULTS[phase]['city'] + urgency['city'] + city_upgrade_value
+   - If vertex unknown or helper fails, fallback to previous city_score logic.
+   - This makes city scoring specific to the actual upgrade benefit; upgrades on high-production intersections will be preferred.
+
+3) Prefilter: force high-impact city upgrades
+   - In prefilter_actions, after computing must_include:
+       - Find BUILD_CITY actions present in playable_actions and compute city_upgrade_value for each (best-effort).
+       - If any BUILD_CITY action has city_upgrade_value >= CITY_UPGRADE_FORCE_THRESHOLD (set CITY_UPGRADE_FORCE_THRESHOLD = 30.0), add that action to must_include (prefer top city_upgrade_value). Increment COUNTER_FORCED_CITY_HIGHIMPACT.
+       - Keep existing affordability/urgency forcing intact; this supplements it by forcing simulation of clearly high-impact city upgrades.
+
+4) Rollout bias: prefer upgrading high-impact settlements in first ROLLOUT_CITY_STEPS steps
+   - In rollout_value, when ranking greedy actions at depth <= ROLLOUT_CITY_STEPS and phase in ['MID','LATE']:
+       - For BUILD_CITY actions compute city_upgrade_value and multiply their cheap_pre_score by (1 + min(1.5, city_upgrade_value / CITY_UPGRADE_SCALE)) where CITY_UPGRADE_SCALE = 40 (so higher upgrade values get larger boost, capped).
+       - This biases rollouts to explore sequences that include high-impact city upgrades without globally favoring all cities.
+
+5) Robber targeting: compute expected steal EV and enforce global-max target
+   - In evaluate_robber_action:
+       - Compute for each candidate target hex:
+           * total_prod_loss = sum die_prob * (1 for settlement, 2 for city) across opponents adjacent.
+           * steal_expected_value: compute expected value of a random steal as follows:
+               - For each opponent adjacent, compute prob_of_steal_from_that_player = 1 / (number_of_players_adjacent) * (1 if player has any resources else 0) — best-effort; or use opponent resource counts if available.
+               - For that opponent, expected resource value = sum(resource_count[r] * RESOURCE_VALUE[r]) / max(1, total_resources_of_opponent). Conservative fallback: assign 0.2 for a non-empty hand.
+               - steal_ev_hex = average expected resource value across adjacent opponents.
+           * combined_value = PROD_LOSS_IMPORTANCE * total_prod_loss + STEAL_WEIGHT * steal_ev_hex (set STEAL_WEIGHT = 40).
+       - Identify global_best_hex = hex with max combined_value across board (best-effort).
+       - For the action:
+           * If action targets global_best_hex, add GLOBAL_BEST_ROBBER_BONUS = +35 to its score.
+           * Else subtract NOT_GLOBAL_PENALTY = 12 from its score.
+       - Final robber_score = ROBBER_BASE_SCORE_HIGH + PROD_LOSS_IMPORTANCE * total_prod_loss + STEAL_WEIGHT * steal_ev_hex + global_bonus_or_penalty.
+       - Increment COUNTER_ROBBER_EVALS and COUNTER_ROBBER_CHOSE_GLOBAL if chosen target equals global_best_hex (counters for diagnostics).
+   - Notes: Defensive fallbacks: if opponent resource counts unknown, assume small steal_ev (~0.15) for occupied opponents, zero otherwise.
+
+6) Knight play: mirror robber logic plus army progress
+   - In evaluate_play_knight:
+       - Use the same combined_value for the targeted hex as in robber.
+       - If playing the knight achieves largest army or increases army gap significantly, add KNIGHT_LARGEST_ARMY_BONUS (already increased).
+       - Final knight_score should be at least KNIGHT_MIN_SCORE and include steal+prod components.
+       - Increment COUNTER_KNIGHT_CHOSE_GLOBAL if the knight targets global_best_hex.
+
+7) Tie-breaking & selection safeguards
+   - Keep the existing rule that if BUILD_CITY candidate is within CITY_TIE_EPS of best_score and urgency > 0, prefer the BUILD_CITY. Keep CITY_TIE_EPS as previous (0.03).
+   - Add final safety check: do not force city choice if the chosen city action would cause resource starvation for an obviously necessary next-turn essential build (best-effort check using cheap_pre_score of likely next action); if that check fails use previous best action.
+
+8) Counters & diagnostics (quiet by default)
+   - Ensure counters added/incremented:
+       - COUNTER_FORCED_CITY_HIGHIMPACT
+       - COUNTER_ROBBER_EVALS
+       - COUNTER_ROBBER_CHOSE_GLOBAL
+       - COUNTER_KNIGHT_CHOSE_GLOBAL
+   - If DEBUG_COUNTS True, print a one-line summary at end of game with all counters plus previous counters.
+
+9) Tunables / constants to expose at top (for easy future tuning)
+   - CITY_PROD_SCALE = 35.0
+   - CITY_VP_EQUIV_SCALE = 60.0
+   - CITY_UPGRADE_FORCE_THRESHOLD = 30.0
+   - CITY_UPGRADE_SCALE = 40.0
+   - STEAL_WEIGHT = 40.0
+   - GLOBAL_BEST_ROBBER_BONUS = 35.0
+   - NOT_GLOBAL_PENALTY = 12.0
+
+10) Safety & minimal risk rules
+   - Wrap new helpers and calls in try/except. On any access failure, fall back to conservative defaults (do not crash).
+   - Do not change SIMULATION_BUDGET, MAX_SIMULATIONS, per-action branch caps, or rollout opponent-response logic.
+   - Limit additional computation per action: if evaluating city_upgrade_value for many city actions, cap to top N (e.g., top 6 by base city score) to avoid runtime blow-up.
+
+11) Testing & reporting
+   - After implementing, run another experiment of 30-50 games and report:
+       * Wins / avg VP
+       * Avg settlements, cities, roads, devcards, army
+       * COUNTER summary (enable DEBUG_COUNTS=True for one run)
+       * Whether BUILD_CITY average increased (primary success metric)
+       * Any AttributeError tracebacks or misparsed action/hex reprs (if so, include full traceback & a printed repr of an example action/hex)
+   - If city averages still lag, we will consider marginally increasing CITY_UPGRADE_FORCE_THRESHOLD sensitivity or CITY_PROD_SCALE.
+
+Make only these targeted changes. After implementation, run experiments and report results and counters. If you run into AttributeError traces, paste full tracebacks for RESEARCHER assistance.
+================================ Human Message =================================
+
+CODER
+
+Summary
+- Attempted to apply the minimal-risk edits requested (near-afford dev penalization, stronger city forcing when near-affordable, increased ROAD_SCORE_BOOST, reduced DEV_EV_SCALE/raised DEV_EV_THRESHOLD, rollout bias extension already present, robber global-max enforcement already present).
+- I could not directly write/update foo_player.py because the file write tool refused to write files >64 KB. I therefore prepared a small, precise code patch you can apply manually (or via your repository tooling) to update only the required logic without touching other parts of the file.
+- The rest of the file already contains most of the prior improvements. The single targeted replacement below implements the new near-afford check and the dev-vs-city forced-inclusion preference, plus a conservative safe fallback. This is the minimal change needed to satisfy the latest META.
+
+What to change (one targeted replacement)
+- Find this block in foo_player.py inside prefilter_actions (the block that begins: "# If both city and dev actions present, prefer forcing city when affordable or urgent") — the code snippet currently in your file looks like this:
+
+    # If both city and dev actions present, prefer forcing city when affordable or urgent
+    try:
+        if city_actions and dev_actions:
+            afford_now = self.can_afford_city_now(game, color)
+            urgency_city, _s, _r = self.build_urgency(game, color)
+            if afford_now or urgency_city >= 0.8 * self.CITY_URGENCY_BONUS:
+                # remove devs from musts if present
+                for da in list(dev_actions):
+                    if da in musts:
+                        try:
+                            musts.remove(da)
+                            self.COUNTER_DEV_BUY_FORCED = max(0, self.COUNTER_DEV_BUY_FORCED - 1)
+                        except Exception:
+                            pass
+                # ensure best city action present
+                try:
+                    best_city = None
+                    best_score = -1e9
+                    for ca in city_actions:
+                        sc = self.cheap_pre_score(ca, game, color)
+                        if sc > best_score:
+                            best_score = sc
+                            best_city = ca
+                    if best_city and best_city not in musts:
+                        musts.append(best_city)
+                        self.COUNTER_FORCED_CITY += 1
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+- Replace the above block with the following exact code (this implements near-afford detection, stricter dev removal, and strict force-include when exactly affordable):
+
+    # If both city and dev actions present, prefer forcing city when affordable, near-affordable, or urgent
+    try:
+        if city_actions and dev_actions:
+            # Strict affordability now
+            afford_now = self.can_afford_city_now(game, color)
+            # Near-afford heuristic (within NEAR_CITY_RESOURCE_GAP total resource units)
+            near_afford = False
+            try:
+                if hasattr(self, \"is_near_afford_city\") and self.CITY_NEAR_AFFORD_PENALIZE_DEV:
+                    near_afford = self.is_near_afford_city(game, color)
+            except Exception:
+                near_afford = False
+
+            urgency_city, _s, _r = self.build_urgency(game, color)
+            # If strictly affordable and we are configured to force city, ensure city action is included
+            if self.CITY_FORCE_AFFORD_STRICT and afford_now:
+                try:
+                    # remove devs from musts if present (they shouldn't steal the city)
+                    for da in list(dev_actions):
+                        if da in musts:
+                            try:
+                                musts.remove(da)
+                                # reflect that we removed a forced dev (if previously counted)
+                                if self.COUNTER_DEV_BUY_FORCED > 0:
+                                    self.COUNTER_DEV_BUY_FORCED = max(0, self.COUNTER_DEV_BUY_FORCED - 1)
+                            except Exception:
+                                pass
+                    # ensure a top city action present
+                    best_city = None
+                    best_score = -1e9
+                    for ca in city_actions:
+                        sc = self.cheap_pre_score(ca, game, color)
+                        if sc > best_score:
+                            best_score = sc
+                            best_city = ca
+                    if best_city and best_city not in musts:
+                        musts.append(best_city)
+                        self.COUNTER_FORCED_CITY += 1
+                except Exception:
+                    pass
+            else:
+                # If not strictly affordable, but near-afford or urgent, prefer city over dev:
+                try:
+                    dev_ev_keep_threshold = self.DEV_EV_THRESHOLD + 0.10
+                    # If near-afford, require a stronger dev EV to keep dev forced
+                    if (near_afford and self.CITY_NEAR_AFFORD_PENALIZE_DEV) or (urgency_city >= 0.8 * self.CITY_URGENCY_BONUS):
+                        # Remove devs from musts unless exceptionally high dev EV
+                        for da in list(dev_actions):
+                            try:
+                                dev_ev = self.dev_card_ev_estimate(game, color)
+                            except Exception:
+                                dev_ev = 0.0
+                            if dev_ev < dev_ev_keep_threshold and da in musts:
+                                try:
+                                    musts.remove(da)
+                                    if self.COUNTER_DEV_BUY_FORCED > 0:
+                                        self.COUNTER_DEV_BUY_FORCED = max(0, self.COUNTER_DEV_BUY_FORCED - 1)
+                                except Exception:
+                                    pass
+                        # ensure best city action present
+                        best_city = None
+                        best_score = -1e9
+                        for ca in city_actions:
+                            sc = self.cheap_pre_score(ca, game, color)
+                            if sc > best_score:
+                                best_score = sc
+                                best_city = ca
+                        if best_city and best_city not in musts:
+                            musts.append(best_city)
+                            self.COUNTER_FORCED_CITY += 1
+                    # else keep dev forcing as previously determined
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+Why this patch
+- It minimally changes prefilter behavior: when city and dev both available, we prefer city if:
+  - player can strictly afford city now (force city), OR
+  - player is near-affordable (within 1 resource) and CITY_NEAR_AFFORD_PENALIZE_DEV True (deprioritize devs), OR
+  - city urgency is very high (urgency_city >= 0.8 * CITY_URGENCY_BONUS)
+- In those cases we remove forced dev buys from musts unless dev EV exceeds a higher threshold (DEV_EV_THRESHOLD + 0.1). This prevents dev buys from crowding out city upgrades in tight situations.
+- Counters are decremented/updated so your diagnostics remain coherent.
+
+Other small verifications to make (no code change required if already present)
+- DEV_EV_SCALE is already set to 55.0 and DEV_EV_THRESHOLD is 0.28 in your file — good.
+- CITY_URGENCY_BONUS is already 95.0, ROAD_SCORE_BOOST is already 9.0, PROD_LOSS_IMPORTANCE increased earlier — good.
+- ROLLOUT_CITY_STEPS is already 2 and rollout bias for city is applied in rollout_value — good.
+- is_near_afford_city helper is present (deficit <=1) — good.
+- Counters printing exists in decide when DEBUG_COUNTS True — good.
+
+How to apply
+- Open foo_player.py in a text editor.
+- Search for the exact block shown above starting with the comment "# If both city and dev actions present, prefer forcing city when affordable or urgent".
+- Replace that entire try...except block with the replacement block provided above.
+- Save file and run tests.
+
+If you prefer, I can provide a patch (unified diff) you can apply with git; paste here and I will format it. Because the file is large (>64kB) I could not write it directly via the automated writer.
+
+Validation & next runs
+- After applying the above prefilter tweak, run 30–50 games with DEBUG_COUNTS=True for one run to collect:
+  - COUNTER_FORCED_CITY
+  - COUNTER_FORCED_CITY_HIGHIMPACT
+  - COUNTER_DEV_BUY_FORCED
+  - COUNTER_BUY_DEV_ACTUALLY
+  - COUNTER_BUILD_CITY_ACTUALLY
+  - COUNTER_ROBBER_EVALS
+  - COUNTER_ROBBER_CHOSE_GLOBAL
+  - COUNTER_KNIGHT_CHOSE_GLOBAL
+- Primary success metric: increase in average cities per game and wins/avg VP improved or stable compared to baseline.
+- If city upgrades still lag, small further tunings:
+  - Increase CITY_URGENCY_BONUS slightly (+5..+15),
+  - Lower DEV_EV_SCALE (e.g., to 50) or raise DEV_EV_THRESHOLD,
+  - Lower DEV_EV_KEEP_THRESHOLD comparison (currently +0.1) to make dev buys less likely to be kept.
+
+If anything breaks
+- If you get AttributeError tracebacks referencing specific adapter or game object fields (e.g., action payloads, hex attributes), paste the full traceback and an example repr of the offending object; I will generate exact small replacements to adapt to the concrete adapter API.
+
+If you want, I can also produce a ready-to-run git patch or a small script that applies this replacement for you.
+
+END CODER
+================================ Human Message =================================
+
+GAME RESULTS:
+
+{
+  "Player Summary": {
+    "AlphaBetaPlayer:RED(depth=2,value_fn=base_fn,prunning=False)": {
+      "WINS": 18,
+      "AVG VP": 8.4,
+      "AVG SETTLES": 2.566666666666667,
+      "AVG CITIES": 2.2,
+      "AVG ROAD": 0.7,
+      "AVG ARMY": 0.0,
+      "AVG DEV VP": 0.03333333333333333
+    },
+    "FooPlayer:BLUE": {
+      "WINS": 12,
+      "AVG VP": 7.066666666666666,
+      "AVG SETTLES": 2.933333333333333,
+      "AVG CITIES": 1.3666666666666667,
+      "AVG ROAD": 0.3,
+      "AVG ARMY": 0.26666666666666666,
+      "AVG DEV VP": 0.26666666666666666
+    }
+  },
+  "Game Summary": {
+    "AVG TICKS": 207.06666666666666,
+    "AVG TURNS": 70.56666666666666,
+    "AVG DURATION": 2.8210884730021157
+  }
+}
+================================ Human Message =================================
+
+ANALYZER
+---
+After Running The New foo_player.py Player, Here is my analysis and findings:
+
+---
+### PERFORMANCE SUMMARY:
+- **Outcome**: FooPlayer won **12 out of 30 games** (40% win rate).
+- **VP**: FooPlayer:BLUE averaged **7.07 VP** vs. AlphaBetaPlayer:RED's **8.40 VP** (VP diff: **-1.33**).
+- **Key Counts**:
+  - Settlements: **2.93** (FooPlayer) vs. 2.57 (Opponent).
+  - Cities: **1.37** (FooPlayer) vs. 2.20 (Opponent).
+  - Roads: **0.30** (FooPlayer) vs. 0.70 (Opponent).
+  - Development Cards: **0.27** (FooPlayer) vs. 0.03 (Opponent).
+  - Army: **0.27** (FooPlayer) vs. 0.00 (Opponent).
+  - Total Turns: **70.57**.
+
+---
+### VERDICT:
+- **Poor**: FooPlayer's VP difference of **-1.33** is below the acceptable threshold.
+
+---
+### LIKELY REASONS FOR DECLINE:
+1. **City Deficit**:
+   - FooPlayer builds significantly fewer cities (1.37 vs. 2.20), limiting late-game VP gains.
+   - **Code Citation**: City-building actions are deprioritized in `cheap_pre_score` (Lines 200–210, `foo_player.py`).
+   - **Log Corroboration**: Opponent consistently builds more cities, leading to higher VP in late-game scenarios.
+
+2. **Road Neglect**:
+   - FooPlayer builds fewer roads (0.30 vs. 0.70), limiting long-term expansion and connectivity.
+   - **Code Citation**: Road-building actions are scored lower in `cheap_pre_score` (Line 120, `foo_player.py`).
+
+3. **Over-Reliance on Settlements**:
+   - FooPlayer focuses heavily on settlements (2.93 vs. 2.57) but fails to convert them into cities, leading to a VP deficit.
+   - **Code Citation**: The `build_urgency` logic (Lines 300–350, `foo_player.py`) prioritizes settlements over cities in early/mid-game phases.
+
+4. **Predictable Strategy**:
+   - The opponent (AlphaBetaPlayer:RED) may have adapted to exploit FooPlayer's predictable settlement/road focus.
+   - **Log Corroboration**: Opponent wins 60% of games, indicating a strong counter-strategy.
+
+5. **Robber/Knight Inefficiency**:
+   - While FooPlayer uses robber/knight actions, the logic for targeting high-value opponents or disrupting production is suboptimal.
+   - **Code Citation**: `evaluate_robber_action` (Lines 500–550, `foo_player.py`) lacks aggressive targeting of high-production opponents.
+
+---
+### STRATEGIC FLAW:
+FooPlayer's heuristic and rollout logic prioritize early-game expansion (settlements/roads) and development cards but **fail to aggressively upgrade settlements to cities** and lack refined disruptive strategies (e.g., targeted robber/knight usage), leading to a significant late-game VP deficit.
+
+---
+### NEXT STEP:
+Send to Coder to **refine the `build_urgency` logic to prioritize city upgrades in mid/late-game** and **enhance robber/knight targeting for high-production opponents**.
+
+---
+Let me know if you need anything else.
+END ANALYZER
+
+--- Output from META at 20250925_091644 ---
+================================== Ai Message ==================================
+
+- META THOUGHTS: The analyzer shows a sharp regression after the last patch: wins dropped to 12/30 and FooPlayer is now behind on VP (-1.33). The core symptoms are consistent: many settlements but too few cities and roads. That suggests our recent aggressive prefilter/dev-removal/near-afford forcing caused maladaptive behavior — the player is building extra settlements or missing road connectivity instead of converting to cities, or it's over-prioritizing city forcing in contexts where resources/position require otherwise. We must back off aggressiveness and add resource-preservation checks: only force or deprioritize dev buys when city-upgrade will clearly produce large marginal benefit (high-production upgrade) or strict affordability exists — not merely near-afford. Also restore some dev-buy weight so it isn't starved away when correct. Finally, strengthen road scoring and add a settlement-penalty when it would consume ore/wheat needed for urgent city. All changes must be minimal-risk and preserve adapters, fallbacks, and budget caps.
+
+- META GOAL: Make conservative, targeted fixes to restore previous strengths and recover city conversion:
+  1) Reduce city-forcing aggressiveness (back off thresholds).
+  2) Only remove forced dev buys when strict affordability OR near-afford + very high city urgency AND upgrade is high-impact.
+  3) Penalize settlement/dev actions that would consume ore/wheat and block an urgent city upgrade.
+  4) Increase road scoring modestly to recover road counts.
+  5) Keep robber/knight targeting and rollout changes as previously, but avoid further aggressive changes now.
+  6) Preserve safety, adapters, and simulation budgets.
+
+- CHOSEN AGENT: CODER
+
+- AGENT OBJECTIVE:
+Implement the following minimal-risk edits in foo_player.py. Only change the specified constants/blocks and functions: constants at top, prefilter_actions block (we previously provided), cheap_pre_score, build_urgency (small tune), and a new resource-preservation helper. Do not alter SIMULATION_BUDGET, MAX_SIMULATIONS, rollout opponent-response, or core adapters usage. Wrap all new logic in try/except and use conservative fallbacks.
+
+1) Constants (set these exact values)
+   - CITY_URGENCY_BONUS = 80.0       # back off from 95
+   - DEV_EV_SCALE = 65.0             # raise to restore dev buys' weight
+   - DEV_EV_THRESHOLD = 0.26
+   - ROAD_SCORE_BOOST = 11.0         # small increase to recover roads
+   - CITY_NEAR_AFFORD_PENALIZE_DEV = True  # keep feature but stricter below
+   - CITY_NEAR_AFFORD_GAP = 1        # keep as before (NEAR_CITY_RESOURCE_GAP)
+   - CITY_FORCE_STRICT_ONLY = True   # new flag: only strict affordability forces dev removal by default
+   - CITY_HIGH_IMPACT_THRESHOLD = 40.0  # require high-impact upgrade to force dev when near-afford
+   - SETTLEMENT_BLOCKS_CITY_PENALTY = 45.0  # penalty to settlement if it would consume resources needed for urgent city
+
+2) New helper: would_action_block_city(action, game, color)
+   - Purpose: detect whether executing a candidate action (primarily BUILD_SETTLEMENT or BUY_DEV_CARD) would consume ore/wheat resources that are required to reach strict city affordability, given current resources.
+   - Implementation (best-effort / defensive):
+       - Get current resource counts for player (attempt player.resources or player.resource_count).
+       - For action types:
+           * BUILD_SETTLEMENT: infer resource cost (brick=1, wood=1, sheep=1, wheat=1). If current ore>=3 and wheat>=2? Actually settlement doesn't use ore so mainly consumes wheat; but to be conservative, compute for city missing ore/wheat.
+           * BUY_DEV_CARD: costs ore=1,wheat=1,sheep=1 — this directly consumes ore/wheat.
+           * If action would reduce ore or wheat below CITY_AFFORD_STRICT thresholds (3 ore, 2 wheat) or increase the deficit beyond CITY_NEAR_AFFORD_GAP when city urgency > 0, return True.
+       - Defensive: if resource info missing, return False (conservative: do not block).
+   - Use this helper to avoid taking actions that would prevent a strictly desirable city.
+
+3) Prefilter changes (replace the aggressive block provided earlier with a more conservative policy)
+   - Use the replacement block we previously suggested as the base, but modify decision rule:
+       - Only remove forced dev buys when:
+           a) strict affordability (afford_now) AND CITY_FORCE_AFFORD_STRICT True (force city), OR
+           b) near_afford True AND urgency_city >= 0.92 * CITY_URGENCY_BONUS AND the top BUILD_CITY action has estimated city_upgrade_value >= CITY_HIGH_IMPACT_THRESHOLD.
+       - If near_afford condition met and top city upgrade is not high-impact, DO NOT remove dev forced includes.
+       - When removing devs, still respect dev_ev_keep_threshold = DEV_EV_THRESHOLD + 0.10: never remove devs if dev_ev >= dev_ev_keep_threshold.
+       - Maintain COUNTER updates (increment/decrement) as before.
+   - Rationale: this prevents near-afford small gains from causing dev-buy starvation; only strong, high-impact upgrades or strict affordability will remove dev buys.
+
+4) cheap_pre_score adjustments: penalize settlement/dev if they block urgent city
+   - When scoring BUILD_SETTLEMENT and BUY_DEV_CARD actions:
+       - If urgency_city >= 0.8 * CITY_URGENCY_BONUS and would_action_block_city(action, game, color) returns True:
+           * Subtract SETTLEMENT_BLOCKS_CITY_PENALTY from the action score (e.g., -45), making it unlikely to be chosen when a city is urgent.
+       - This keeps settlement building but prevents it from starving an imminent city upgrade.
+   - For BUILD_CITY scoring: keep prior city_score additive boosts (but with CITY_URGENCY_BONUS now 80) and include city_upgrade_value if available.
+
+5) build_urgency tweak
+   - Keep previous logic, but lower thresholds for adding large bonuses slightly:
+       - If can_afford_city_now in MID/LATE: city_bonus += 0.9 * CITY_URGENCY_BONUS (instead of full), and if VP gap >=2 add 0.8 * CITY_URGENCY_BONUS. This tempers urgency to avoid over-forcing.
+   - Defensive behavior unchanged.
+
+6) Rollout and robber/knight: leave as-is for now
+   - Do not increase PROD_LOSS_IMPORTANCE further or alter rollout steps. We already applied earlier improvements; now focus on resource preservation and balanced forcing.
+
+7) Decision tie-breaker: keep city preference but stricter safety
+   - If BUILD_CITY candidate is within CITY_TIE_EPS of best score and urgency_city > 0, prefer the BUILD_CITY only if would_action_block_city(best_noncity_action, game, color) is False OR city_upgrade_value >= CITY_HIGH_IMPACT_THRESHOLD. This avoids choosing a city that would cause catastrophic blocking of other needed plays unless it's definitely high-impact.
+
+8) Counters/logging
+   - Keep existing COUNTER_* counters and add two new counters:
+       - COUNTER_ACTIONS_BLOCKING_CITY (increment when would_action_block_city returns True for a considered action)
+       - COUNTER_NEAR_AFFORD_HIGHIMPACT_FORCED (num times we forced city due to near-afford+high-impact)
+   - Only print when DEBUG_COUNTS True.
+
+9) Safety & fallbacks
+   - All new code to be defensive; on missing resource info or unknown action types, assume False for blocking and do not remove dev forced includes.
+   - No change to simulation budgets or branching caps.
+
+10) Tests & reporting
+    - After implementing, run 30 games and report:
+       * Wins / avg VP
+       * Avg settlements, cities, roads, devcards, army
+       * Counters (enable DEBUG_COUNTS=True for one run)
+       * Any AttributeError tracebacks (paste full tracebacks and an example repr)
+    - Success criteria: recover to previous >65% win rate and average cities >= ~1.6 with roads recovering.
+
+Make only these targeted edits. If you hit attribute errors or need exact field names for resources/actions, return the full traceback and a sample object repr — then we will call RESEARCHER if necessary.
+
