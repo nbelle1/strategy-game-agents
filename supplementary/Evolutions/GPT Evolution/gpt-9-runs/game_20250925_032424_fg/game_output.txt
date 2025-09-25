@@ -1,0 +1,34 @@
+Playing 30 games...                                                                                     0% -:--:--
+AlphaBetaPlayer:RED(depth=2,value_fn=base_fn,prunning=False)                                            0%        
+FooPlayer:BLUE                                                                                          0%        
+Traceback (most recent call last):
+  File "/Users/nik/miniconda3/envs/strategy-game-agents/bin/catanatron-play", line 33, in <module>
+    sys.exit(load_entry_point('catanatron-experimental', 'console_scripts', 'catanatron-play')())
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nik/miniconda3/envs/strategy-game-agents/lib/python3.11/site-packages/click/core.py", line 1130, in __call__
+    return self.main(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nik/miniconda3/envs/strategy-game-agents/lib/python3.11/site-packages/click/core.py", line 1055, in main
+    rv = self.invoke(ctx)
+         ^^^^^^^^^^^^^^^^
+  File "/Users/nik/miniconda3/envs/strategy-game-agents/lib/python3.11/site-packages/click/core.py", line 1404, in invoke
+    return ctx.invoke(self.callback, **ctx.params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nik/miniconda3/envs/strategy-game-agents/lib/python3.11/site-packages/click/core.py", line 760, in invoke
+    return __callback(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nik/Library/Mobile Documents/com~apple~CloudDocs/Develop/NLP/strategy-game-agents/catanatron/catanatron_experimental/catanatron_experimental/play.py", line 197, in simulate
+    play_batch(
+  File "/Users/nik/Library/Mobile Documents/com~apple~CloudDocs/Develop/NLP/strategy-game-agents/catanatron/catanatron_experimental/catanatron_experimental/play.py", line 330, in play_batch
+    for i, game in enumerate(
+  File "/Users/nik/Library/Mobile Documents/com~apple~CloudDocs/Develop/NLP/strategy-game-agents/catanatron/catanatron_experimental/catanatron_experimental/play.py", line 259, in play_batch_core
+    game.play(accumulators)
+  File "/Users/nik/Library/Mobile Documents/com~apple~CloudDocs/Develop/NLP/strategy-game-agents/catanatron/catanatron_core/catanatron/game.py", line 132, in play
+    self.play_tick(decide_fn=decide_fn, accumulators=accumulators)
+  File "/Users/nik/Library/Mobile Documents/com~apple~CloudDocs/Develop/NLP/strategy-game-agents/catanatron/catanatron_core/catanatron/game.py", line 153, in play_tick
+    else player.decide(self, actions)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nik/Library/Mobile Documents/com~apple~CloudDocs/Develop/NLP/strategy-game-agents/agents/agentEvolver_v2/foo_player.py", line 505, in decide
+    res = self._evaluate_action(game, a, self.color)
+          ^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'FooPlayer' object has no attribute '_evaluate_action'
