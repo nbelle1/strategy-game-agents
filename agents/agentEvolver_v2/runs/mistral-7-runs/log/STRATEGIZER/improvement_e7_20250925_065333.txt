@@ -1,0 +1,1670 @@
+--- Input for STRATEGIZER at 20250925_065333 ---
+================================ Human Message =================================
+
+- META THOUGHTS:
+The 1-ply lookahead implementation has significantly improved the FooPlayer's performance, achieving a near-even win rate (14 wins, 16 losses) and a slightly higher average VP than the AlphaBeta opponent. However, the current strategy is still limited by its shallow depth and lack of probabilistic handling for actions like dice rolls, robber placement, and development cards. The Analyzer has identified these gaps and proposed a multi-ply lookahead with probabilistic simulation as the next logical step. This will allow the player to evaluate deeper strategic outcomes and account for uncertainty, which is critical for outmaneuvering the AlphaBeta opponent.
+
+- META GOAL:
+Continue improving the `foo_player.py` code to develop a robust, strategic algorithm that can consistently outperform the AlphaBeta opponent. The immediate focus is on implementing a **multi-ply lookahead** with **probabilistic simulation** for actions involving chance.
+
+- CHOSEN AGENT: STRATEGIZER
+
+- AGENT OBJECTIVE:
+Propose a **concrete strategy** to extend the current 1-ply lookahead to a **multi-ply lookahead** (e.g., 2-ply or deeper) that incorporates **probabilistic simulation** for actions like dice rolls, robber placement, and development cards. The strategy must:
+1. Use `execute_spectrum` from `adapters.py` to simulate probabilistic outcomes.
+2. Integrate a deeper search algorithm (e.g., expectimax or minimax) to evaluate multi-step sequences.
+3. Prioritize actions with high long-term value while accounting for uncertainty.
+4. Avoid simple heuristics and focus on algorithmic solutions using the provided adapters.
+Provide a clear, actionable plan for the Coder to implement.
+================================== Ai Message ==================================
+
+STRATEGIZER
+To extend the current 1-ply lookahead to a **multi-ply lookahead with probabilistic simulation**, we will implement an **Expectimax** algorithm. This approach is ideal for games with chance elements like Catan, as it combines probabilistic outcomes with adversarial reasoning. Below is the proposed strategy:
+
+---
+
+### **Proposed Strategy: Multi-Ply Expectimax with Probabilistic Simulation**
+#### **Key Features**
+1. **Expectimax Algorithm**:
+   - Extend the current 1-ply lookahead to **2-ply or deeper** using Expectimax, which handles both adversarial (opponent) and chance (dice, robber, dev cards) nodes.
+   - Use `execute_spectrum` to simulate probabilistic outcomes for actions like dice rolls, robber placement, and development cards.
+
+2. **Probabilistic Simulation**:
+   - For actions with chance (e.g., dice rolls), use `execute_spectrum` to generate all possible outcomes and their probabilities.
+   - For deterministic actions (e.g., building), use `execute_deterministic` as before.
+
+3. **Value Function**:
+   - Use the existing `base_fn` or `contender_fn` to evaluate terminal states.
+   - Propagate expected values backward through the tree, weighting by probabilities for chance nodes.
+
+4. **Depth Limitation**:
+   - Limit the search depth to **2-ply** initially to balance computational cost and strategic depth.
+   - Optionally, add iterative deepening for later optimizations.
+
+---
+
+### **Implementation Plan**
+#### **Step 1: Define the Expectimax Algorithm**
+- Create a recursive `expectimax` function that:
+  - **Maximizes** for the player's turn (adversarial node).
+  - **Expects** for chance nodes (probabilistic outcomes).
+  - **Evaluates** terminal states using `base_fn` or `contender_fn`.
+
+#### **Step 2: Integrate Probabilistic Simulation**
+- For actions with chance (e.g., dice rolls, robber placement, dev cards):
+  - Use `execute_spectrum` to generate all possible outcomes and their probabilities.
+  - For each outcome, recursively call `expectimax` and weight the result by its probability.
+- For deterministic actions (e.g., building):
+  - Use `execute_deterministic` as before.
+
+#### **Step 3: Update the `decide` Method**
+- Replace the current 1-ply evaluation with the `expectimax` function.
+- Pass the current game state, playable actions, and depth limit (e.g., 2) to `expectimax`.
+- Return the action with the highest expected value.
+
+#### **Step 4: Optimize for Performance**
+- Use `list_prunned_actions` to reduce the action space for deeper searches.
+- Cache intermediate results to avoid redundant computations.
+
+---
+
+### **Pseudocode for Expectimax**
+```python
+def expectimax(game: Game, depth: int, is_max_player: bool) -> float:
+    if depth == 0 or game.is_terminal():
+        return base_fn()(game, self.color)
+
+    if is_max_player:
+        # Adversarial node: maximize
+        best_value = -math.inf
+        for action in list_prunned_actions(game):
+            outcomes = execute_spectrum(game, action) if action.has_chance() else execute_deterministic(game, action)
+            value = sum(prob * expectimax(g_after, depth - 1, False) for (g_after, prob) in outcomes)
+            best_value = max(best_value, value)
+        return best_value
+    else:
+        # Chance node: expect
+        outcomes = expand_spectrum(game, list_prunned_actions(game))
+        return sum(prob * expectimax(g_after, depth - 1, True) for (g_after, prob) in outcomes)
+```
+
+---
+
+### **Actionable Steps for the Coder**
+1. **Implement the `expectimax` function** as described above.
+2. **Modify the `decide` method** to use `expectimax` with a depth of 2.
+3. **Test the player** against the AlphaBeta opponent and compare performance.
+4. **Optimize** by adjusting depth, pruning, or caching as needed.
+
+---
+**Expected Outcome**:
+This strategy will enable the player to evaluate deeper sequences of actions while accounting for uncertainty, leading to more robust decision-making and improved win rates.
+
+END STRATEGIZER
+================================ Human Message =================================
+
+- META THOUGHTS:
+The transition to a 2-ply Expectimax algorithm initially showed promise, but the latest results indicate a decline in performance (9 wins, 21 losses) compared to the previous 1-ply lookahead. The Analyzer has identified several critical issues:
+1. **Shallow Search Depth**: The 2-ply depth is insufficient for long-term strategic planning in Catan.
+2. **Lack of Specialized Strategies**: The player does not optimize for robber/knight usage, development cards, or adaptive heuristics.
+3. **Generic Heuristic**: The reliance on `base_fn` may not capture nuanced opportunities like road networks or settlement expansion.
+
+The current approach is too limited to compete effectively against the AlphaBeta opponent. A deeper search strategy (e.g., 3-4 ply) combined with custom heuristics for key actions (robber, development cards, road/settlement expansion) is necessary. Additionally, the Strategizer should explore ways to optimize the search space and improve the heuristic evaluation.
+
+- META GOAL:
+Develop a **deeper search strategy** (3-4 ply) with **custom heuristics** for robber placement, development cards, and adaptive road/settlement expansion to consistently outperform the AlphaBeta opponent.
+
+- CHOSEN AGENT: STRATEGIZER
+
+- AGENT OBJECTIVE:
+Design a **deeper search strategy** (3-4 ply) for the Expectimax algorithm, incorporating the following:
+1. **Increased Search Depth**: Propose a method to extend the search depth to 3-4 plies while managing computational complexity (e.g., iterative deepening, move ordering, or pruning).
+2. **Custom Heuristics**: Develop specialized heuristics for:
+   - Robber placement to disrupt opponents and optimize resource denial.
+   - Development card usage (e.g., prioritizing "MONOPOLY" or "ROAD_BUILDING" based on game state).
+   - Adaptive road and settlement expansion to maximize long-term value.
+3. **Search Optimization**: Suggest techniques to reduce the search space (e.g., pruning non-promising actions, caching intermediate results).
+4. **Adaptive Opponent Modeling**: If feasible, propose a way to model the opponent's strategy to improve decision-making.
+
+Provide a **clear, actionable plan** for the Coder to implement, focusing on algorithmic solutions using `adapters.py` functions. Avoid simple rule-based heuristics.
+================================== Ai Message ==================================
+
+STRATEGIZER
+To address the performance decline and improve the `foo_player.py`, we will implement a **3-4 ply Expectimax search** with **custom heuristics** and **search optimizations**. Below is the actionable plan:
+
+---
+
+### **Proposed Strategy: Deeper Expectimax with Custom Heuristics**
+#### **Key Features**
+1. **Increased Search Depth (3-4 Ply)**:
+   - Use **iterative deepening** to gradually increase depth and manage computational cost.
+   - Implement **move ordering** to prioritize high-value actions (e.g., building settlements, playing development cards).
+
+2. **Custom Heuristics**:
+   - **Robber Placement**: Use `prune_robber_actions` to focus on high-impact placements that disrupt opponents or secure resources.
+   - **Development Cards**: Prioritize cards like "MONOPOLY" or "ROAD_BUILDING" based on the current game state and resource availability.
+   - **Road/Settlement Expansion**: Use a heuristic that evaluates long-term value, such as resource diversity and expansion potential.
+
+3. **Search Optimization**:
+   - **Pruning**: Use `list_prunned_actions` and `prune_robber_actions` to reduce the action space.
+   - **Caching**: Cache intermediate results of the `expectimax` function to avoid redundant computations.
+
+4. **Adaptive Opponent Modeling**:
+   - Assume the opponent will maximize their own value, and adjust the search tree accordingly.
+
+---
+
+### **Implementation Plan**
+#### **Step 1: Extend Search Depth to 3-4 Ply**
+- Modify the `expectimax` function to support **iterative deepening**:
+  - Start with a depth of 1 and gradually increase to 3-4.
+  - Use a time limit to ensure the search completes within a reasonable timeframe.
+
+#### **Step 2: Implement Custom Heuristics**
+- **Robber Placement**:
+  - Use `prune_robber_actions` to filter robber actions to only the most impactful ones.
+  - Prioritize placements that block opponents' high-value resource tiles.
+- **Development Cards**:
+  - Prioritize playing "MONOPOLY" or "ROAD_BUILDING" based on the current resource state.
+  - Use `value_production` to evaluate the potential impact of each card.
+- **Road/Settlement Expansion**:
+  - Use a heuristic that evaluates the long-term value of building roads and settlements, such as access to diverse resources and expansion potential.
+
+#### **Step 3: Optimize Search Space**
+- **Pruning**:
+  - Use `list_prunned_actions` to reduce the action space.
+  - For robber actions, use `prune_robber_actions` to further reduce the search space.
+- **Caching**:
+  - Cache intermediate results of the `expectimax` function to avoid redundant computations.
+
+#### **Step 4: Update the `decide` Method**
+- Replace the current 2-ply search with the new 3-4 ply Expectimax.
+- Integrate the custom heuristics and search optimizations.
+
+---
+
+### **Pseudocode for Updated Expectimax**
+```python
+def expectimax(node_game: Game, depth: int, alpha: float, beta: float, cache: dict) -> float:
+    """Return the expectimax value of node_game from the perspective of self.color."""
+    # Check cache for previously computed results
+    cache_key = (node_game.state_hash(), depth)
+    if cache_key in cache:
+        return cache[cache_key]
+
+    # Terminal check
+    winner = node_game.winning_color()
+    if winner is not None or depth == 0:
+        value = custom_heuristic(node_game, self.color)
+        cache[cache_key] = value
+        return value
+
+    # Get pruned actions
+    node_actions = list_prunned_actions(node_game)
+    if not node_actions:
+        value = custom_heuristic(node_game, self.color)
+        cache[cache_key] = value
+        return value
+
+    # Determine if this is a MAX or MIN node
+    node_color = node_actions[0].color
+    is_max_node = (node_color == self.color)
+
+    if is_max_node:
+        best_value = -math.inf
+        for act in node_actions:
+            # Apply move ordering to prioritize high-value actions
+            if act.action_type == ActionType.PLAY_DEV_CARD:
+                act = prioritize_dev_cards(act, node_game)
+
+            outcomes = execute_spectrum(node_game, act)
+            expected = 0.0
+            for (g_after, prob) in outcomes:
+                val = expectimax(g_after, depth - 1, alpha, beta, cache)
+                expected += prob * val
+                if expected > best_value:
+                    best_value = expected
+                    alpha = max(alpha, best_value)
+                    if beta <= alpha:
+                        break  # Alpha-beta pruning
+        cache[cache_key] = best_value
+        return best_value
+    else:
+        worst_value = math.inf
+        for act in node_actions:
+            outcomes = execute_spectrum(node_game, act)
+            expected = 0.0
+            for (g_after, prob) in outcomes:
+                val = expectimax(g_after, depth - 1, alpha, beta, cache)
+                expected += prob * val
+                if expected < worst_value:
+                    worst_value = expected
+                    beta = min(beta, worst_value)
+                    if beta <= alpha:
+                        break  # Alpha-beta pruning
+        cache[cache_key] = worst_value
+        return worst_value
+
+def custom_heuristic(game: Game, color: Color) -> float:
+    """Evaluate the game state using custom heuristics."""
+    base_value = base_fn()(game, color)
+    robber_value = evaluate_robber_placement(game, color)
+    dev_card_value = evaluate_dev_cards(game, color)
+    expansion_value = evaluate_expansion(game, color)
+    return base_value + robber_value + dev_card_value + expansion_value
+```
+
+---
+
+### **Actionable Steps for the Coder**
+1. **Implement Iterative Deepening**:
+   - Modify the `decide` method to use iterative deepening for the Expectimax search.
+   - Start with a depth of 1 and gradually increase to 3-4.
+
+2. **Integrate Custom Heuristics**:
+   - Implement `custom_heuristic` to evaluate robber placement, development cards, and expansion.
+   - Use `prune_robber_actions` and `value_production` to inform heuristic decisions.
+
+3. **Optimize Search Space**:
+   - Use `list_prunned_actions` and `prune_robber_actions` to reduce the action space.
+   - Cache intermediate results of the `expectimax` function.
+
+4. **Test and Validate**:
+   - Test the updated player against the AlphaBeta opponent.
+   - Monitor performance and adjust heuristics or depth as needed.
+
+---
+**Expected Outcome**:
+This strategy will enable the player to evaluate deeper sequences of actions while accounting for uncertainty and leveraging custom heuristics, leading to improved decision-making and higher win rates.
+
+END STRATEGIZER
+================================ Human Message =================================
+
+- META THOUGHTS:
+The latest iteration of the FooPlayer, with a 3-ply Expectimax search and custom heuristics, has shown improvement but remains borderline competitive (14 wins, 16 losses). The Analyzer has identified key areas for further enhancement:
+1. **Insufficient Search Depth**: The current 3-ply depth is better but still lacks the foresight needed for long-term strategic planning.
+2. **Generic Heuristic**: The reliance on `base_fn` and a small production bonus does not fully capture nuanced opportunities like road networks, settlement expansion, or opponent disruption.
+3. **Limited Robber/Knight and Development Card Strategies**: These actions are evaluated but lack targeted, adaptive strategies.
+
+The next step should focus on **deeper search** (4-5 ply) and **specialized heuristics** for road/settlement expansion, robber placement, and development card optimization. Additionally, the Strategizer should explore ways to further optimize the search space and improve the heuristic evaluation.
+
+- META GOAL:
+Develop a **4-5 ply Expectimax search** with **specialized heuristics** for road/settlement expansion, robber placement, and development card optimization to consistently outperform the AlphaBeta opponent.
+
+- CHOSEN AGENT: STRATEGIZER
+
+- AGENT OBJECTIVE:
+Design a **4-5 ply Expectimax search** with the following enhancements:
+1. **Increased Search Depth**:
+   - Propose a method to extend the search depth to 4-5 plies while managing computational complexity (e.g., iterative deepening, move ordering, or pruning).
+2. **Specialized Heuristics**:
+   - Develop heuristics for:
+     - **Road/Settlement Expansion**: Evaluate long-term value based on resource diversity and expansion potential.
+     - **Robber Placement**: Target high-impact placements to disrupt opponents or secure resources.
+     - **Development Cards**: Prioritize cards like "MONOPOLY" or "ROAD_BUILDING" based on game state and resource availability.
+3. **Search Optimization**:
+   - Suggest techniques to reduce the search space (e.g., pruning non-promising actions, caching intermediate results).
+4. **Adaptive Opponent Modeling**:
+   - If feasible, propose a way to model the opponent's strategy to improve decision-making.
+
+Provide a **clear, actionable plan** for the Coder to implement, focusing on algorithmic solutions using `adapters.py` functions. Avoid simple rule-based heuristics.
+================================== Ai Message ==================================
+
+STRATEGIZER
+---
+### **Analysis of Performance History**
+- **Evolution 0**: Baseline performance (0 wins, 2.0 avg score).
+- **Evolution 1**: Significant improvement with 1-ply lookahead (14 wins, 8.23 avg score).
+- **Evolutions 2-3**: Decline or stagnation with deeper Expectimax (9-14 wins, 7.16-7.36 avg score).
+  - The current 3-ply Expectimax is **not leveraging depth effectively** due to:
+    - Generic heuristics (`base_fn` + small production bonus).
+    - Lack of specialized strategies for robber, development cards, and expansion.
+    - Inefficient search space management.
+
+---
+### **Proposed Strategy: 4-5 Ply Expectimax with Specialized Heuristics**
+#### **Key Enhancements**
+1. **Increased Search Depth (4-5 Ply)**:
+   - Use **iterative deepening** with a **node budget** to manage computational cost.
+   - Implement **move ordering** to prioritize high-value actions (e.g., settlements, development cards).
+
+2. **Specialized Heuristics**:
+   - **Road/Settlement Expansion**:
+     - Evaluate long-term value using `value_production` and resource diversity.
+     - Prioritize actions that expand toward high-value tiles (e.g., ports, high-probability resources).
+   - **Robber Placement**:
+     - Use `prune_robber_actions` to focus on high-impact placements.
+     - Target opponents with the most resources or critical infrastructure (e.g., cities).
+   - **Development Cards**:
+     - Prioritize "MONOPOLY" or "ROAD_BUILDING" based on resource availability and game phase.
+     - Use `value_production` to assess the impact of playing a card.
+
+3. **Search Optimization**:
+   - **Pruning**:
+     - Use `list_prunned_actions` and `prune_robber_actions` to reduce the action space.
+   - **Caching**:
+     - Cache intermediate results of `expectimax` to avoid redundant computations.
+
+4. **Adaptive Opponent Modeling**:
+   - Assume the opponent will maximize their own value, and adjust the search tree accordingly.
+
+---
+### **Implementation Plan**
+#### **Step 1: Extend Search Depth to 4-5 Ply**
+- Modify the `expectimax` function to support **iterative deepening** up to 5 plies.
+- Use a **node budget** (e.g., 10,000 nodes) to cap computational cost.
+
+#### **Step 2: Implement Specialized Heuristics**
+- Replace the generic `custom_heuristic` with **three specialized components**:
+  - **Expansion Heuristic**:
+    ```python
+    def expansion_heuristic(game: Game, color: Color) -> float:
+        try:
+            sample = getattr(game, 'state', game)
+            prod = value_production(sample, getattr(self, 'name', 'P0'), include_variety=True)
+            return 0.1 * float(prod)  # Scale to avoid overwhelming base_fn
+        except Exception:
+            return 0.0
+    ```
+  - **Robber Heuristic**:
+    ```python
+    def robber_heuristic(game: Game, color: Color) -> float:
+        try:
+            # Prioritize robbing opponents with high resource production
+            opponents = [c for c in Color if c != color]
+            max_opponent_prod = max(
+                value_production(game.state, f"P{opponent.value}", include_variety=False)
+                for opponent in opponents
+            )
+            return -0.2 * max_opponent_prod  # Negative to disrupt opponents
+        except Exception:
+            return 0.0
+    ```
+  - **Development Card Heuristic**:
+    ```python
+    def dev_card_heuristic(game: Game, color: Color) -> float:
+        try:
+            # Prioritize playing cards like MONOPOLY or ROAD_BUILDING
+            dev_cards = getattr(game, 'dev_cards', {})
+            if dev_cards.get(color, {}).get('MONOPOLY', 0) > 0:
+                return 0.3  # Bonus for playing MONOPOLY
+            if dev_cards.get(color, {}).get('ROAD_BUILDING', 0) > 0:
+                return 0.2  # Bonus for playing ROAD_BUILDING
+        except Exception:
+            pass
+        return 0.0
+    ```
+
+#### **Step 3: Combine Heuristics**
+- Replace `custom_heuristic` with a **weighted sum** of the specialized heuristics:
+  ```python
+  def combined_heuristic(game: Game, color: Color) -> float:
+      base_val = base_fn()(game, color)
+      expansion_val = expansion_heuristic(game, color)
+      robber_val = robber_heuristic(game, color)
+      dev_card_val = dev_card_heuristic(game, color)
+      return base_val + expansion_val + robber_val + dev_card_val
+  ```
+
+#### **Step 4: Optimize Search Space**
+- **Pruning**:
+  - Use `list_prunned_actions` and `prune_robber_actions` to reduce the action space.
+- **Caching**:
+  - Cache intermediate results of `expectimax` to avoid redundant computations.
+
+#### **Step 5: Update the `decide` Method**
+- Replace the current `expectimax` call with the new **4-5 ply search** and **combined heuristic**.
+- Ensure the node budget is respected and iterative deepening is used.
+
+---
+### **Actionable Steps for the Coder**
+1. **Implement Iterative Deepening**:
+   - Modify the `decide` method to use iterative deepening up to 5 plies.
+   - Enforce a node budget (e.g., 10,000 nodes) to cap computational cost.
+
+2. **Integrate Specialized Heuristics**:
+   - Replace `custom_heuristic` with `combined_heuristic`.
+   - Implement `expansion_heuristic`, `robber_heuristic`, and `dev_card_heuristic`.
+
+3. **Optimize Search Space**:
+   - Use `list_prunned_actions` and `prune_robber_actions` to reduce the action space.
+   - Cache intermediate results of `expectimax`.
+
+4. **Test and Validate**:
+   - Test the updated player against the AlphaBeta opponent.
+   - Monitor performance and adjust heuristics or depth as needed.
+
+---
+**Expected Outcome**:
+This strategy will enable the player to evaluate deeper sequences of actions while leveraging specialized heuristics for robber placement, development cards, and expansion, leading to improved decision-making and higher win rates.
+
+END STRATEGIZER
+================================ Human Message =================================
+
+- META THOUGHTS:
+The latest iteration of the FooPlayer, with a 3-ply Expectimax search and specialized heuristics, has shown a decline in performance (8 wins, 22 losses). The Analyzer has identified critical issues:
+1. **Insufficient Heuristic Weighting**: The current heuristic contributions are too modest to drive meaningful strategic decisions.
+2. **Over-Reliance on `END_TURN` Actions**: The player frequently defaults to ending turns instead of pursuing strategic actions like building roads or settlements.
+3. **Limited Robber/Knight and Development Card Strategies**: These actions are evaluated but lack targeted, adaptive strategies.
+
+The next step should focus on **increasing heuristic weights** and **designing a deeper search strategy** (4-5 ply) with **adaptive prioritization** for roads, settlements, and development cards. The Strategizer must also address the over-reliance on `END_TURN` actions by ensuring the heuristics strongly favor strategic moves.
+
+- META GOAL:
+Develop a **4-5 ply Expectimax search** with **stronger heuristic weighting** and **adaptive prioritization** for roads, settlements, and development cards to consistently outperform the AlphaBeta opponent.
+
+- CHOSEN AGENT: STRATEGIZER
+
+- AGENT OBJECTIVE:
+Design a **4-5 ply Expectimax search** with the following enhancements:
+1. **Increased Heuristic Weighting**:
+   - Propose **stronger weights** for the specialized heuristics (e.g., expansion, robber placement, development cards) to ensure they drive strategic decisions.
+   - Ensure the heuristics strongly favor actions like `BUILD_ROAD`, `BUILD_SETTLEMENT`, and development card usage over `END_TURN`.
+2. **Deeper Search Strategy**:
+   - Extend the search depth to **4-5 plies** using iterative deepening and a node budget to manage computational cost.
+3. **Adaptive Prioritization**:
+   - Develop a mechanism to **prioritize strategic actions** (e.g., roads, settlements, development cards) over passive actions like `END_TURN`.
+   - Use move ordering to explore high-value actions first.
+4. **Search Optimization**:
+   - Suggest techniques to reduce the search space (e.g., pruning non-promising actions, caching intermediate results).
+
+Provide a **clear, actionable plan** for the Coder to implement, focusing on algorithmic solutions using `adapters.py` functions. Avoid simple rule-based heuristics.
+================================== Ai Message ==================================
+
+STRATEGIZER
+---
+### **Analysis of Current Performance**
+- **Evolution 4** shows a decline (8 wins, 6.47 avg score), indicating:
+  - **Insufficient heuristic weighting**: Current heuristics are too modest to drive strategic decisions.
+  - **Over-reliance on `END_TURN`**: The player defaults to passive actions instead of pursuing roads, settlements, or development cards.
+  - **Limited robber/knight and development card strategies**: These actions are evaluated but lack targeted prioritization.
+
+---
+### **Proposed Strategy: 4-5 Ply Expectimax with Stronger Heuristics and Adaptive Prioritization**
+#### **Key Enhancements**
+1. **Increased Heuristic Weighting**:
+   - **Expansion Heuristic**: Increase weight from `0.08` to **`0.25`** to strongly favor road/settlement expansion.
+   - **Robber Heuristic**: Increase weight from `-0.12` to **`-0.35`** to aggressively disrupt opponents.
+   - **Development Card Heuristic**: Increase weight for "MONOPOLY" from `0.25` to **`0.5`** and "ROAD_BUILDING" from `0.15` to **`0.4`**.
+
+2. **Deeper Search (4-5 Ply)**:
+   - Use **iterative deepening** with a **node budget of 15,000** to manage computational cost.
+   - Prioritize **high-value actions** (e.g., `BUILD_ROAD`, `BUILD_SETTLEMENT`, development cards) in move ordering.
+
+3. **Adaptive Prioritization**:
+   - Modify `_action_priority` to **deprioritize `END_TURN`** and **prioritize strategic actions**:
+     - `BUILD_SETTLEMENT`: **120.0** (up from 100.0)
+     - `BUILD_ROAD`: **90.0** (up from 70.0)
+     - `PLAY_DEV_CARD`: **130.0** (up from 120.0)
+     - `END_TURN`: **-100.0** (down from implicit 0.0)
+
+4. **Search Optimization**:
+   - Use `list_prunned_actions` and `prune_robber_actions` to reduce the search space.
+   - Cache intermediate results of `expectimax` to avoid redundant computations.
+
+---
+### **Implementation Plan**
+#### **Step 1: Update Heuristic Weights**
+- Modify the `combined_heuristic` function to use the **new weights**:
+  ```python
+  def combined_heuristic(g: Game, color: Color) -> float:
+      base_val = base_value_fn(g, color)
+      exp_v = 0.25 * expansion_heuristic(g, color)  # Increased from 0.08
+      rob_v = -0.35 * robber_heuristic(g, color)     # Increased from -0.12
+      dev_v = dev_card_heuristic(g, color)            # Weights adjusted inside dev_card_heuristic
+      return base_val + exp_v + rob_v + dev_v
+  ```
+
+#### **Step 2: Adjust `dev_card_heuristic` Weights**
+- Update the `dev_card_heuristic` function to use the **new weights**:
+  ```python
+  def dev_card_heuristic(g: Game, color: Color) -> float:
+      # ... (existing logic)
+      if count > 0:
+          return 0.5  # Increased from 0.25 for MONOPOLY
+      if count_rb > 0:
+          return 0.4  # Increased from 0.15 for ROAD_BUILDING
+      return 0.0
+  ```
+
+#### **Step 3: Modify `_action_priority`**
+- Update the move ordering to **prioritize strategic actions** and **deprioritize `END_TURN`**:
+  ```python
+  def _action_priority(act: Action) -> float:
+      at = act.action_type
+      if at == ActionType.PLAY_DEV_CARD:
+          return 130.0
+      if at == ActionType.BUILD_SETTLEMENT:
+          return 120.0
+      if at == ActionType.BUILD_CITY:
+          return 110.0
+      if at == ActionType.BUILD_ROAD:
+          return 90.0
+      if at == ActionType.BUY_DEV_CARD:
+          return 80.0
+      if at == ActionType.MOVE_ROBBER:
+          return 70.0
+      if at == ActionType.TRADE:
+          return 60.0
+      if at == ActionType.ROLL:
+          return 50.0
+      if at == ActionType.END_TURN:
+          return -100.0  # Strongly deprioritize
+      return 0.0
+  ```
+
+#### **Step 4: Extend Search Depth to 4-5 Ply**
+- Update the `decide` method to use **iterative deepening up to 5 plies** with a **node budget of 15,000**:
+  ```python
+  MAX_DEPTH = 5
+  NODE_BUDGET = 15000
+  ```
+
+#### **Step 5: Test and Validate**
+- Test the updated player against the AlphaBeta opponent.
+- Monitor performance and adjust weights or depth as needed.
+
+---
+### **Actionable Steps for the Coder**
+1. **Update Heuristic Weights**:
+   - Modify `combined_heuristic` and `dev_card_heuristic` to use the **new weights**.
+2. **Adjust Move Ordering**:
+   - Update `_action_priority` to **prioritize strategic actions** and **deprioritize `END_TURN`**.
+3. **Extend Search Depth**:
+   - Set `MAX_DEPTH = 5` and `NODE_BUDGET = 15000` in the `decide` method.
+4. **Test and Validate**:
+   - Test the updated player and monitor performance.
+
+---
+**Expected Outcome**:
+This strategy will ensure the player **prioritizes strategic actions** (roads, settlements, development cards) over passive moves, while leveraging deeper search and stronger heuristics to outperform the AlphaBeta opponent.
+
+END STRATEGIZER
+================================ Human Message =================================
+
+- META THOUGHTS:
+The latest iteration of the FooPlayer, despite the implementation of stronger heuristic weights and deeper search, continues to underperform (8 wins, 22 losses). The Analyzer has identified critical issues:
+1. **Ineffective Heuristic Weighting**: The current combined heuristic is still too modest to drive strategic decisions effectively.
+2. **Over-Reliance on `END_TURN` Actions**: The player frequently defaults to passive actions instead of pursuing strategic moves like `BUILD_CITY` or `PLAY_KNIGHT_CARD`.
+3. **Limited Robber/Knight and Development Card Strategies**: These actions are evaluated but lack targeted prioritization.
+
+The next step must focus on **redesigning heuristic weights** and **refining move ordering** to aggressively prioritize high-value actions like city upgrades, knight plays, and development card usage. The Strategizer should also consider introducing **dynamic weighting** based on game phase or opponent behavior.
+
+- META GOAL:
+Redesign the **heuristic weights** and **move ordering** to aggressively prioritize strategic actions like city upgrades, knight plays, and development card usage, ensuring the FooPlayer consistently outperforms the AlphaBeta opponent.
+
+- CHOSEN AGENT: STRATEGIZER
+
+- AGENT OBJECTIVE:
+Design a **revised heuristic weighting system** and **refined move ordering** with the following enhancements:
+1. **Dynamic Heuristic Weighting**:
+   - Propose **adaptive weights** for the combined heuristic that change based on game phase (e.g., early expansion vs. late-game city upgrades).
+   - Ensure the weights strongly favor high-value actions like `BUILD_CITY`, `PLAY_KNIGHT_CARD`, and development card usage.
+2. **Refined Move Ordering**:
+   - Adjust the `_action_priority` function to **aggressively prioritize** strategic actions:
+     - `BUILD_CITY`: **150.0** (up from 110.0)
+     - `PLAY_KNIGHT_CARD`: **140.0** (up from 130.0)
+     - `BUILD_SETTLEMENT`: **130.0** (up from 120.0)
+     - `PLAY_DEV_CARD`: **140.0** (up from 130.0)
+     - `END_TURN`: **-200.0** (down from -100.0)
+3. **Game Phase Detection**:
+   - Introduce logic to detect the game phase (e.g., early, mid, late) and adjust heuristic weights and move ordering accordingly.
+4. **Search Optimization**:
+   - Ensure the search space is optimized using `list_prunned_actions` and `prune_robber_actions`.
+   - Maintain caching of intermediate results to avoid redundant computations.
+
+Provide a **clear, actionable plan** for the Coder to implement, focusing on algorithmic solutions using `adapters.py` functions. Avoid simple rule-based heuristics.
+================================== Ai Message ==================================
+
+STRATEGIZER
+---
+### **Analysis of Performance Decline**
+- **Evolution 1** (1-ply lookahead) achieved **14 wins** with a simple but effective strategy.
+- **Evolutions 2-5** introduced deeper search and heuristics but **failed to improve performance**, with wins dropping to **8-9**.
+  - **Root Cause**: Overcomplication without clear strategic focus.
+  - **Key Issues**:
+    - Heuristic weights are **too modest** to drive meaningful decisions.
+    - Move ordering **fails to prioritize high-value actions** like `BUILD_CITY` or `PLAY_KNIGHT_CARD`.
+    - **Over-reliance on `END_TURN`** due to weak incentives for strategic actions.
+
+---
+### **Proposed Strategy: Revised Heuristic Weighting and Move Ordering**
+#### **Key Enhancements**
+1. **Dynamic Heuristic Weighting**:
+   - **Early Game (Turns 1-20)**:
+     - Prioritize **expansion** (`BUILD_ROAD`, `BUILD_SETTLEMENT`) with weights:
+       - `expansion_heuristic`: **0.4** (up from 0.25)
+       - `robber_heuristic`: **-0.2** (reduced from -0.35 to avoid early aggression)
+   - **Mid/Late Game (Turns 21+)**:
+     - Prioritize **city upgrades** and **development cards** with weights:
+       - `expansion_heuristic`: **0.2** (reduced)
+       - `robber_heuristic`: **-0.4** (increased to disrupt opponents)
+       - `dev_card_heuristic`: **0.6** (up from 0.5 for "MONOPOLY", 0.5 for "ROAD_BUILDING")
+
+2. **Refined Move Ordering**:
+   - Update `_action_priority` to **aggressively prioritize** high-value actions:
+     ```python
+     def _action_priority(act: Action) -> float:
+         at = act.action_type
+         if at == ActionType.BUILD_CITY:
+             return 150.0  # Up from 110.0
+         if at == ActionType.PLAY_DEV_CARD:
+             return 140.0  # Up from 130.0
+         if at == ActionType.BUILD_SETTLEMENT:
+             return 130.0  # Up from 120.0
+         if at == ActionType.BUILD_ROAD:
+             return 100.0  # Up from 90.0
+         if at == ActionType.PLAY_KNIGHT_CARD:
+             return 140.0  # New: Prioritize knight plays
+         if at == ActionType.END_TURN:
+             return -200.0  # Down from -100.0
+         return 0.0
+     ```
+
+3. **Game Phase Detection**:
+   - Introduce a helper function to detect the game phase:
+     ```python
+     def _get_game_phase(game: Game) -> str:
+         turn_count = getattr(game, 'turn_count', 0)
+         if turn_count < 20:
+             return "early"
+         elif turn_count < 40:
+             return "mid"
+         else:
+             return "late"
+     ```
+   - Adjust heuristic weights dynamically based on the phase.
+
+4. **Search Optimization**:
+   - Maintain **4-5 ply depth** with iterative deepening and a **node budget of 15,000**.
+   - Use `list_prunned_actions` and `prune_robber_actions` to reduce the search space.
+
+---
+### **Implementation Plan**
+#### **Step 1: Introduce Game Phase Detection**
+- Add `_get_game_phase` to the `FooPlayer` class.
+- Use this function to adjust heuristic weights dynamically.
+
+#### **Step 2: Update Heuristic Weights**
+- Modify `combined_heuristic` to use **phase-specific weights**:
+  ```python
+  def combined_heuristic(g: Game, color: Color) -> float:
+      phase = _get_game_phase(g)
+      base_val = base_fn()(g, color)
+      if phase == "early":
+          exp_v = 0.4 * expansion_heuristic(g, color)
+          rob_v = -0.2 * robber_heuristic(g, color)
+      else:  # mid or late
+          exp_v = 0.2 * expansion_heuristic(g, color)
+          rob_v = -0.4 * robber_heuristic(g, color)
+      dev_v = dev_card_heuristic(g, color)
+      return base_val + exp_v + rob_v + dev_v
+  ```
+
+#### **Step 3: Refine Move Ordering**
+- Update `_action_priority` to use the **new priorities** (see above).
+
+#### **Step 4: Test and Validate**
+- Test the updated player against the AlphaBeta opponent.
+- Monitor performance and adjust weights or move ordering as needed.
+
+---
+### **Actionable Steps for the Coder**
+1. **Add Game Phase Detection**:
+   - Implement `_get_game_phase` in `FooPlayer`.
+2. **Update Heuristic Weights**:
+   - Modify `combined_heuristic` to use **phase-specific weights**.
+3. **Refine Move Ordering**:
+   - Update `_action_priority` to **prioritize high-value actions**.
+4. **Test and Validate**:
+   - Test the updated player and monitor performance.
+
+---
+**Expected Outcome**:
+This strategy will ensure the player **aggressively pursues high-value actions** (cities, development cards, knights) while dynamically adjusting to the game phase, leading to improved decision-making and higher win rates.
+
+END STRATEGIZER
+================================ Human Message =================================
+
+This is the current performance history
+
+{
+  "Evolution 0": {
+    "wins": 0,
+    "avg_score": 2.0,
+    "avg_turns": 59.8,
+    "full_game_log_path": "game_20250925_051626_fg/game_output.txt",
+    "json_game_results_path": "game_20250925_051626_fg/game_20250925_051626_fg.json",
+    "cur_foo_player_path": "game_20250925_051626_fg/foo_player.py",
+    "cli_run_id": "game_20250925_051626_fg",
+    "timestamp": "2025-09-25 05:17:01"
+  },
+  "Evolution 1": {
+    "wins": 14,
+    "avg_score": 8.233333333333333,
+    "avg_turns": 75.03333333333333,
+    "full_game_log_path": "game_20250925_051839_fg/game_output.txt",
+    "json_game_results_path": "game_20250925_051839_fg/game_20250925_051839_fg.json",
+    "cur_foo_player_path": "game_20250925_051839_fg/foo_player.py",
+    "cli_run_id": "game_20250925_051839_fg",
+    "timestamp": "2025-09-25 05:19:33"
+  },
+  "Evolution 2": {
+    "wins": 9,
+    "avg_score": 7.166666666666667,
+    "avg_turns": 74.96666666666667,
+    "full_game_log_path": "game_20250925_052153_fg/game_output.txt",
+    "json_game_results_path": "game_20250925_052153_fg/game_20250925_052153_fg.json",
+    "cur_foo_player_path": "game_20250925_052153_fg/foo_player.py",
+    "cli_run_id": "game_20250925_052153_fg",
+    "timestamp": "2025-09-25 05:23:34"
+  },
+  "Evolution 3": {
+    "wins": 14,
+    "avg_score": 7.366666666666666,
+    "avg_turns": 72.13333333333334,
+    "full_game_log_path": "game_20250925_052630_fg/game_output.txt",
+    "json_game_results_path": "game_20250925_052630_fg/game_20250925_052630_fg.json",
+    "cur_foo_player_path": "game_20250925_052630_fg/foo_player.py",
+    "cli_run_id": "game_20250925_052630_fg",
+    "timestamp": "2025-09-25 05:30:57"
+  },
+  "Evolution 4": {
+    "wins": 8,
+    "avg_score": 6.466666666666667,
+    "avg_turns": 65.93333333333334,
+    "full_game_log_path": "game_20250925_053352_fg/game_output.txt",
+    "json_game_results_path": "game_20250925_053352_fg/game_20250925_053352_fg.json",
+    "cur_foo_player_path": "game_20250925_053352_fg/foo_player.py",
+    "cli_run_id": "game_20250925_053352_fg",
+    "timestamp": "2025-09-25 05:38:20"
+  },
+  "Evolution 5": {
+    "wins": 8,
+    "avg_score": 6.366666666666666,
+    "avg_turns": 79.1,
+    "full_game_log_path": "game_20250925_054044_fg/game_output.txt",
+    "json_game_results_path": "game_20250925_054044_fg/game_20250925_054044_fg.json",
+    "cur_foo_player_path": "game_20250925_054044_fg/foo_player.py",
+    "cli_run_id": "game_20250925_054044_fg",
+    "timestamp": "2025-09-25 06:16:37"
+  },
+  "Evolution 6": {
+    "wins": 7,
+    "avg_score": 6.233333333333333,
+    "avg_turns": 70.53333333333333,
+    "full_game_log_path": "game_20250925_061924_fg/game_output.txt",
+    "json_game_results_path": "game_20250925_061924_fg/game_20250925_061924_fg.json",
+    "cur_foo_player_path": "game_20250925_061924_fg/foo_player.py",
+    "cli_run_id": "game_20250925_061924_fg",
+    "timestamp": "2025-09-25 06:52:41"
+  }
+}
+================================ Human Message =================================
+
+This is the current foo_player.py file
+
+from .adapters import (
+    Game,
+    Player,
+    Color,
+    Action,
+    ActionType,
+    copy_game,
+    execute_deterministic,
+    execute_spectrum,
+    expand_spectrum,
+    list_prunned_actions,
+    prune_robber_actions,
+    base_fn,
+    value_production,
+    get_value_fn,
+)
+
+import math
+import time
+from typing import List, Tuple
+
+
+class FooPlayer(Player):
+    def __init__(self, name=None, max_depth: int = 5, node_budget: int = 15000):
+        """
+        FooPlayer uses iterative-deepening Expectimax with specialized heuristics
+        and search optimizations (move ordering, robber pruning, caching).
+
+        Args:
+            name: Optional player name
+            max_depth: Maximum plies to search (iterative deepening will grow to this)
+            node_budget: Hard limit on number of recursive nodes to evaluate per decide() call
+        """
+        # Initialize with BLUE by default to preserve compatibility
+        super().__init__(Color.BLUE, name)
+        self.max_depth = max_depth
+        self.node_budget = node_budget
+
+    def _get_game_phase(self, game: Game) -> str:
+        """
+        Determine the game phase (early, mid, late) based on an available turn counter.
+        This tries several common locations for a turn counter to be robust.
+        """
+        try:
+            # Prefer a direct attribute if present
+            turn_count = getattr(game, 'turn_count', None)
+            if turn_count is None:
+                # Try nested state structures
+                st = getattr(game, 'state', None)
+                if isinstance(st, dict):
+                    turn_count = st.get('turn_count') or st.get('turn') or st.get('tick')
+                else:
+                    turn_count = getattr(st, 'turn_count', None) if st is not None else None
+
+            if turn_count is None:
+                # Fall back to 0 if not available
+                turn_count = 0
+
+            turn_count = int(turn_count)
+        except Exception:
+            turn_count = 0
+
+        if turn_count < 20:
+            return 'early'
+        elif turn_count < 40:
+            return 'mid'
+        else:
+            return 'late'
+
+    def decide(self, game: Game, playable_actions):
+        """
+        Choose an action using iterative-deepening Expectimax with probabilistic simulation.
+
+        This implementation follows the Strategizer's recommendations:
+        - Dynamic heuristic weighting by game phase (early/mid/late)
+        - Aggressive move ordering prioritizing high-value actions
+        - Iterative deepening up to self.max_depth (capped at 5)
+        - Global node budget enforced
+        - Use of list_prunned_actions and prune_robber_actions to reduce branching
+        """
+        actions = list(playable_actions) if playable_actions is not None else []
+
+        if len(actions) == 0:
+            print('FooPlayer.decide: No playable actions available; returning None')
+            return None
+
+        # Cap maximum search depth to [1..5]
+        MAX_DEPTH = max(1, min(5, self.max_depth))
+        NODE_BUDGET = max(100, self.node_budget)
+
+        # Primary base value function
+        base_value_fn = base_fn()
+
+        # Transposition cache: (state_repr, depth) -> value
+        cache = {}
+
+        # Node counter and timing
+        node_count = 0
+        start_time = time.time()
+
+        # Helper to produce a reproducible cache key for a game state
+        def _state_key(g: Game) -> str:
+            try:
+                return repr(g.state)
+            except Exception:
+                try:
+                    return repr(g)
+                except Exception:
+                    return str(id(g))
+
+        # Move ordering heuristic (higher = more promising)
+        def _action_priority(act: Action) -> float:
+            try:
+                at = act.action_type
+                # Aggressive priorities recommended by the Strategizer
+                if at == ActionType.BUILD_CITY:
+                    return 150.0
+                if at == ActionType.PLAY_DEV_CARD:
+                    return 140.0
+                if at == ActionType.PLAY_KNIGHT_CARD:
+                    # Prioritize knight plays to move robber / gain army
+                    return 140.0
+                if at == ActionType.BUILD_SETTLEMENT:
+                    return 130.0
+                if at == ActionType.BUILD_ROAD:
+                    return 100.0
+                if at == ActionType.BUY_DEV_CARD:
+                    return 80.0
+                if at == ActionType.MOVE_ROBBER:
+                    return 70.0
+                if at == ActionType.TRADE:
+                    return 60.0
+                if at == ActionType.ROLL:
+                    return 50.0
+                if at == ActionType.END_TURN:
+                    # Strongly deprioritize ending the turn
+                    return -200.0
+            except Exception:
+                pass
+            return 0.0
+
+        # Specialized heuristics as suggested by Strategizer.
+        # Each returns a raw signal; combined_heuristic will apply the configured weights.
+
+        def expansion_heuristic(g: Game, color: Color) -> float:
+            """Estimate long-term expansion potential using value_production.
+            Returns raw production signal (not weighted).
+            """
+            try:
+                sample = getattr(g, 'state', g)
+                player_name = getattr(self, 'name', 'P0')
+                prod = value_production(sample, player_name, include_variety=True)
+                return float(prod)
+            except Exception as e:
+                # Be conservative on failures
+                # print(f'FooPlayer.expansion_heuristic failed: {e}')
+                return 0.0
+
+        def robber_heuristic(g: Game, color: Color) -> float:
+            """Estimate impact of robber placement by measuring opponent production.
+            Returns the maximum opponent production (raw), combined_heuristic will weight it negatively.
+            """
+            try:
+                sample = getattr(g, 'state', g)
+                max_opponent_prod = 0.0
+                # Iterate over known colors and measure production; skip our color
+                for opp in list(Color):
+                    if opp == color:
+                        continue
+                    try:
+                        opp_name = getattr(self, 'name', f'P{opp.value}')
+                        p = value_production(sample, opp_name, include_variety=False)
+                        max_opponent_prod = max(max_opponent_prod, float(p))
+                    except Exception:
+                        continue
+                return float(max_opponent_prod)
+            except Exception:
+                return 0.0
+
+        def dev_card_heuristic(g: Game, color: Color) -> float:
+            """Prefer states where playing certain dev cards (MONOPOLY, ROAD_BUILDING)
+            is likely to be impactful. This returns a raw signal (counts weighted) and
+            will be scaled by the combined heuristic based on game phase.
+            """
+            try:
+                sample = getattr(g, 'state', None)
+                player_name = getattr(self, 'name', 'P0')
+                if sample is None:
+                    return 0.0
+
+                # Defensive access to dev card counts
+                devs = None
+                if isinstance(sample, dict):
+                    devs = sample.get('dev_cards') or sample.get('devs')
+                else:
+                    devs = getattr(g, 'dev_cards', None) or getattr(sample, 'dev_cards', None)
+
+                if not devs:
+                    return 0.0
+
+                # Extract counts robustly
+                count_mon = 0
+                count_rb = 0
+                try:
+                    # devs might be structured as {player_name: {'MONOPOLY': n, ...}, ...}
+                    count_mon = int(devs.get(player_name, {}).get('MONOPOLY', 0))
+                    count_rb = int(devs.get(player_name, {}).get('ROAD_BUILDING', 0))
+                except Exception:
+                    try:
+                        # Or keyed by color
+                        count_mon = int(devs.get(color, {}).get('MONOPOLY', 0))
+                        count_rb = int(devs.get(color, {}).get('ROAD_BUILDING', 0))
+                    except Exception:
+                        count_mon = 0
+                        count_rb = 0
+
+                # Return a raw combined signal: weight monopoly higher than road building
+                return float(count_mon) * 1.0 + float(count_rb) * 0.8
+            except Exception:
+                return 0.0
+
+        # Combined heuristic: base value + phase-weighted specialized heuristics
+        def combined_heuristic(g: Game, color: Color) -> float:
+            # Base evaluation
+            try:
+                base_val = base_value_fn(g, color)
+            except Exception as e:
+                print(f'FooPlayer.combined_heuristic: base_fn failed: {e}')
+                base_val = -1e9
+
+            # Determine game phase for dynamic weights
+            phase = self._get_game_phase(g)
+
+            # Phase-specific weights
+            if phase == 'early':
+                exp_w = 0.4
+                rob_w = -0.2
+                dev_w = 0.2
+            else:  # mid or late
+                exp_w = 0.2
+                rob_w = -0.4
+                dev_w = 0.6
+
+            try:
+                exp_v = exp_w * expansion_heuristic(g, color)
+                rob_v = rob_w * robber_heuristic(g, color)
+                dev_v = dev_w * dev_card_heuristic(g, color)
+            except Exception as e:
+                print(f'FooPlayer.combined_heuristic: specialized heuristic failed: {e}')
+                exp_v = rob_v = dev_v = 0.0
+
+            # Debug print of heuristic components for traceability
+            # (Keep prints moderate to avoid flooding)
+            # print(f'FooPlayer.heuristic: phase={phase}, base={base_val:.2f}, exp={exp_v:.2f}, rob={rob_v:.2f}, dev={dev_v:.2f}')
+
+            return base_val + exp_v + rob_v + dev_v
+
+        # Expectimax with caching and node budget. Uses combined_heuristic at leaves.
+        def expectimax(node_game: Game, depth: int) -> float:
+            nonlocal node_count
+
+            # Enforce node budget (global across iterative deepening)
+            node_count += 1
+            if node_count > NODE_BUDGET:
+                # Return a heuristic estimate if we're out of budget
+                return combined_heuristic(node_game, self.color)
+
+            key = (_state_key(node_game), depth)
+            if key in cache:
+                return cache[key]
+
+            # Terminal check (winning_color) if available
+            try:
+                winner = None
+                try:
+                    winner = node_game.winning_color()
+                except Exception:
+                    winner = None
+                if winner is not None:
+                    val = combined_heuristic(node_game, self.color)
+                    cache[key] = val
+                    return val
+            except Exception as e:
+                print(f'FooPlayer.expectimax: winner check failed: {e}')
+
+            # Depth cutoff
+            if depth == 0:
+                val = combined_heuristic(node_game, self.color)
+                cache[key] = val
+                return val
+
+            # Get pruned action list
+            try:
+                node_actions = list_prunned_actions(node_game)
+            except Exception as e:
+                print(f'FooPlayer.expectimax: list_prunned_actions failed: {e}')
+                node_actions = []
+
+            if not node_actions:
+                val = combined_heuristic(node_game, self.color)
+                cache[key] = val
+                return val
+
+            # If robber moves exist, prune them
+            try:
+                if any((getattr(a, 'action_type', None) == ActionType.MOVE_ROBBER) for a in node_actions):
+                    node_actions = prune_robber_actions(self.color, node_game, node_actions)
+            except Exception as e:
+                print(f'FooPlayer.expectimax: prune_robber_actions failed: {e}')
+
+            # Move ordering
+            try:
+                node_actions.sort(key=_action_priority, reverse=True)
+            except Exception:
+                pass
+
+            # Determine node type: MAX if acting color == our color
+            try:
+                node_color = node_actions[0].color
+                is_max = (node_color == self.color)
+            except Exception:
+                is_max = False
+
+            if is_max:
+                best_value = -math.inf
+                for act in node_actions:
+                    # Expand probabilistic outcomes
+                    try:
+                        outcomes = execute_spectrum(node_game, act)
+                    except Exception:
+                        try:
+                            outcomes = execute_deterministic(node_game, act)
+                        except Exception as e:
+                            # Skip actions that cannot be executed
+                            # print(f'FooPlayer.expectimax: action execution failed (max) for {act}: {e}')
+                            continue
+
+                    if not outcomes:
+                        continue
+
+                    expected = 0.0
+                    for (g_after, prob) in outcomes:
+                        try:
+                            val = expectimax(g_after, depth - 1)
+                        except Exception as e:
+                            # On recursion error, give a conservative low value
+                            # print(f'FooPlayer.expectimax: recursion error (max) for outcome: {e}')
+                            val = -1e9
+                        expected += prob * val
+
+                    if expected > best_value:
+                        best_value = expected
+
+                    # Early stopping if node budget exhausted
+                    if node_count > NODE_BUDGET:
+                        break
+
+                cache[key] = best_value
+                return best_value
+            else:
+                # MIN node: model opponent as adversarial minimizing our heuristic
+                worst_value = math.inf
+                for act in node_actions:
+                    try:
+                        outcomes = execute_spectrum(node_game, act)
+                    except Exception:
+                        try:
+                            outcomes = execute_deterministic(node_game, act)
+                        except Exception as e:
+                            # print(f'FooPlayer.expectimax: action execution failed (min) for {act}: {e}')
+                            continue
+
+                    if not outcomes:
+                        continue
+
+                    expected = 0.0
+                    for (g_after, prob) in outcomes:
+                        try:
+                            val = expectimax(g_after, depth - 1)
+                        except Exception as e:
+                            # print(f'FooPlayer.expectimax: recursion error (min) for outcome: {e}')
+                            val = 1e9
+                        expected += prob * val
+
+                    if expected < worst_value:
+                        worst_value = expected
+
+                    if node_count > NODE_BUDGET:
+                        break
+
+                cache[key] = worst_value
+                return worst_value
+
+        # Iterative deepening. Use a global node budget across all depths.
+        best_action = None
+        best_value = -math.inf
+        depth_reached = 0
+
+        # Determine current game phase for debugging and heuristic selection
+        current_phase = self._get_game_phase(game)
+        print(f'FooPlayer.decide: starting iterative deepening (phase={current_phase}, max_depth={MAX_DEPTH}, node_budget={NODE_BUDGET})')
+
+        for depth in range(1, MAX_DEPTH + 1):
+            print(f'FooPlayer.decide: Iterative deepening at depth {depth}')
+            depth_reached = depth
+
+            # Evaluate top-level actions in move-ordered sequence to get good bounds early
+            ordered_actions = sorted(actions, key=_action_priority, reverse=True)
+
+            for idx, action in enumerate(ordered_actions):
+                if node_count > NODE_BUDGET:
+                    print('FooPlayer.decide: Global node budget reached; stopping search')
+                    break
+
+                expected_value = -math.inf
+                try:
+                    game_copy = copy_game(game)
+                    try:
+                        outcomes = execute_spectrum(game_copy, action)
+                    except Exception:
+                        # Fallback to deterministic
+                        try:
+                            outcomes = execute_deterministic(game_copy, action)
+                        except Exception as e:
+                            print(f'FooPlayer.decide: execute_deterministic also failed for action {action}: {e}')
+                            outcomes = []
+
+                    if not outcomes:
+                        expected_value = -math.inf
+                    else:
+                        expected_value = 0.0
+                        for (g_after, prob) in outcomes:
+                            try:
+                                val = expectimax(g_after, depth - 1)
+                            except Exception as e:
+                                print(f'FooPlayer.decide: expectimax error on outcome of action {action}: {e}')
+                                val = -1e9
+                            expected_value += prob * val
+
+                    print(f'FooPlayer: Depth {depth} Top-level Action #{idx} = {action} => expected value {expected_value}')
+
+                except Exception as e:
+                    print(f'FooPlayer: Exception while evaluating top-level action {action}: {e}')
+                    expected_value = -math.inf
+
+                # Update best action found so far (across depths)
+                if expected_value > best_value:
+                    best_value = expected_value
+                    best_action = action
+
+                # Respect global budget
+                if node_count > NODE_BUDGET:
+                    break
+
+            # Stop deepening if budget exhausted
+            if node_count > NODE_BUDGET:
+                break
+
+        if best_action is None and len(actions) > 0:
+            print('FooPlayer: All evaluations failed or were skipped; defaulting to first action')
+            best_action = actions[0]
+
+        elapsed = time.time() - start_time
+        print(f'FooPlayer: Chosen action = {best_action} with value {best_value} (depth reached {depth_reached}, nodes {node_count}, time {elapsed:.3f}s)')
+        return best_action
+
+================================ Human Message =================================
+
+This is the current adapters.py file
+
+"""Unified adapter for Catanatron agents.
+
+Expose a small, stable surface for multi-agent systems to:
+- Inspect game state
+- Enumerate legal actions
+- Execute hypothetical moves (with/without validation)
+- Expand chance outcomes (dice, dev cards, robber)
+- Use pruning helpers
+- Build/evaluate heuristics
+
+Everything here is a thin re-export or trivial wrapper from catanatron & friends.
+"""
+
+from typing import Callable, List, Optional, Tuple, Dict, Any
+
+# CORE RE-EXPORTS
+from catanatron.game import Game  # Game instance with .state, .copy(), .execute(action), .winning_color()
+from catanatron.models.player import Player, Color  # Player and Color types
+from catanatron.models.enums import Action, ActionType  # Action = namedtuple("Action", ["color", "action_type", "value"]) 
+
+# Player and debug node classes (re-exported so consumers can import them from adapters)
+from catanatron_experimental.machine_learning.players.minimax import (
+    AlphaBetaPlayer,  # Player that executes an AlphaBeta search with expected value calculation
+    SameTurnAlphaBetaPlayer,  # AlphaBeta constrained to the same turn
+    DebugStateNode,  # Node for debugging the AlphaBeta search tree
+    DebugActionNode,  # Node representing an action in the AlphaBeta search tree
+)
+from catanatron_experimental.machine_learning.players.value import (
+    ValueFunctionPlayer,  # Player using heuristic value functions
+    DEFAULT_WEIGHTS,  # Default weight set for value functions
+)
+
+# Underlying implementation imports (underscore aliases to avoid recursion)
+from catanatron_experimental.machine_learning.players.tree_search_utils import (
+    execute_deterministic as _execute_deterministic,
+    execute_spectrum as _execute_spectrum,
+    expand_spectrum as _expand_spectrum,
+    list_prunned_actions as _list_prunned_actions,  # spelling verified in source
+    prune_robber_actions as _prune_robber_actions,
+)
+from catanatron_experimental.machine_learning.players.minimax import render_debug_tree as _render_debug_tree
+
+from catanatron_experimental.machine_learning.players.value import (
+    base_fn as _base_fn,
+    contender_fn as _contender_fn,
+    value_production as _value_production,
+    get_value_fn as _get_value_fn,
+)
+
+# Public API
+__all__ = [
+    "Game",
+    "Player",
+    "Color",
+    "Action",
+    "ActionType",
+    "AlphaBetaPlayer",
+    "SameTurnAlphaBetaPlayer",
+    "ValueFunctionPlayer",
+    "DebugStateNode",
+    "DebugActionNode",
+    "copy_game",
+    "execute_deterministic",
+    "execute_spectrum",
+    "expand_spectrum",
+    "list_prunned_actions",
+    "prune_robber_actions",
+    "render_debug_tree",
+    "base_fn",
+    "contender_fn",
+    "value_production",
+    "get_value_fn",
+]
+
+# THIN CONVENIENCE WRAPPERS
+def copy_game(game: Game) -> Game:
+    '''Create a deep copy of the game state.'''
+    return game.copy()
+
+def execute_deterministic(game: Game, action: Action) -> List[Tuple[Game, float]]:
+    '''Execute a deterministic action and return the resulting game state with probability 1.'''
+    return _execute_deterministic(game, action)
+
+def execute_spectrum(game: Game, action: Action) -> List[Tuple[Game, float]]:
+    '''Return a list of (game_copy, probability) tuples for all possible outcomes of an action.'''
+    return _execute_spectrum(game, action)
+
+def expand_spectrum(game: Game, actions: List[Action]) -> Dict[Action, List[Tuple[Game, float]]]:
+    '''Expand a game state into all possible outcomes for a list of actions.'''
+    return _expand_spectrum(game, actions)
+
+def list_prunned_actions(game: Game) -> List[Action]:
+    '''Returns a pruned list of actions to reduce the search space.'''
+    return _list_prunned_actions(game)
+
+def prune_robber_actions(current_color: Color, game: Game, actions: List[Action]) -> List[Action]:
+    '''Prunes robber actions to keep only the most impactful ones.'''
+    return _prune_robber_actions(current_color, game, actions)
+
+def render_debug_tree(node: DebugStateNode) -> str:
+    '''Renders the AlphaBeta search tree using Graphviz.'''
+    return _render_debug_tree(node)
+
+# HEURISTIC BUILDERS
+def base_fn(params=DEFAULT_WEIGHTS) -> Callable[[Game, Color], float]:
+    '''Base value function factory for evaluating game states.'''
+    return _base_fn(params)
+
+def contender_fn(params) -> Callable[[Game, Color], float]:
+    '''Alternative value function factory with tuned weights.'''
+    return _contender_fn(params)
+
+def value_production(sample, player_name: str = "P0", include_variety: bool = True) -> float:
+    '''Compute the production value of a player's state.'''
+    return _value_production(sample, player_name, include_variety)
+
+def get_value_fn(name: str, params, value_function=None) -> Callable[[Game, Color], float]:
+    '''Factory that returns a value function by name and parameters.'''
+    return _get_value_fn(name, params, value_function)
+
+================================ Human Message =================================
+
+- META THOUGHTS:
+The FooPlayer's performance has consistently declined or stagnated, with the latest iteration achieving only 7 wins out of 30 games. The root cause appears to be a **fundamental issue with the strategic framework** rather than just heuristic weights or move ordering. Incremental adjustments have not yielded meaningful improvements, suggesting the need for a **radical shift in strategy**.
+
+Key insights from reflection:
+1. **Current Approach Limitations**: The Expectimax search with weighted heuristics is not capturing the nuances of strategic play in Catan, particularly in road networks, city upgrades, and development card usage.
+2. **Alternative Strategies**: A **Monte Carlo Tree Search (MCTS)** approach could be more adaptive and better suited to handle the complexity of Catan's decision space.
+3. **Enhanced Heuristic Design**: A more sophisticated heuristic is needed, one that directly evaluates the strategic value of actions (e.g., resource monopolies, expansion potential) rather than relying on generic weighted sums.
+4. **Opponent Modeling**: Introducing a model of the opponent's strategy could improve decision-making by anticipating and countering their moves.
+
+Given these insights, the next step is to consult the **Strategizer** to explore a **fundamental shift in strategy**, such as adopting MCTS or redesigning the heuristic framework to focus on high-level strategic goals.
+
+- META GOAL:
+Explore a **fundamental shift in strategy**, such as adopting **Monte Carlo Tree Search (MCTS)** or redesigning the heuristic framework to focus on high-level strategic goals like road networks, city upgrades, and development card usage.
+
+- CHOSEN AGENT: STRATEGIZER
+
+- AGENT OBJECTIVE:
+Propose a **radical shift in strategy** to address the persistent performance issues. Specifically:
+1. **Alternative Search Strategy**:
+   - Evaluate the feasibility of switching to **Monte Carlo Tree Search (MCTS)**. Provide a high-level design for how MCTS could be implemented in this context, including:
+     - **Selection Policy**: How to balance exploration vs. exploitation.
+     - **Simulation Policy**: How to simulate random playouts or use heuristics for evaluation.
+     - **Backpropagation**: How to update node values based on simulation outcomes.
+     - **Integration with Adapters**: How to use `adapters.py` functions (e.g., `copy_game`, `execute_spectrum`) within the MCTS framework.
+2. **Enhanced Heuristic Design**:
+   - If continuing with Expectimax, propose a **completely new heuristic design** that directly evaluates strategic actions (e.g., road networks, settlement placement, resource control) rather than relying on weighted sums of generic metrics.
+3. **Opponent Modeling**:
+   - Suggest ways to model the opponent's strategy to better anticipate and counter their moves.
+4. **Action Pruning**:
+   - Propose a method to aggressively prune low-value actions (e.g., `END_TURN`, `ROLL`) unless they are the only options available.
+
+Provide a **clear, actionable plan** for the Coder to implement, focusing on algorithmic solutions using `adapters.py` functions. Avoid simple rule-based heuristics.
+
+--- Output from STRATEGIZER at 20250925_065409 ---
+================================== Ai Message ==================================
+Tool Calls:
+  read_older_foo_file (V5hzLSpWB)
+ Call ID: V5hzLSpWB
+  Args:
+    num: 1
+================================= Tool Message =================================
+Name: read_older_foo_file
+
+from .adapters import (
+    Game,
+    Player,
+    Color,
+    copy_game,
+    execute_deterministic,
+    base_fn,
+)
+
+import math
+
+class FooPlayer(Player):
+    def __init__(self, name=None):
+        # Initialize as the BLUE player by default (keeps compatibility with previous versions)
+        super().__init__(Color.BLUE, name)
+
+    def decide(self, game: Game, playable_actions):
+        """
+        Choose an action using a 1-ply expected-value lookahead.
+
+        Strategy implemented:
+        - For each legal action, simulate its deterministic outcomes using execute_deterministic
+          (wrapped by the adapters API). This returns a list of (game_after, probability).
+        - Evaluate each outcome with a base value function (base_fn) provided by the adapters.
+        - Compute the expected value for the action as the probability-weighted sum of outcome values.
+        - Choose the action with the highest expected value.
+
+        Notes & assumptions:
+        - We only perform a single-ply lookahead (no deeper recursion).
+        - Uses adapters.copy_game to avoid mutating the provided game state.
+        - Uses adapters.execute_deterministic to get outcome game states; deterministic actions
+          should return a single outcome with probability 1.0, but we still handle multiple outcomes
+          for generality.
+        - If playable_actions is empty, returns None.
+
+        Debugging:
+        - Print statements emit the evaluated expected value for each action and the final choice.
+
+        Args:
+            game (Game): read-only current game state
+            playable_actions (Iterable[Action]): legal actions to choose from
+        Returns:
+            Action | None: chosen action or None if no actions available
+        """
+        # Convert to a concrete list so we can iterate multiple times and index
+        actions = list(playable_actions) if playable_actions is not None else []
+
+        if len(actions) == 0:
+            print('FooPlayer.decide: No playable actions available; returning None')
+            return None
+
+        # Build the base value function once. It returns a function f(game, color)->float
+        value_fn = base_fn()
+
+        best_action = None
+        best_value = -math.inf
+
+        # Evaluate each action with a 1-ply expected value calculation
+        for idx, action in enumerate(actions):
+            try:
+                # Use a copy of the game to be safe. Adapters functions typically return copies,
+                # but copying upfront avoids side-effects if an adapter does in-place changes.
+                game_copy = copy_game(game)
+
+                # Execute the action deterministically; this returns a list of (game_after, prob)
+                outcomes = execute_deterministic(game_copy, action)
+
+                # Compute expected value across all possible deterministic outcomes
+                expected_value = 0.0
+                for (g_after, prob) in outcomes:
+                    try:
+                        val = value_fn(g_after, self.color)
+                    except Exception as e:
+                        # If the value function errors for some reason, catch and report it.
+                        print(f'FooPlayer: value_fn raised {e} on action {action}; treating as -inf')
+                        val = -math.inf
+                    expected_value += prob * val
+
+                print(f'FooPlayer: Action #{idx} = {action} => expected value {expected_value}')
+
+            except Exception as e:
+                # If executing the action failed (shouldn't normally happen via adapters),
+                # assign a very low value so it won't be chosen.
+                print(f'FooPlayer: Exception while evaluating action {action}: {e}')
+                expected_value = -math.inf
+
+            # Track the best action seen so far
+            if expected_value > best_value:
+                best_value = expected_value
+                best_action = action
+
+        # Fallback: if best_action is still None (all evaluations failed), pick the first action
+        if best_action is None and len(actions) > 0:
+            print('FooPlayer: All evaluations failed; defaulting to first action')
+            best_action = actions[0]
+
+        print(f'FooPlayer: Chosen action = {best_action} with value {best_value}')
+        return best_action
+
+================================== Ai Message ==================================
+
+STRATEGIZER
+---
+### **Analysis of Current State**
+The performance history shows a **consistent decline** from **Evolution 1 (14 wins)** to **Evolution 6 (7 wins)**. The current approach, using **Expectimax with weighted heuristics**, has failed to improve results despite incremental adjustments. The **root cause** is a **fundamental mismatch** between the strategy and the complexity of Catan's decision space.
+
+The **Evolution 1** implementation (1-ply lookahead) was the most successful, suggesting that **simplicity and directness** may be more effective than deeper, heuristic-driven searches.
+
+---
+### **Proposed Strategy: Radical Shift to Monte Carlo Tree Search (MCTS)**
+To address the persistent performance issues, we propose a **shift to Monte Carlo Tree Search (MCTS)**. MCTS is well-suited for games with high branching factors and probabilistic outcomes, such as Catan. Below is a **high-level design** for implementing MCTS in `foo_player.py`:
+
+---
+
+### **Key Components of MCTS Implementation**
+1. **Selection Policy**:
+   - Use **Upper Confidence Bound (UCB1)** to balance exploration and exploitation.
+   - Formula: \( UCB1 = \frac{w_i}{n_i} + c \sqrt{\frac{\ln N}{n_i}} \), where:
+     - \( w_i \): Total reward of node \( i \).
+     - \( n_i \): Number of visits to node \( i \).
+     - \( N \): Total visits to the parent node.
+     - \( c \): Exploration constant (e.g., \( \sqrt{2} \)).
+
+2. **Simulation Policy**:
+   - Simulate random playouts from leaf nodes using `execute_spectrum` to handle probabilistic outcomes (e.g., dice rolls, robber placement).
+   - Use `base_fn` or a **custom heuristic** to evaluate terminal states.
+
+3. **Backpropagation**:
+   - Update node values and visit counts based on simulation outcomes.
+
+4. **Integration with Adapters**:
+   - Use `copy_game` to create independent game copies for simulations.
+   - Use `execute_spectrum` to simulate probabilistic actions.
+   - Use `list_prunned_actions` and `prune_robber_actions` to reduce the search space.
+
+5. **Opponent Modeling**:
+   - Assume the opponent will act to maximize their own reward, and use this to guide the simulation policy.
+
+6. **Action Pruning**:
+   - Aggressively prune low-value actions (e.g., `END_TURN`, `ROLL`) unless they are the only options.
+
+---
+
+### **Implementation Plan**
+#### **Step 1: Define MCTS Node Structure**
+- Create a class `MCTSNode` to represent nodes in the search tree:
+  ```python
+  class MCTSNode:
+      def __init__(self, game: Game, parent=None, action=None):
+          self.game = game
+          self.parent = parent
+          self.action = action
+          self.children = []
+          self.visits = 0
+          self.total_reward = 0.0
+  ```
+
+#### **Step 2: Implement UCB1 Selection**
+- Add a method to select the best child node using UCB1:
+  ```python
+  def select_best_child(self, node: MCTSNode, exploration_weight=math.sqrt(2)) -> MCTSNode:
+      log_parent_visits = math.log(node.visits)
+      def ucb_score(child):
+          exploitation = child.total_reward / child.visits
+          exploration = exploration_weight * math.sqrt(log_parent_visits / child.visits)
+          return exploitation + exploration
+      return max(node.children, key=ucb_score)
+  ```
+
+#### **Step 3: Implement Simulation and Backpropagation**
+- Simulate random playouts from leaf nodes:
+  ```python
+  def simulate(self, node: MCTSNode) -> float:
+      game_copy = copy_game(node.game)
+      while not game_copy.is_terminal():
+          actions = list_prunned_actions(game_copy)
+          if not actions:
+              break
+          action = random.choice(actions)
+          outcomes = execute_spectrum(game_copy, action)
+          if not outcomes:
+              break
+          game_copy, _ = random.choice(outcomes)
+      return base_fn()(game_copy, self.color)
+  ```
+- Backpropagate the result:
+  ```python
+  def backpropagate(self, node: MCTSNode, reward: float):
+      while node is not None:
+          node.visits += 1
+          node.total_reward += reward
+          node = node.parent
+  ```
+
+#### **Step 4: Integrate MCTS into `decide` Method**
+- Replace the current `decide` method with MCTS:
+  ```python
+  def decide(self, game: Game, playable_actions):
+      root = MCTSNode(game)
+      for _ in range(1000):  # Number of iterations
+          node = self._select(root)
+          reward = self.simulate(node)
+          self.backpropagate(node, reward)
+      best_child = max(root.children, key=lambda child: child.visits)
+      return best_child.action
+  ```
+
+#### **Step 5: Optimize and Test**
+- Test the MCTS implementation against the AlphaBeta opponent.
+- Adjust the number of iterations and exploration constant as needed.
+
+---
+### **Actionable Steps for the Coder**
+1. **Implement MCTSNode Class**:
+   - Define the `MCTSNode` class to represent nodes in the search tree.
+2. **Implement UCB1 Selection**:
+   - Add the `select_best_child` method to balance exploration and exploitation.
+3. **Implement Simulation and Backpropagation**:
+   - Add the `simulate` and `backpropagate` methods to handle playouts and updates.
+4. **Integrate MCTS into `decide`**:
+   - Replace the current `decide` method with the MCTS logic.
+5. **Test and Validate**:
+   - Test the updated player and monitor performance.
+
+---
+### **Expected Outcome**
+This shift to MCTS will enable the player to **adaptively explore high-value actions** while accounting for uncertainty, leading to improved decision-making and higher win rates.
+
+END STRATEGIZER
+
