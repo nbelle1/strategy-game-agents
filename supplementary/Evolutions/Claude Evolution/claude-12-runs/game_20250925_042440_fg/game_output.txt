@@ -1,0 +1,245 @@
+811481.2 node_expansions=28
+FooPlayer.decide: Quick action scores (top->low):
+  quick_score=1199999927809382.8 action_type=ActionType.DISCARD
+FooPlayer.decide: Fully evaluating 1 top actions with lookahead depth=3
+  Action 0: expected_value=1200000002810282.8 action_type=ActionType.DISCARD
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.DISCARD: 'DISCARD'>, value=None) score=1200000002810282.8 node_expansions=3
+FooPlayer.decide: Pruned robber actions from 18 to 1
+FooPlayer.decide: Quick action scores (top->low):
+  quick_score=1200000002810272.8 action_type=ActionType.MOVE_ROBBER
+FooPlayer.decide: Fully evaluating 1 top actions with lookahead depth=3
+  Action 0: expected_value=1200000002810276.2 action_type=ActionType.MOVE_ROBBER
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.MOVE_ROBBER: 'MOVE_ROBBER'>, value=((-2, 1, 1), <Color.RED: 'RED'>, None)) score=1200000002810276.2 node_expansions=3
+FooPlayer.decide: Quick action scores (top->low):
+  quick_score=1200000002810262.8 action_type=ActionType.END_TURN
+FooPlayer.decide: Fully evaluating 1 top actions with lookahead depth=3
+  Action 0: expected_value=1200000002810286.2 action_type=ActionType.END_TURN
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None) score=1200000002810286.2 node_expansions=3
+FooPlayer.decide: Quick action scores (top->low):
+  quick_score=1200000002810297.2 action_type=ActionType.ROLL
+FooPlayer.decide: Fully evaluating 1 top actions with lookahead depth=3
+FooPlayer._evaluate_node: Branching 21 -> 5 via cheap pre-eval
+  Action 0: expected_value=1500000027806748.2 action_type=ActionType.ROLL
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.ROLL: 'ROLL'>, value=None) score=1500000027806748.2 node_expansions=20
+FooPlayer.decide: Quick action scores (top->low):
+  quick_score=1200000002810303.2 action_type=ActionType.END_TURN
+  quick_score=1200000002810282.8 action_type=ActionType.BUY_DEVELOPMENT_CARD
+FooPlayer.decide: Fully evaluating 2 top actions with lookahead depth=3
+FooPlayer._evaluate_node: Branching 19 -> 5 via cheap pre-eval
+  Action 0: expected_value=1200000002810316.8 action_type=ActionType.END_TURN
+  Action 1: expected_value=1200000002810296.2 action_type=ActionType.BUY_DEVELOPMENT_CARD
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None) score=1200000002810316.8 node_expansions=10
+FooPlayer.decide: Quick action scores (top->low):
+  quick_score=1200000002809205.2 action_type=ActionType.ROLL
+FooPlayer.decide: Fully evaluating 1 top actions with lookahead depth=3
+  Action 0: expected_value=1200000027809185.2 action_type=ActionType.ROLL
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.ROLL: 'ROLL'>, value=None) score=1200000027809185.2 node_expansions=3
+FooPlayer.decide: Quick action scores (top->low):
+  quick_score=1200000002809204.2 action_type=ActionType.END_TURN
+  quick_score=1200000002809196.2 action_type=ActionType.BUY_DEVELOPMENT_CARD
+FooPlayer.decide: Fully evaluating 2 top actions with lookahead depth=3
+  Action 0: expected_value=1200000002809205.2 action_type=ActionType.END_TURN
+  Action 1: expected_value=1200000002809192.2 action_type=ActionType.BUY_DEVELOPMENT_CARD
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None) score=1200000002809205.2 node_expansions=12
+FooPlayer.decide: Quick action scores (top->low):
+  quick_score=1200000002809205.2 action_type=ActionType.ROLL
+FooPlayer.decide: Fully evaluating 1 top actions with lookahead depth=3
+FooPlayer._evaluate_node: Branching 21 -> 5 via cheap pre-eval
+  Action 0: expected_value=1500000027806814.2 action_type=ActionType.ROLL
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.ROLL: 'ROLL'>, value=None) score=1500000027806814.2 node_expansions=16
+FooPlayer.decide: Quick action scores (top->low):
+  quick_score=1200000002809206.2 action_type=ActionType.END_TURN
+  quick_score=1200000002809203.2 action_type=ActionType.BUY_DEVELOPMENT_CARD
+  quick_score=1200000002809183.2 action_type=ActionType.MARITIME_TRADE
+  quick_score=1200000002809180.8 action_type=ActionType.MARITIME_TRADE
+  quick_score=1200000002809170.8 action_type=ActionType.MARITIME_TRADE
+  quick_score=1200000002809170.8 action_type=ActionType.MARITIME_TRADE
+FooPlayer.decide: Fully evaluating 6 top actions with lookahead depth=3
+FooPlayer._evaluate_node: Branching 19 -> 5 via cheap pre-eval
+  Action 0: expected_value=1200000002809219.8 action_type=ActionType.END_TURN
+  Action 1: expected_value=1200000002809216.8 action_type=ActionType.BUY_DEVELOPMENT_CARD
+FooPlayer._evaluate_node: Branching 17 -> 5 via cheap pre-eval
+  Action 2: expected_value=1200000002811284.8 action_type=ActionType.MARITIME_TRADE
+  Action 3: expected_value=1200000002809180.8 action_type=ActionType.MARITIME_TRADE
+FooPlayer._evaluate_node: Branching 17 -> 5 via cheap pre-eval
+  Action 4: expected_value=1200000002811269.2 action_type=ActionType.MARITIME_TRADE
+  Action 5: expected_value=1200000002809182.8 action_type=ActionType.MARITIME_TRADE
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.MARITIME_TRADE: 'MARITIME_TRADE'>, value=('WHEAT', 'WHEAT', 'WHEAT', 'WHEAT', 'WOOD')) score=1200000002811284.8 node_expansions=61
+FooPlayer.decide: Prioritizing 16 infrastructure actions over 17 total
+FooPlayer.decide: Quick action scores (top->low):
+  quick_score=1200000002811284.8 action_type=ActionType.BUILD_ROAD
+  quick_score=1200000002810729.2 action_type=ActionType.BUILD_ROAD
+  quick_score=1200000002810562.5 action_type=ActionType.BUILD_ROAD
+  quick_score=1200000002810451.5 action_type=ActionType.BUILD_ROAD
+  quick_score=1200000002810284.8 action_type=ActionType.BUILD_ROAD
+  quick_score=1200000002810173.8 action_type=ActionType.BUILD_ROAD
+FooPlayer.decide: Fully evaluating 6 top actions with lookahead depth=3
+  Action 0: expected_value=1200000002811293.2 action_type=ActionType.BUILD_ROAD
+  Action 1: expected_value=1200000002810725.2 action_type=ActionType.BUILD_ROAD
+  Action 2: expected_value=1200000002810562.5 action_type=ActionType.BUILD_ROAD
+  Action 3: expected_value=1200000002810449.5 action_type=ActionType.BUILD_ROAD
+  Action 4: expected_value=1200000002810284.8 action_type=ActionType.BUILD_ROAD
+  Action 5: expected_value=1200000002810182.2 action_type=ActionType.BUILD_ROAD
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(40, 44)) score=1200000002811293.2 node_expansions=18
+FooPlayer.decide: Quick action scores (top->low):
+  quick_score=1200000002811284.8 action_type=ActionType.END_TURN
+FooPlayer.decide: Fully evaluating 1 top actions with lookahead depth=3
+  Action 0: expected_value=1200000002811280.8 action_type=ActionType.END_TURN
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None) score=1200000002811280.8 node_expansions=8
+FooPlayer.decide: Quick action scores (top->low):
+  quick_score=1200000002811282.8 action_type=ActionType.ROLL
+FooPlayer.decide: Fully evaluating 1 top actions with lookahead depth=3
+FooPlayer._evaluate_node: Branching 9 -> 5 via cheap pre-eval
+FooPlayer._evaluate_node: Branching 21 -> 5 via cheap pre-eval
+  Action 0: expected_value=1200000002813114.0 action_type=ActionType.ROLL
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.ROLL: 'ROLL'>, value=None) score=1200000002813114.0 node_expansions=29
+FooPlayer.decide: Quick action scores (top->low):
+  quick_score=1200000002811282.8 action_type=ActionType.DISCARD
+FooPlayer.decide: Fully evaluating 1 top actions with lookahead depth=3
+  Action 0: expected_value=1200000005589059.0 action_type=ActionType.DISCARD
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.DISCARD: 'DISCARD'>, value=None) score=1200000005589059.0 node_expansions=3
+FooPlayer.decide: Pruned robber actions from 18 to 1
+FooPlayer.decide: Quick action scores (top->low):
+  quick_score=1200000005589059.0 action_type=ActionType.MOVE_ROBBER
+FooPlayer.decide: Fully evaluating 1 top actions with lookahead depth=3
+  Action 0: expected_value=1200000005589069.5 action_type=ActionType.MOVE_ROBBER
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.MOVE_ROBBER: 'MOVE_ROBBER'>, value=((0, 1, -1), <Color.RED: 'RED'>, None)) score=1200000005589069.5 node_expansions=3
+FooPlayer.decide: Quick action scores (top->low):
+  quick_score=1200000005589059.0 action_type=ActionType.END_TURN
+FooPlayer.decide: Fully evaluating 1 top actions with lookahead depth=3
+  Action 0: expected_value=1200000022255724.8 action_type=ActionType.END_TURN
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None) score=1200000022255724.8 node_expansions=3
+FooPlayer.decide: Quick action scores (top->low):
+  quick_score=1200000005589091.0 action_type=ActionType.ROLL
+FooPlayer.decide: Fully evaluating 1 top actions with lookahead depth=3
+FooPlayer._evaluate_node: Branching 17 -> 5 via cheap pre-eval
+  Action 0: expected_value=1200000005590883.8 action_type=ActionType.ROLL
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.ROLL: 'ROLL'>, value=None) score=1200000005590883.8 node_expansions=20
+FooPlayer.decide: Quick action scores (top->low):
+  quick_score=1200000005589072.5 action_type=ActionType.END_TURN
+FooPlayer.decide: Fully evaluating 1 top actions with lookahead depth=3
+FooPlayer._evaluate_node: Branching 10 -> 5 via cheap pre-eval
+  Action 0: expected_value=1200000005589070.5 action_type=ActionType.END_TURN
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None) score=1200000005589070.5 node_expansions=7
+FooPlayer.decide: Quick action scores (top->low):
+  quick_score=1200000005589071.5 action_type=ActionType.ROLL
+FooPlayer.decide: Fully evaluating 1 top actions with lookahead depth=3
+  Action 0: expected_value=1200000002811305.2 action_type=ActionType.ROLL
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.ROLL: 'ROLL'>, value=None) score=1200000002811305.2 node_expansions=3
+FooPlayer.decide: Quick action scores (top->low):
+  quick_score=1200000005589068.5 action_type=ActionType.END_TURN
+FooPlayer.decide: Fully evaluating 1 top actions with lookahead depth=3
+FooPlayer._evaluate_node: Branching 21 -> 5 via cheap pre-eval
+  Action 0: expected_value=1200000005589069.5 action_type=ActionType.END_TURN
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None) score=1200000005589069.5 node_expansions=9
+FooPlayer.decide: Quick action scores (top->low):
+  quick_score=1200000005589049.5 action_type=ActionType.DISCARD
+FooPlayer.decide: Fully evaluating 1 top actions with lookahead depth=3
+  Action 0: expected_value=1200000022255712.8 action_type=ActionType.DISCARD
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.DISCARD: 'DISCARD'>, value=None) score=1200000022255712.8 node_expansions=5
+FooPlayer.decide: Quick action scores (top->low):
+  quick_score=1199999900031226.0 action_type=ActionType.ROLL
+FooPlayer.decide: Fully evaluating 1 top actions with lookahead depth=3
+  Action 0: expected_value=1200000002809892.8 action_type=ActionType.ROLL
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.ROLL: 'ROLL'>, value=None) score=1200000002809892.8 node_expansions=3
+FooPlayer.decide: Quick action scores (top->low):
+  quick_score=1199999900031216.0 action_type=ActionType.END_TURN
+FooPlayer.decide: Fully evaluating 1 top actions with lookahead depth=3
+FooPlayer._evaluate_node: Branching 10 -> 5 via cheap pre-eval
+  Action 0: expected_value=1199999900031239.5 action_type=ActionType.END_TURN
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None) score=1199999900031239.5 node_expansions=9
+FooPlayer.decide: Quick action scores (top->low):
+  quick_score=1199999900030116.5 action_type=ActionType.ROLL
+FooPlayer.decide: Fully evaluating 1 top actions with lookahead depth=3
+  Action 0: expected_value=1199999900030117.5 action_type=ActionType.ROLL
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.ROLL: 'ROLL'>, value=None) score=1199999900030117.5 node_expansions=3
+FooPlayer.decide: Quick action scores (top->low):
+  quick_score=1199999900030116.5 action_type=ActionType.END_TURN
+FooPlayer.decide: Fully evaluating 1 top actions with lookahead depth=3
+  Action 0: expected_value=1199999900030117.5 action_type=ActionType.END_TURN
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None) score=1199999900030117.5 node_expansions=4
+FooPlayer.decide: Quick action scores (top->low):
+  quick_score=1199999900030141.0 action_type=ActionType.ROLL
+FooPlayer.decide: Fully evaluating 1 top actions with lookahead depth=3
+FooPlayer._evaluate_node: Branching 19 -> 5 via cheap pre-eval
+  Action 0: expected_value=1499999936141080.5 action_type=ActionType.ROLL
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.ROLL: 'ROLL'>, value=None) score=1499999936141080.5 node_expansions=11
+FooPlayer.decide: Prioritizing 18 infrastructure actions over 19 total
+FooPlayer.decide: Quick action scores (top->low):
+  quick_score=1499999936141080.5 action_type=ActionType.BUILD_SETTLEMENT
+  quick_score=1499999919472414.0 action_type=ActionType.BUILD_SETTLEMENT
+  quick_score=1499999908360580.8 action_type=ActionType.BUILD_SETTLEMENT
+  quick_score=1499999902803913.8 action_type=ActionType.BUILD_SETTLEMENT
+  quick_score=1199999900032505.5 action_type=ActionType.BUILD_ROAD
+  quick_score=1199999900031949.8 action_type=ActionType.BUILD_ROAD
+FooPlayer.decide: Fully evaluating 6 top actions with lookahead depth=3
+  Action 0: expected_value=1499999936141081.5 action_type=ActionType.BUILD_SETTLEMENT
+  Action 1: expected_value=1499999919472448.5 action_type=ActionType.BUILD_SETTLEMENT
+  Action 2: expected_value=1499999908360604.2 action_type=ActionType.BUILD_SETTLEMENT
+  Action 3: expected_value=1499999902803927.2 action_type=ActionType.BUILD_SETTLEMENT
+  Action 4: expected_value=1199999900032521.0 action_type=ActionType.BUILD_ROAD
+  Action 5: expected_value=1199999900031949.8 action_type=ActionType.BUILD_ROAD
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_SETTLEMENT: 'BUILD_SETTLEMENT'>, value=49) score=1499999936141081.5 node_expansions=18
+FooPlayer.decide: Quick action scores (top->low):
+  quick_score=1499999936141080.5 action_type=ActionType.END_TURN
+FooPlayer.decide: Fully evaluating 1 top actions with lookahead depth=3
+  Action 0: expected_value=1499999936141081.5 action_type=ActionType.END_TURN
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None) score=1499999936141081.5 node_expansions=7
+FooPlayer.decide: Quick action scores (top->low):
+  quick_score=1499999936141096.0 action_type=ActionType.ROLL
+FooPlayer.decide: Fully evaluating 1 top actions with lookahead depth=3
+  Action 0: expected_value=1500000027807762.8 action_type=ActionType.ROLL
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.ROLL: 'ROLL'>, value=None) score=1500000027807762.8 node_expansions=3
+FooPlayer.decide: Quick action scores (top->low):
+  quick_score=1499999936141105.0 action_type=ActionType.MARITIME_TRADE
+  quick_score=1499999936141096.0 action_type=ActionType.END_TURN
+  quick_score=1499999936141095.0 action_type=ActionType.MARITIME_TRADE
+  quick_score=1499999936141092.5 action_type=ActionType.MARITIME_TRADE
+  quick_score=1499999936141082.5 action_type=ActionType.MARITIME_TRADE
+FooPlayer.decide: Fully evaluating 5 top actions with lookahead depth=3
+  Action 0: expected_value=1499999936141105.0 action_type=ActionType.MARITIME_TRADE
+FooPlayer._evaluate_node: Branching 10 -> 5 via cheap pre-eval
+  Action 1: expected_value=1499999936141119.5 action_type=ActionType.END_TURN
+  Action 2: expected_value=1499999936141096.0 action_type=ActionType.MARITIME_TRADE
+  Action 3: expected_value=1499999936141127.0 action_type=ActionType.MARITIME_TRADE
+  Action 4: expected_value=1499999936141082.5 action_type=ActionType.MARITIME_TRADE
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.MARITIME_TRADE: 'MARITIME_TRADE'>, value=('WOOD', 'WOOD', None, None, 'ORE')) score=1499999936141127.0 node_expansions=19
+FooPlayer.decide: Quick action scores (top->low):
+  quick_score=1499999936141092.5 action_type=ActionType.END_TURN
+FooPlayer.decide: Fully evaluating 1 top actions with lookahead depth=3
+FooPlayer._evaluate_node: Branching 14 -> 5 via cheap pre-eval
+  Action 0: expected_value=1499999936141106.0 action_type=ActionType.END_TURN
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None) score=1499999936141106.0 node_expansions=7
+Playing 30 games...                                          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:00
+AlphaBetaPlayer:RED(depth=2,value_fn=base_fn,prunning=False) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╸       87%        
+FooPlayer:BLUE                                               ━━━━━                                     13%        
+                    Last 10 Games                    
+     ╷          ╷       ╷        ╷         ╷         
+   # │ SEATING  │ TURNS │ RED VP │ BLUE VP │ WINNER  
+╶────┼──────────┼───────┼────────┼─────────┼────────╴
+  21 │ BLUE,RED │   103 │     10 │       8 │ RED     
+  22 │ BLUE,RED │    67 │     11 │       6 │ RED     
+  23 │ RED,BLUE │    74 │     11 │       7 │ RED     
+  24 │ RED,BLUE │    96 │     10 │       8 │ RED     
+  25 │ BLUE,RED │    59 │     10 │       5 │ RED     
+  26 │ RED,BLUE │    46 │     10 │       2 │ RED     
+  27 │ RED,BLUE │    82 │     10 │       5 │ RED     
+  28 │ RED,BLUE │    56 │     10 │       3 │ RED     
+  29 │ RED,BLUE │    76 │     10 │       4 │ RED     
+  30 │ RED,BLUE │    90 │     10 │       5 │ RED     
+     ╵          ╵       ╵        ╵         ╵         
+                                                  Player Summary                                                   
+                                                               ╷      ╷      ╷      ╷      ╷       ╷      ╷        
+                                                               │      │      │      │      │       │      │   AVG  
+                                                               │      │  AVG │  AVG │  AVG │   AVG │  AVG │   DEV  
+                                                               │ WINS │   VP │ SET… │ CIT… │  ROAD │ ARMY │    VP  
+╶──────────────────────────────────────────────────────────────┼──────┼──────┼──────┼──────┼───────┼──────┼───────╴
+  AlphaBetaPlayer:RED(depth=2,value_fn=base_fn,prunning=False) │   26 │ 9.40 │ 2.33 │ 2.83 │  0.70 │ 0.00 │  0.00  
+  FooPlayer:BLUE                                               │    4 │ 5.60 │ 2.20 │ 1.17 │  0.30 │ 0.10 │  0.27  
+                                                               ╵      ╵      ╵      ╵      ╵       ╵      ╵        
+              Game Summary              
+            ╷           ╷               
+  AVG TICKS │ AVG TURNS │ AVG DURATION  
+╶───────────┼───────────┼──────────────╴
+     212.77 │     74.37 │   2.553 secs  
+            ╵           ╵

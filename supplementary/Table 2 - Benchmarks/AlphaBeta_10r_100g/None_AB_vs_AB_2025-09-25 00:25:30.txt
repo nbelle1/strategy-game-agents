@@ -1,0 +1,32 @@
+Playing 100 games...                                          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:00
+AlphaBetaPlayer:RED(depth=2,value_fn=base_fn,prunning=False)  ━━━━━━━━━━━━━━━━━━                        46%        
+AlphaBetaPlayer:BLUE(depth=2,value_fn=base_fn,prunning=False) ━━━━━━━━━━━━━━━━━━━━━╸                    54%        
+                    Last 10 Games                     
+      ╷          ╷       ╷        ╷         ╷         
+    # │ SEATING  │ TURNS │ RED VP │ BLUE VP │ WINNER  
+╶─────┼──────────┼───────┼────────┼─────────┼────────╴
+   91 │ BLUE,RED │    46 │      8 │      10 │ BLUE    
+   92 │ RED,BLUE │    80 │     10 │       3 │ RED     
+   93 │ BLUE,RED │    50 │      4 │      10 │ BLUE    
+   94 │ BLUE,RED │    79 │     10 │       9 │ RED     
+   95 │ RED,BLUE │    82 │     10 │       5 │ RED     
+   96 │ RED,BLUE │    59 │      4 │      10 │ BLUE    
+   97 │ RED,BLUE │    50 │     10 │       5 │ RED     
+   98 │ RED,BLUE │    67 │      5 │      10 │ BLUE    
+   99 │ BLUE,RED │    60 │      5 │      10 │ BLUE    
+  100 │ BLUE,RED │    95 │     10 │       7 │ RED     
+      ╵          ╵       ╵        ╵         ╵         
+                                                                Player Summary                                                                
+                                                                ╷      ╷        ╷            ╷            ╷          ╷          ╷             
+                                                                │      │        │        AVG │            │          │          │             
+                                                                │ WINS │ AVG VP │    SETTLES │ AVG CITIES │ AVG ROAD │ AVG ARMY │ AVG DEV VP  
+╶───────────────────────────────────────────────────────────────┼──────┼────────┼────────────┼────────────┼──────────┼──────────┼────────────╴
+  AlphaBetaPlayer:RED(depth=2,value_fn=base_fn,prunning=False)  │   46 │   7.53 │       2.61 │       1.97 │     0.47 │     0.00 │       0.04  
+  AlphaBetaPlayer:BLUE(depth=2,value_fn=base_fn,prunning=False) │   54 │   7.83 │       2.52 │       2.11 │     0.53 │     0.00 │       0.03  
+                                                                ╵      ╵        ╵            ╵            ╵          ╵          ╵             
+              Game Summary              
+            ╷           ╷               
+  AVG TICKS │ AVG TURNS │ AVG DURATION  
+╶───────────┼───────────┼──────────────╴
+     198.49 │     68.67 │   4.240 secs  
+            ╵           ╵               
