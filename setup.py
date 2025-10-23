@@ -1,4 +1,3 @@
-# filepath: /Users/dakotabarnes/Develop/CollectiveComputingLabs/strategy-game-agents/agents/setup.py
 from setuptools import setup, find_packages
 
 setup(

@@ -1,0 +1,110 @@
+[2025-09-20 19:35:14] Starting in IMPROVEMENT phase
+[2025-09-20 19:35:14] Copied finalized adapters.py to run dir: /Users/nik/Library/Mobile Documents/com~apple~CloudDocs/Develop/NLP/strategy-game-agents/agents/agentEvolver_v2/runs/creator_20250920_193514
+[2025-09-20 19:35:14] INIT NODE
+[2025-09-20 19:35:14] RUN PLAYER NODE
+[2025-09-20 19:35:44] Evolution 0: wins=0, avg_score=2.0, avg_turns=131.46666666666667
+[2025-09-20 19:35:44] ANALYZER NODE
+[2025-09-20 19:35:44] ANALYZER logged to log/ANALYZER/ANALYZER_e1_20250920_193544.txt
+[2025-09-20 19:36:03] META NODE
+[2025-09-20 19:36:03] META logged to log/META/META_e1_20250920_193603.txt
+[2025-09-20 19:36:28] Conditional Edge Meta
+[2025-09-20 19:36:28] Meta Message: Found agent CODER via specific format - going to CODER
+[2025-09-20 19:36:28] CODER NODE
+[2025-09-20 19:36:28] CODER logged to log/CODER/CODER_e1_20250920_193628.txt
+[2025-09-20 19:36:33] RUN PLAYER NODE
+[2025-09-20 19:37:05] Evolution 1: wins=15, avg_score=7.933333333333334, avg_turns=116.26666666666667
+[2025-09-20 19:37:05] ANALYZER NODE
+[2025-09-20 19:37:05] ANALYZER logged to log/ANALYZER/ANALYZER_e2_20250920_193705.txt
+[2025-09-20 19:37:16] META NODE
+[2025-09-20 19:37:16] META logged to log/META/META_e2_20250920_193716.txt
+[2025-09-20 19:37:25] Conditional Edge Meta
+[2025-09-20 19:37:25] Meta Message: Found agent STRATEGIZER via specific format - going to STRATEGIZER
+[2025-09-20 19:37:25] STRATEGIZER NODE
+[2025-09-20 19:37:25] STRATEGIZER logged to log/STRATEGIZER/STRATEGIZER_e2_20250920_193725.txt
+[2025-09-20 19:37:43] META NODE
+[2025-09-20 19:37:43] META logged to log/META/META_e2_20250920_193743.txt
+[2025-09-20 19:37:57] Error calling LLM: Error response 400 while fetching https://api.mistral.ai/v1/chat/completions: {"object":"error","message":"Not the same number of function calls and responses","type":"invalid_request_message_order","param":null,"code":"3230"}
+Traceback (most recent call last):
+  File "/Users/nik/Library/Mobile Documents/com~apple~CloudDocs/Develop/NLP/strategy-game-agents/agents/agentEvolver_v2/creator_agent.py", line 669, in run_react_graph
+    for step in self.react_graph.stream({}, self.config, stream_mode="updates"):
+  File "/Users/nik/miniconda3/envs/strategy-game-agents/lib/python3.11/site-packages/langgraph/pregel/main.py", line 2647, in stream
+    for _ in runner.tick(
+  File "/Users/nik/miniconda3/envs/strategy-game-agents/lib/python3.11/site-packages/langgraph/pregel/_runner.py", line 162, in tick
+    run_with_retry(
+  File "/Users/nik/miniconda3/envs/strategy-game-agents/lib/python3.11/site-packages/langgraph/pregel/_retry.py", line 42, in run_with_retry
+    return task.proc.invoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nik/miniconda3/envs/strategy-game-agents/lib/python3.11/site-packages/langgraph/_internal/_runnable.py", line 657, in invoke
+    input = context.run(step.invoke, input, config, **kwargs)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nik/miniconda3/envs/strategy-game-agents/lib/python3.11/site-packages/langgraph/_internal/_runnable.py", line 401, in invoke
+    ret = self.func(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nik/Library/Mobile Documents/com~apple~CloudDocs/Develop/NLP/strategy-game-agents/agents/agentEvolver_v2/creator_agent.py", line 382, in _meta_node
+    output = self._tool_calling_state_graph(self.meta_llm, sys_msg, msgs, tools)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nik/Library/Mobile Documents/com~apple~CloudDocs/Develop/NLP/strategy-game-agents/agents/agentEvolver_v2/creator_agent.py", line 318, in _tool_calling_state_graph
+    for event in react_graph.stream({"messages": msgs}, stream_mode="values"):
+  File "/Users/nik/miniconda3/envs/strategy-game-agents/lib/python3.11/site-packages/langgraph/pregel/main.py", line 2647, in stream
+    for _ in runner.tick(
+  File "/Users/nik/miniconda3/envs/strategy-game-agents/lib/python3.11/site-packages/langgraph/pregel/_runner.py", line 162, in tick
+    run_with_retry(
+  File "/Users/nik/miniconda3/envs/strategy-game-agents/lib/python3.11/site-packages/langgraph/pregel/_retry.py", line 42, in run_with_retry
+    return task.proc.invoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nik/miniconda3/envs/strategy-game-agents/lib/python3.11/site-packages/langgraph/_internal/_runnable.py", line 657, in invoke
+    input = context.run(step.invoke, input, config, **kwargs)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nik/miniconda3/envs/strategy-game-agents/lib/python3.11/site-packages/langgraph/_internal/_runnable.py", line 401, in invoke
+    ret = self.func(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nik/Library/Mobile Documents/com~apple~CloudDocs/Develop/NLP/strategy-game-agents/agents/agentEvolver_v2/creator_agent.py", line 294, in assistant
+    return {"messages": [llm_with_tools.invoke([sys_msg] + sub_state["messages"])]}
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nik/miniconda3/envs/strategy-game-agents/lib/python3.11/site-packages/langchain_core/runnables/base.py", line 5495, in invoke
+    return self.bound.invoke(
+           ^^^^^^^^^^^^^^^^^^
+  File "/Users/nik/miniconda3/envs/strategy-game-agents/lib/python3.11/site-packages/langchain_core/language_models/chat_models.py", line 393, in invoke
+    self.generate_prompt(
+  File "/Users/nik/miniconda3/envs/strategy-game-agents/lib/python3.11/site-packages/langchain_core/language_models/chat_models.py", line 1019, in generate_prompt
+    return self.generate(prompt_messages, stop=stop, callbacks=callbacks, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nik/miniconda3/envs/strategy-game-agents/lib/python3.11/site-packages/langchain_core/language_models/chat_models.py", line 837, in generate
+    self._generate_with_cache(
+  File "/Users/nik/miniconda3/envs/strategy-game-agents/lib/python3.11/site-packages/langchain_core/language_models/chat_models.py", line 1085, in _generate_with_cache
+    result = self._generate(
+             ^^^^^^^^^^^^^^^
+  File "/Users/nik/miniconda3/envs/strategy-game-agents/lib/python3.11/site-packages/langchain_mistralai/chat_models.py", line 572, in _generate
+    response = self.completion_with_retry(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nik/miniconda3/envs/strategy-game-agents/lib/python3.11/site-packages/langchain_mistralai/chat_models.py", line 489, in completion_with_retry
+    rtn = _completion_with_retry(**kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nik/miniconda3/envs/strategy-game-agents/lib/python3.11/site-packages/tenacity/__init__.py", line 338, in wrapped_f
+    return copy(f, *args, **kw)
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nik/miniconda3/envs/strategy-game-agents/lib/python3.11/site-packages/tenacity/__init__.py", line 477, in __call__
+    do = self.iter(retry_state=retry_state)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nik/miniconda3/envs/strategy-game-agents/lib/python3.11/site-packages/tenacity/__init__.py", line 378, in iter
+    result = action(retry_state)
+             ^^^^^^^^^^^^^^^^^^^
+  File "/Users/nik/miniconda3/envs/strategy-game-agents/lib/python3.11/site-packages/tenacity/__init__.py", line 400, in <lambda>
+    self._add_action_func(lambda rs: rs.outcome.result())
+                                     ^^^^^^^^^^^^^^^^^^^
+  File "/Users/nik/miniconda3/envs/strategy-game-agents/lib/python3.11/concurrent/futures/_base.py", line 449, in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/nik/miniconda3/envs/strategy-game-agents/lib/python3.11/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/Users/nik/miniconda3/envs/strategy-game-agents/lib/python3.11/site-packages/tenacity/__init__.py", line 480, in __call__
+    result = fn(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^
+  File "/Users/nik/miniconda3/envs/strategy-game-agents/lib/python3.11/site-packages/langchain_mistralai/chat_models.py", line 486, in _completion_with_retry
+    _raise_on_error(response)
+  File "/Users/nik/miniconda3/envs/strategy-game-agents/lib/python3.11/site-packages/langchain_mistralai/chat_models.py", line 173, in _raise_on_error
+    raise httpx.HTTPStatusError(
+httpx.HTTPStatusError: Error response 400 while fetching https://api.mistral.ai/v1/chat/completions: {"object":"error","message":"Not the same number of function calls and responses","type":"invalid_request_message_order","param":null,"code":"3230"}
+During task with name 'assistant' and id 'a9583a39-4918-e2c8-f9d3-802d8cc20678'
+During task with name 'meta' and id '3bf33531-cbdf-d722-ea50-fe96b74f6a6c'
+

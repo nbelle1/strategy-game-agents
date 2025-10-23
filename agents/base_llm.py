@@ -118,7 +118,7 @@ class AnthropicLLM(BaseLLM):
     def __init__(self, model_name: str = "claude-3.7"):
 
         self.model = model_name # currently only supports "claude-3.7"
-        self.model_id = "arn:aws:bedrock:us-east-2:288380904485:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0"
+        self.model_id = "TODO...SET MODEL ID"
         self.region_name = "us-east-2"
         self.client = AnthropicBedrock(
             aws_access_key=os.environ["AWS_ACESS_KEY"],
@@ -158,7 +158,7 @@ class AzureOpenAILLM(BaseLLM):
 
     def __init__(self, model_name: str = "gpt-4o-mini"):
         
-        endpoint = "https://gpt-amayuelas.openai.azure.com/"
+        endpoint = "TODO: SET AZURE ENDPOINT"
         api_version = "2024-12-01-preview"
 
         self.api_key = os.getenv("AZURE_OPENAI_API_KEY")

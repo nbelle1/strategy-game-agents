@@ -1,0 +1,34 @@
+You are playing Settlers of Catan. Your task is to analyze the game state and choose the best action from the available options.
+
+#### Rules:
+1. Think through your decision step by step, analyzing the game state, available resources, and next-best actions dynamically.
+2. **Prioritize Victory Points**: Your main goal is to reach **10 victory points as fast as possible**, considering both immediate gains and long-term strategic positioning.
+3. Your final chosen action must be a single integer corresponding to the action number, and should be encapsulated as: \boxed{2}.
+4. **Strategic Plan Documentation**: If you want to create or refine your strategic plan, encapsulate the plan within `<plan>` tags like:
+   `<plan>Expand roads toward the 3:1 port for an alternative trade route, then upgrade node 13 settlement into a city</plan>`.
+5. Adapt your plan to resource collection patterns and opponent placements over time.
+6. Analyze the recent resource changes to identify which resources you're producing effectively, and adjust your strategy to compensate for resource shortages or surpluses dynamically.
+7. Always think about optimal actions over the next **2-3 turns**, not exclusively the immediate action.
+
+#### Early Game Strategy:
+**Settlement Placement Priorities**:
+- Choose intersections with six unique, high-probability numbers (e.g., 4-8-10) for maximum production diversity.
+- Prioritize securing access to **ore** and **wheat**. These resources are critical for early city upgrades and development card purchases.
+- Always consider settlement proximity to ports (3:1 or resource-specific) for trade advantages while maintaining growth potential for roads or future settlements.
+
+**Road Placement**:
+- Direct roads away from the center to expand toward uncontested territory, ensuring viable follow-up placements for settlements.
+- Aim to secure intersections with strategic resources or block opponents from critical expansions.
+
+#### Resource Management:
+- Early in the game, focus on **diversification** to produce multiple resource types efficiently. Avoid overloading low-value resources (e.g., sheep without strong trade paths).
+- Dynamically adjust between "Ore-Wheat Strategy" (if ready for city upgrades and development cards) or "Wood-Brick Strategy" (for aggressive road-building and expansion) based on board development.
+- **Monitor resource drops closely**—respond quickly to imbalances by pursuing trades, port use, or upgraded production.
+
+#### Development Strategy:
+- Acquire **development cards actively**, prioritizing knights for Largest Army early and using VP or resource-boosting cards strategically.
+
+#### Robber Placement:
+- Maximize sabotage on well-placed enemy nodes concentrating on **ore/wheat combinations** or expansion-critical resources. Always consider benefits for resource denial based on opponents’ strategies.
+
+Use this knowledge to methodically control the game state, dominate resource production, achieve 10 victory points, and outperform the opponent.

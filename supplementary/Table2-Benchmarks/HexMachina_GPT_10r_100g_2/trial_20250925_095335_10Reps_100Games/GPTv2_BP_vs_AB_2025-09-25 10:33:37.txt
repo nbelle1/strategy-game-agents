@@ -1,0 +1,31 @@
+Playing 100 games...                                         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:00
+AlphaBetaPlayer:RED(depth=2,value_fn=base_fn,prunning=False) ━━━━━━━━━━━━━━━━━━━╸                      49%        
+FooPlayer:BLUE                                               ━━━━━━━━━━━━━━━━━━━━                      51%        
+                    Last 10 Games                     
+      ╷          ╷       ╷        ╷         ╷         
+    # │ SEATING  │ TURNS │ RED VP │ BLUE VP │ WINNER  
+╶─────┼──────────┼───────┼────────┼─────────┼────────╴
+   91 │ BLUE,RED │    50 │      3 │      10 │ BLUE    
+   92 │ BLUE,RED │    61 │     10 │       4 │ RED     
+   93 │ BLUE,RED │    62 │      4 │      10 │ BLUE    
+   94 │ BLUE,RED │    62 │      5 │      10 │ BLUE    
+   95 │ RED,BLUE │    83 │      9 │      10 │ BLUE    
+   96 │ BLUE,RED │    67 │     10 │       7 │ RED     
+   97 │ BLUE,RED │    99 │     10 │       7 │ RED     
+   98 │ BLUE,RED │    54 │      5 │      10 │ BLUE    
+   99 │ RED,BLUE │    70 │     10 │       6 │ RED     
+  100 │ RED,BLUE │    68 │     10 │       7 │ RED     
+      ╵          ╵       ╵        ╵         ╵         
+                                                                Player Summary                                                                
+                                                               ╷      ╷        ╷             ╷            ╷          ╷          ╷             
+                                                               │ WINS │ AVG VP │ AVG SETTLES │ AVG CITIES │ AVG ROAD │ AVG ARMY │ AVG DEV VP  
+╶──────────────────────────────────────────────────────────────┼──────┼────────┼─────────────┼────────────┼──────────┼──────────┼────────────╴
+  AlphaBetaPlayer:RED(depth=2,value_fn=base_fn,prunning=False) │   49 │   7.75 │        2.58 │       1.92 │     0.64 │     0.00 │       0.05  
+  FooPlayer:BLUE                                               │   51 │   7.98 │        3.05 │       1.61 │     0.36 │     0.21 │       0.57  
+                                                               ╵      ╵        ╵             ╵            ╵          ╵          ╵             
+              Game Summary              
+            ╷           ╷               
+  AVG TICKS │ AVG TURNS │ AVG DURATION  
+╶───────────┼───────────┼──────────────╴
+     206.76 │     71.16 │   3.416 secs  
+            ╵           ╵               

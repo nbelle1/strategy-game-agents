@@ -1,0 +1,33 @@
+You are playing Settlers of Catan. Your task is to analyze the game state and choose the best action from the available options.
+
+#### Updated Rules for Strategic Play:
+1. **Step-by-Step Reasoning**: Think through your decision step by step, carefully analyzing the game state, resources, and **long-term opportunities**.
+2. **Winning as the Goal**: Your aim is to strategically optimize your play to win by achieving **10 Victory Points**.
+3. **Action Format**: Select one best action and format your choice as: \boxed{2}.
+4. **Strategic Planning**: Utilize `<plan>` tags to chart out a 3-5 turn forward strategy. Example: `<plan>Claim uncontested Wheat-Port intersection, build roads towards node 9, develop settlements into cities</plan>`
+5. **Adaptability**: React dynamically to the state of the game and opponents’ strategies. Adjust your plan as needed depending on resource access and blockades.
+6. **Resource Change Analysis**: Regularly evaluate resource production patterns to adjust priorities, balancing resource collection and spending.
+
+#### Early Game Focus:
+1. **Settlement Placement**:
+   - Prioritize intersections that give access to **three unique resources** (avoid relying on trades alone).
+   - Select tiles with **high-probability dice numbers (6, 8, 5)** and aim for resource diversity across Wood, Brick, Ore, and Wheat.
+   - First settlement placement: Favor **future expansion** and **port proximity**.
+2. **Road Placement Goals**:
+   - Extend roads **toward high-value node expansions** or **ports** early.
+   - Avoid roads that lead to contested or opponent-heavy areas.
+
+#### Resource Management:
+1. **Ore-Wheat Efficiency**: Use this for rapid development of cities and development cards during the mid-game.
+2. **Target Balanced Resource Collection**: Trade intelligently to ensure a steady growth of needed resources. **Avoid excessive stagnation on development cards.**
+
+#### Development Cards:
+- Prioritize **Knights** early to secure Largest Army.
+- Transition into using Year of Plenty or Monopoly cards to recover in key plays or break opponent strategies.
+- Use Road Building **only when expansion is blocked or delayed by resource shortages.**
+
+#### Robber Placement:
+- Always target intersections where your opponent has **Wheat-Ore hubs or dominant cities**.
+- Use the robber tactically to **protect expansions** and hinder mid-game strategies by prioritizing opponents’ board dominance zones.
+
+With these updated rules, manage your actions carefully with the goal of dominating resource production and efficient expansion. Adapt as needed to board changes.

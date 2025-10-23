@@ -1,0 +1,223 @@
+ction(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.ROLL: 'ROLL'>, value=None) score=2100000180583188.5 node_expansions=2
+FooPlayer.decide: Filtering out maritime trades from 10 to 2 actions
+FooPlayer.decide: Evaluating 2 actions with lookahead depth=3
+  Action 0: expected_value=2100000180583191.5 action_type=ActionType.END_TURN
+  Action 1: expected_value=2100000180583209.5 action_type=ActionType.BUY_DEVELOPMENT_CARD
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUY_DEVELOPMENT_CARD: 'BUY_DEVELOPMENT_CARD'>, value=None) score=2100000180583209.5 node_expansions=31
+FooPlayer.decide: Evaluating 5 actions with lookahead depth=3
+  Action 0: expected_value=2100000180583203.0 action_type=ActionType.END_TURN
+  Action 1: expected_value=2100000180585769.2 action_type=ActionType.MARITIME_TRADE
+  Action 2: expected_value=2100000180583184.5 action_type=ActionType.MARITIME_TRADE
+  Action 3: expected_value=2100000180585769.2 action_type=ActionType.MARITIME_TRADE
+  Action 4: expected_value=2100000180583216.5 action_type=ActionType.MARITIME_TRADE
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.MARITIME_TRADE: 'MARITIME_TRADE'>, value=('WHEAT', 'WHEAT', 'WHEAT', 'WHEAT', 'BRICK')) score=2100000180585769.2 node_expansions=87
+FooPlayer.decide: Evaluating 5 actions with lookahead depth=3
+  Action 0: expected_value=2100000180583198.0 action_type=ActionType.END_TURN
+  Action 1: expected_value=2100000180583166.5 action_type=ActionType.MARITIME_TRADE
+  Action 2: expected_value=2100000180585753.8 action_type=ActionType.MARITIME_TRADE
+  Action 3: expected_value=2100000180585769.2 action_type=ActionType.MARITIME_TRADE
+  Action 4: expected_value=2100000180583176.5 action_type=ActionType.MARITIME_TRADE
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.MARITIME_TRADE: 'MARITIME_TRADE'>, value=('WHEAT', 'WHEAT', 'WHEAT', 'WHEAT', 'WOOD')) score=2100000180585769.2 node_expansions=72
+FooPlayer.decide: Prioritizing 15 infrastructure actions over 16 total
+FooPlayer.decide: Evaluating 15 actions with lookahead depth=3
+  Action 0: expected_value=2100000180584102.5 action_type=ActionType.BUILD_ROAD
+  Action 1: expected_value=2100000180584380.2 action_type=ActionType.BUILD_ROAD
+  Action 2: expected_value=2100000180583175.5 action_type=ActionType.BUILD_ROAD
+  Action 3: expected_value=2100000180584828.8 action_type=ActionType.BUILD_ROAD
+  Action 4: expected_value=2100000180585772.2 action_type=ActionType.BUILD_ROAD
+  Action 5: expected_value=2100000180583707.5 action_type=ActionType.BUILD_ROAD
+  Action 6: expected_value=2100000180583184.5 action_type=ActionType.BUILD_ROAD
+  Action 7: expected_value=2100000180583995.5 action_type=ActionType.BUILD_ROAD
+  Action 8: expected_value=2100000180583184.5 action_type=ActionType.BUILD_ROAD
+  Action 9: expected_value=2100000180584380.2 action_type=ActionType.BUILD_ROAD
+  Action 10: expected_value=2100000180583175.5 action_type=ActionType.BUILD_ROAD
+  Action 11: expected_value=2100000180584000.0 action_type=ActionType.BUILD_ROAD
+  Action 12: expected_value=2100000180584118.0 action_type=ActionType.BUILD_ROAD
+  Action 13: expected_value=2100000180585666.5 action_type=ActionType.BUILD_ROAD
+  Action 14: expected_value=2100000180584840.8 action_type=ActionType.BUILD_ROAD
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(19, 46)) score=2100000180585772.2 node_expansions=45
+FooPlayer.decide: Evaluating 1 actions with lookahead depth=3
+  Action 0: expected_value=2100000180585803.8 action_type=ActionType.END_TURN
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None) score=2100000180585803.8 node_expansions=3
+FooPlayer.decide: Evaluating 2 actions with lookahead depth=3
+FooPlayer._evaluate_node: Error filtering maritime trades: object of type 'filter' has no len()
+FooPlayer.decide: Exception while evaluating action Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.PLAY_KNIGHT_CARD: 'PLAY_KNIGHT_CARD'>, value=None): 'filter' object is not subscriptable
+FooPlayer._evaluate_node: Error filtering maritime trades: object of type 'filter' has no len()
+FooPlayer.decide: Exception while evaluating action Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.ROLL: 'ROLL'>, value=None): 'filter' object is not subscriptable
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.PLAY_KNIGHT_CARD: 'PLAY_KNIGHT_CARD'>, value=None) score=-inf node_expansions=2
+FooPlayer.decide: prune_robber_actions failed: object of type 'filter' has no len()
+FooPlayer.decide: Filtering out maritime trades from 18 to 18 actions
+FooPlayer.decide: Evaluating 18 actions with lookahead depth=3
+FooPlayer._evaluate_node: Error filtering maritime trades: object of type 'filter' has no len()
+FooPlayer._evaluate_node: Exception on action Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.ROLL: 'ROLL'>, value=None): 'filter' object is not subscriptable
+  Action 0: expected_value=2100000152807995.5 action_type=ActionType.MOVE_ROBBER
+  Action 1: expected_value=2099999988919139.5 action_type=ActionType.MOVE_ROBBER
+  Action 2: expected_value=2100000080585808.2 action_type=ActionType.MOVE_ROBBER
+  Action 3: expected_value=2100000141696928.5 action_type=ActionType.MOVE_ROBBER
+  Action 4: expected_value=2099999972250706.2 action_type=ActionType.MOVE_ROBBER
+  Action 5: expected_value=2100000005585806.2 action_type=ActionType.MOVE_ROBBER
+  Action 6: expected_value=2100000002808036.0 action_type=ActionType.MOVE_ROBBER
+  Action 7: expected_value=2099999994474683.8 action_type=ActionType.MOVE_ROBBER
+FooPlayer._evaluate_node: Error filtering maritime trades: object of type 'filter' has no len()
+FooPlayer._evaluate_node: Exception on action Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.ROLL: 'ROLL'>, value=None): 'filter' object is not subscriptable
+  Action 8: expected_value=2100000047252439.0 action_type=ActionType.MOVE_ROBBER
+  Action 9: expected_value=2100000047252480.5 action_type=ActionType.MOVE_ROBBER
+  Action 10: expected_value=2100000047252480.5 action_type=ActionType.MOVE_ROBBER
+  Action 11: expected_value=2100000075030262.8 action_type=ActionType.MOVE_ROBBER
+  Action 12: expected_value=2100000113919158.2 action_type=ActionType.MOVE_ROBBER
+  Action 13: expected_value=2100000030584907.0 action_type=ActionType.MOVE_ROBBER
+  Action 14: expected_value=2099999963918251.8 action_type=ActionType.MOVE_ROBBER
+  Action 15: expected_value=2100000027808028.5 action_type=ActionType.MOVE_ROBBER
+  Action 16: expected_value=2100000025030260.8 action_type=ActionType.MOVE_ROBBER
+  Action 17: expected_value=2100000000030237.2 action_type=ActionType.MOVE_ROBBER
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.MOVE_ROBBER: 'MOVE_ROBBER'>, value=((0, 0, 0), <Color.RED: 'RED'>, None)) score=2100000152807995.5 node_expansions=116
+FooPlayer.decide: Evaluating 1 actions with lookahead depth=3
+  Action 0: expected_value=2100000152808028.5 action_type=ActionType.ROLL
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.ROLL: 'ROLL'>, value=None) score=2100000152808028.5 node_expansions=12
+FooPlayer.decide: Evaluating 5 actions with lookahead depth=3
+  Action 0: expected_value=2100000152808039.5 action_type=ActionType.END_TURN
+  Action 1: expected_value=2100000152808014.0 action_type=ActionType.MARITIME_TRADE
+  Action 2: expected_value=2100000152808007.0 action_type=ActionType.MARITIME_TRADE
+  Action 3: expected_value=2100000152808027.5 action_type=ActionType.MARITIME_TRADE
+  Action 4: expected_value=2100000152810505.0 action_type=ActionType.MARITIME_TRADE
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.MARITIME_TRADE: 'MARITIME_TRADE'>, value=('SHEEP', 'SHEEP', 'SHEEP', 'SHEEP', 'WOOD')) score=2100000152810505.0 node_expansions=48
+FooPlayer.decide: Prioritizing 16 infrastructure actions over 17 total
+FooPlayer.decide: Evaluating 16 actions with lookahead depth=3
+  Action 0: expected_value=2100000152809028.5 action_type=ActionType.BUILD_ROAD
+  Action 1: expected_value=2100000152809282.8 action_type=ActionType.BUILD_ROAD
+  Action 2: expected_value=2100000152810396.8 action_type=ActionType.BUILD_ROAD
+  Action 3: expected_value=2100000152808027.0 action_type=ActionType.BUILD_ROAD
+  Action 4: expected_value=2100000152809671.8 action_type=ActionType.BUILD_ROAD
+  Action 5: expected_value=2100000152808562.5 action_type=ActionType.BUILD_ROAD
+  Action 6: expected_value=2100000152808005.0 action_type=ActionType.BUILD_ROAD
+  Action 7: expected_value=2100000152808841.2 action_type=ActionType.BUILD_ROAD
+  Action 8: expected_value=2100000152808007.0 action_type=ActionType.BUILD_ROAD
+  Action 9: expected_value=2100000152809838.2 action_type=ActionType.BUILD_ROAD
+  Action 10: expected_value=2100000152809285.8 action_type=ActionType.BUILD_ROAD
+  Action 11: expected_value=2100000152808008.0 action_type=ActionType.BUILD_ROAD
+  Action 12: expected_value=2100000152808838.2 action_type=ActionType.BUILD_ROAD
+  Action 13: expected_value=2100000152809008.0 action_type=ActionType.BUILD_ROAD
+  Action 14: expected_value=2100000152810539.5 action_type=ActionType.BUILD_ROAD
+  Action 15: expected_value=2100000152809671.8 action_type=ActionType.BUILD_ROAD
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(21, 43)) score=2100000152810539.5 node_expansions=48
+FooPlayer.decide: Evaluating 1 actions with lookahead depth=3
+  Action 0: expected_value=2100000152810527.0 action_type=ActionType.END_TURN
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None) score=2100000152810527.0 node_expansions=8
+FooPlayer.decide: Evaluating 1 actions with lookahead depth=3
+  Action 0: expected_value=2100000152812338.2 action_type=ActionType.ROLL
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.ROLL: 'ROLL'>, value=None) score=2100000152812338.2 node_expansions=32
+FooPlayer.decide: Evaluating 5 actions with lookahead depth=3
+  Action 0: expected_value=2100000152810541.5 action_type=ActionType.END_TURN
+  Action 1: expected_value=2100000152812324.8 action_type=ActionType.MARITIME_TRADE
+  Action 2: expected_value=2100000152810518.0 action_type=ActionType.MARITIME_TRADE
+  Action 3: expected_value=2100000152812309.2 action_type=ActionType.MARITIME_TRADE
+  Action 4: expected_value=2100000152810526.5 action_type=ActionType.MARITIME_TRADE
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.MARITIME_TRADE: 'MARITIME_TRADE'>, value=('BRICK', 'BRICK', 'BRICK', 'BRICK', 'WOOD')) score=2100000152812324.8 node_expansions=79
+FooPlayer.decide: Prioritizing 17 infrastructure actions over 18 total
+FooPlayer.decide: Evaluating 17 actions with lookahead depth=3
+  Action 0: expected_value=2100000152811494.5 action_type=ActionType.BUILD_ROAD
+  Action 1: expected_value=2100000152811769.2 action_type=ActionType.BUILD_ROAD
+  Action 2: expected_value=2100000152811491.5 action_type=ActionType.BUILD_ROAD
+  Action 3: expected_value=2100000152810491.5 action_type=ActionType.BUILD_ROAD
+  Action 4: expected_value=2100000152812158.2 action_type=ActionType.BUILD_ROAD
+  Action 5: expected_value=2100000152811061.5 action_type=ActionType.BUILD_ROAD
+  Action 6: expected_value=2100000152810491.5 action_type=ActionType.BUILD_ROAD
+  Action 7: expected_value=2100000152811327.8 action_type=ActionType.BUILD_ROAD
+  Action 8: expected_value=2100000152810494.5 action_type=ActionType.BUILD_ROAD
+  Action 9: expected_value=2100000152812324.8 action_type=ActionType.BUILD_ROAD
+  Action 10: expected_value=2100000152811769.2 action_type=ActionType.BUILD_ROAD
+  Action 11: expected_value=2100000152810491.5 action_type=ActionType.BUILD_ROAD
+  Action 12: expected_value=2100000152811340.2 action_type=ActionType.BUILD_ROAD
+  Action 13: expected_value=2100000152811491.5 action_type=ActionType.BUILD_ROAD
+  Action 14: expected_value=2100000152811506.0 action_type=ActionType.BUILD_ROAD
+  Action 15: expected_value=2100000152812173.8 action_type=ActionType.BUILD_ROAD
+  Action 16: expected_value=2100000152811491.5 action_type=ActionType.BUILD_ROAD
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(46, 48)) score=2100000152812324.8 node_expansions=51
+FooPlayer.decide: Evaluating 1 actions with lookahead depth=3
+FooPlayer._evaluate_node: Error filtering maritime trades: object of type 'filter' has no len()
+FooPlayer._evaluate_node: Exception on action Action(color=<Color.RED: 'RED'>, action_type=<ActionType.ROLL: 'ROLL'>, value=None): 'filter' object is not subscriptable
+  Action 0: expected_value=2100000152812324.8 action_type=ActionType.END_TURN
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None) score=2100000152812324.8 node_expansions=2
+FooPlayer.decide: Evaluating 1 actions with lookahead depth=3
+  Action 0: expected_value=2100000136145702.8 action_type=ActionType.ROLL
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.ROLL: 'ROLL'>, value=None) score=2100000136145702.8 node_expansions=3
+FooPlayer.decide: Filtering out maritime trades from 9 to 1 actions
+FooPlayer.decide: Evaluating 1 actions with lookahead depth=3
+  Action 0: expected_value=2100000136145705.8 action_type=ActionType.END_TURN
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None) score=2100000136145705.8 node_expansions=3
+FooPlayer.decide: Evaluating 1 actions with lookahead depth=3
+  Action 0: expected_value=2700000136145719.5 action_type=ActionType.ROLL
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.ROLL: 'ROLL'>, value=None) score=2700000136145719.5 node_expansions=331
+FooPlayer.decide: Prioritizing 17 infrastructure actions over 27 total
+FooPlayer.decide: Evaluating 17 actions with lookahead depth=3
+  Action 0: expected_value=2100000136148394.2 action_type=ActionType.BUILD_ROAD
+  Action 1: expected_value=2100000136148672.0 action_type=ActionType.BUILD_ROAD
+  Action 2: expected_value=2100000136148394.0 action_type=ActionType.BUILD_ROAD
+  Action 3: expected_value=2100000136147394.0 action_type=ActionType.BUILD_ROAD
+  Action 4: expected_value=2100000136148949.8 action_type=ActionType.BUILD_ROAD
+  Action 5: expected_value=2100000136147949.5 action_type=ActionType.BUILD_ROAD
+  Action 6: expected_value=2100000136148949.5 action_type=ActionType.BUILD_ROAD
+  Action 7: expected_value=2100000136147394.0 action_type=ActionType.BUILD_ROAD
+  Action 8: expected_value=2700000136145727.5 action_type=ActionType.BUILD_ROAD
+  Action 9: expected_value=2100000136147394.0 action_type=ActionType.BUILD_ROAD
+  Action 10: expected_value=2100000136148672.0 action_type=ActionType.BUILD_ROAD
+  Action 11: expected_value=2100000136147394.0 action_type=ActionType.BUILD_ROAD
+  Action 12: expected_value=2700000136145727.5 action_type=ActionType.BUILD_ROAD
+  Action 13: expected_value=2100000136148394.0 action_type=ActionType.BUILD_ROAD
+  Action 14: expected_value=2100000136148394.0 action_type=ActionType.BUILD_ROAD
+  Action 15: expected_value=2100000136148949.5 action_type=ActionType.BUILD_ROAD
+  Action 16: expected_value=2100000136148394.0 action_type=ActionType.BUILD_ROAD
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(22, 23)) score=2700000136145727.5 node_expansions=1261
+FooPlayer.decide: Prioritizing 17 infrastructure actions over 27 total
+FooPlayer.decide: Evaluating 17 actions with lookahead depth=3
+  Action 0: expected_value=2100000136146742.0 action_type=ActionType.BUILD_ROAD
+  Action 1: expected_value=2100000136147017.2 action_type=ActionType.BUILD_ROAD
+  Action 2: expected_value=2100000136146729.2 action_type=ActionType.BUILD_ROAD
+  Action 3: expected_value=2100000136145729.2 action_type=ActionType.BUILD_ROAD
+  Action 4: expected_value=2100000136147394.0 action_type=ActionType.BUILD_ROAD
+  Action 5: expected_value=2100000136146287.8 action_type=ActionType.BUILD_ROAD
+  Action 6: expected_value=2100000136147282.8 action_type=ActionType.BUILD_ROAD
+  Action 7: expected_value=2100000136145727.2 action_type=ActionType.BUILD_ROAD
+  Action 8: expected_value=2100000136147283.0 action_type=ActionType.BUILD_ROAD
+  Action 9: expected_value=2100000136145729.2 action_type=ActionType.BUILD_ROAD
+  Action 10: expected_value=2100000136147005.2 action_type=ActionType.BUILD_ROAD
+  Action 11: expected_value=2100000136145742.8 action_type=ActionType.BUILD_ROAD
+  Action 12: expected_value=2700000136145730.5 action_type=ActionType.BUILD_ROAD
+  Action 13: expected_value=2100000136146727.2 action_type=ActionType.BUILD_ROAD
+  Action 14: expected_value=2100000136146730.2 action_type=ActionType.BUILD_ROAD
+  Action 15: expected_value=2100000136147397.0 action_type=ActionType.BUILD_ROAD
+  Action 16: expected_value=2100000136146742.8 action_type=ActionType.BUILD_ROAD
+FooPlayer.decide: Chosen action=Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(20, 22)) score=2700000136145730.5 node_expansions=153
+Playing 30 games...                                          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:00
+AlphaBetaPlayer:RED(depth=2,value_fn=base_fn,prunning=False) ━━━━━━━━━━━━━━━━━━╸                       47%        
+FooPlayer:BLUE                                               ━━━━━━━━━━━━━━━━━━━━━                     53%        
+                    Last 10 Games                    
+     ╷          ╷       ╷        ╷         ╷         
+   # │ SEATING  │ TURNS │ RED VP │ BLUE VP │ WINNER  
+╶────┼──────────┼───────┼────────┼─────────┼────────╴
+  21 │ BLUE,RED │    70 │      3 │      10 │ BLUE    
+  22 │ RED,BLUE │    82 │     10 │       7 │ RED     
+  23 │ RED,BLUE │    34 │     10 │       2 │ RED     
+  24 │ RED,BLUE │    82 │     10 │       7 │ RED     
+  25 │ BLUE,RED │    62 │      8 │      11 │ BLUE    
+  26 │ RED,BLUE │    61 │      5 │      10 │ BLUE    
+  27 │ BLUE,RED │    69 │     10 │       6 │ RED     
+  28 │ RED,BLUE │    67 │      3 │      11 │ BLUE    
+  29 │ BLUE,RED │    90 │      5 │      10 │ BLUE    
+  30 │ RED,BLUE │    69 │      7 │      10 │ BLUE    
+     ╵          ╵       ╵        ╵         ╵         
+                                                  Player Summary                                                   
+                                                               ╷      ╷      ╷      ╷      ╷       ╷      ╷        
+                                                               │      │      │      │      │       │      │   AVG  
+                                                               │      │  AVG │  AVG │  AVG │   AVG │  AVG │   DEV  
+                                                               │ WINS │   VP │ SET… │ CIT… │  ROAD │ ARMY │    VP  
+╶──────────────────────────────────────────────────────────────┼──────┼──────┼──────┼──────┼───────┼──────┼───────╴
+  AlphaBetaPlayer:RED(depth=2,value_fn=base_fn,prunning=False) │   14 │ 7.57 │ 3.20 │ 1.83 │  0.33 │ 0.00 │  0.03  
+  FooPlayer:BLUE                                               │   16 │ 8.27 │ 2.50 │ 1.93 │  0.63 │ 0.07 │  0.50  
+                                                               ╵      ╵      ╵      ╵      ╵       ╵      ╵        
+              Game Summary              
+            ╷           ╷               
+  AVG TICKS │ AVG TURNS │ AVG DURATION  
+╶───────────┼───────────┼──────────────╴
+     222.80 │     77.40 │   4.242 secs  
+            ╵           ╵

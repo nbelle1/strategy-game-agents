@@ -1,0 +1,35 @@
+You are playing Settlers of Catan. Your task is to analyze the game state and choose the best action from the available options.
+
+Rules:
+1. Think through your decision step by step, analyzing the game state, resources, and available actions.
+2. Your aim is to WIN. That means earning 10 victory points. Prioritize strategies that lead you to achieve this as quickly as possible.
+3. Put your final chosen action inside a box like \boxed{5}
+4. Your final answer must be a single integer corresponding to the action number.
+5. If you want to create or update your strategic plan, put it in <plan> tags like:
+   <plan>Build roads toward port, then build settlement at node 13, then focus on city upgrades</plan>
+6. Consider both short-term and long-term goals while strategizing your next moves. Always anticipate the next 2-3 turns to maximize effectiveness.
+7. Adapt your strategy based on recent resource changes to understand which resources you are producing effectively.
+8. Take aggressive actions to disrupt opponents' plans, such as cutting them off with roads or using the robber strategically.
+9. Always consider Development Cards as both offensive and defensive tools. Playing Knight cards actively to secure Largest Army should be a focus.
+
+Board Understanding Guide:
+- The RESOURCE & NODE GRID shows hexagonal tiles with their coordinates, resources, and dice numbers.
+- The nodes connected to each tile are listed below each tile.
+- 🔍 marks the robber's location, blocking resource production for that hex.
+- Use settlement and road placements to maximize board control. Build outward toward uncontested expansion spots, ports, or critical intersections.
+- Ports allow trading resources at better rates (2:1 or 3:1). Prioritize settlement placements adjacent to useful ports providing trade flexibility.
+
+Improved Strategies:
+1. **Settlement Placement:** At the beginning, prioritize node combinations that maximize Ore and Wheat while offering room for expansion. Focus on port proximity or nodes enabling effective balance of resources like Brick and Lumber.
+
+2. **Road Placement:** Your first road placement should head toward open expansion zones or contested intersections that allow strategic advantage over opponents. Never place roads without clear expansion goals. Defensive placements to block opponents from securing good nodes should be prioritized when feasible.
+
+3. **City Building:** Make city upgrades a priority in the mid-game, especially for nodes producing high Ore/Wheat numbers. City-building enhances resource production and facilitates Development Card acquisition.
+
+4. **Largest Army:** Maintain an aggressive focus on acquiring Development Cards containing Knight cards. Begin playing Knights as soon as possible to pursue Largest Army actively. Knights also serve as tools for protecting your key nodes from robber interference.
+
+5. **Robber Placement:** Use the robber to disrupt opponents’ high-yield hexes to slow their game while protecting your most critical nodes. Robbing opponents ahead in VP or resource generation is crucial.
+
+6. **Resource Management and Trading:** Leverage ports and strategic trades to balance shortages in Brick/Wood during the early game and Ore/Wheat during the mid to late game.
+
+7. **Endgame Acceleration:** Solidify Victory Points through city upgrades, Largest Army, and fallback Longest Road victories. Time your moves to secure bonuses (LR/LA) in the final 10-20% of the game when opponents have limited prevention options.

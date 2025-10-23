@@ -1,0 +1,255 @@
+represented as:  
+```python
+Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.ROLL: 'ROLL'>, value=None)
+```  
+
+Rolling the dice will allow resource generation for yourself and possibly other players, depending on settlements on hexes with the rolled numbers. After rolling, additional actions (such as building, trading, or playing development cards) will become available, which can help you strategize towards maximizing Victory Points (VP). 
+
+Let me know if additional actions appear, and I can continue assisting based on the updated game state!
+LLM Response: Based on the actions available and prioritizing maximizing Victory Points (VP) and strategic advancement, the best action to take here would be to:
+
+**Action:** `BUY_DEVELOPMENT_CARD`
+
+### Why?
+- **Buying a Development Card** can increase VP directly (e.g., if you draw a Victory Point card) or indirectly by gaining resources with Monopoly, protection with Knight cards, or utility with Road Building or Year of Plenty.
+- Development Cards provide flexibility and unpredictability, giving you leverage over opponents.
+- Given there are no building options (e.g., settlement or city construction), buying a Development Card is the most proactive action to develop your position and VP potential.
+
+### Why not `END_TURN`?
+- Ending your turn is a neutral choice, effectively postponing action. Unless resources or opponents prevent meaningful progress, it's usually better to spend resources toward VP or strategic development.
+
+Take the action: **BUY_DEVELOPMENT_CARD**!
+LLM response ambiguous or invalid. Defaulting to first action.
+LLM Response: Based on the given game state, the only available action is:
+
+`Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.ROLL: 'ROLL'>, value=None)`
+
+Strategically, rolling the dice is the next necessary step in the game because it is mandatory to advance the turn before moving onto other more impactful decisions. Rolling the dice triggers resource production for all players based on their settlements and cities, potentially granting the Blue player resources critical for future actions like building settlements, cities, roads, or purchasing development cards.
+
+**Best Action:**
+`Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.ROLL: 'ROLL'>, value=None)`
+
+Let’s roll the dice and proceed.
+LLM Response: Based on the two options available, here's the breakdown:
+
+1. **End Turn**: This action ends your turn without taking any further action. This can sometimes be the optimal choice if there are no resource-based moves or actions to improve your situation.
+
+2. **Buy a Development Card**: Buying a development card typically costs 1 sheep, 1 wheat, and 1 ore. Development cards often give you access to potential Victory Points (e.g., Victory Point cards), resource advantages (e.g., Year of Plenty, Road Building), or other strategic benefits (e.g., Knight cards for the Largest Army bonus).
+
+### Recommendation: **Buy a Development Card**
+
+If you have the resources to purchase the development card, this is likely the better strategic move for maximizing your Victory Points and strategic options. 
+
+- Development cards often contribute directly to Victory Points or improve your board position, offering more ways to exert control.
+- Even if you don't immediately gain a Victory Point card, a Knight card could help you toward the Largest Army VP bonuses, or utility cards can improve your resource situation.
+
+After buying the development card, reassess the board state to determine your long-term strategy before concluding your turn.
+
+___
+If, however, this wasn’t feasible resources-consumption crossed.
+LLM response ambiguous or invalid. Defaulting to first action.
+LLM Response: Based on the current game state you’ve provided, it seems that the only available action is:
+
+- **Action(color=<Color.BLUE>, action_type=<ActionType.ROLL>, value=None)**
+
+In Catan games, the **ROLL** action is typically required at the beginning of a turn to determine resource production based on the dice roll result and the placement of settlements and cities. Since this action is mandatory in most cases to progress the game, it is likely the best (and possibly the only) action you can take right now.
+
+Strategic considerations:
+- Rolling the dice starts the resource collection phase, which is essential for advancing your position in the game (e.g., gaining resources to build settlements, roads, cities, or develop cards).
+- Once you roll, assess the resources you receive and think ahead about how you can use them to achieve your goals (e.g., expanding your settlement network, upgrading settlements to cities, or achieving the Longest Road or Largest Army bonus for additional VP).
+
+**Recommendation: Take the action to ROLL**. Once the dice are rolled, re-evaluate the game state to determine your next strategic move.
+LLM response ambiguous or invalid. Defaulting to first action.
+LLM Response: To decide the best action in this Catanatron game scenario, we need to analyze the available actions based on maximizing Victory Points (VP) and achieving strategic goals. Key factors include:
+
+1. **Targeting Opponents:** Moving the robber to hexes that affect the leading opponent (e.g., someone with the highest VP) or those holding valuable resources can weaken their position.
+2. **Maximizing Impact:** Selecting a hex that blocks productive resource tiles, such as Wheat, Brick, or Ore, since these resources are crucial for building settlements, cities, and gaining development cards.
+3. **Extracting Resources:** Actions that involve stealing from an opponent (if <Color.RED: 'RED'> is a strong competitor) are highly favorable because they provide additional resources.
+
+Analyzing the actions:
+- Actions targeting <Color.RED: 'RED'> are opportunities to weaken them and potentially steal resources. Focus on these action values:
+  - `value=((1, -1, 0), <Color.RED: 'RED'>, None)`
+  - `value=((0, -1, 1), <Color.RED: 'RED'>, None)`
+  - `value=((-1, 0, 1), <Color.RED: 'RED'>, None)`
+  - ... (other similar actions)
+
+Strategic Moves:
+- If <Color.RED: 'RED'> is the leading opponent, blocking productive hexes they rely on is ideal.
+- Additionally, stealing resources from them provides an extra edge.
+
+**Best Action:**
+Without the context of board layout or resource importance, the most generally beneficial action is one that targets <Color.RED: 'RED'> and steals their resources. Therefore:
+
+`Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.MOVE_ROBBER: 'MOVE_ROBBER'>, value=((1, -1, 0), <Color.RED: 'RED'>, None))`
+
+This action blocks a hex and steals from <Color.RED: 'RED'>, potentially weakening their position while strengthening yours.
+LLM Response: To choose the best action in the game of Catan, we want to maximize Victory Points while achieving strategic goals such as expanding road networks, connecting settlements, blocking opponents, and securing good resource access.
+
+Since the game state is not fully detailed here—e.g., the current board setup, existing structures, and specific strategic aspects—I'll analyze the provided road-building options based on general strategic guidelines.
+
+### Criteria for Choosing Roads:
+1. **Expand your network**: Building roads should move you toward expanding settlements or connecting an existing settlement to prime spots for future development.
+2. **Block opponents**: Roads might block an opponent's expansion toward resourceful areas.
+3. **Create a Longest Road opportunity**: If Longest Road is a realistic goal, aim to extend your road network in a continuous and strategic way.
+4. **Future settlement planning**: Look for good settlement spots at the intersection of strong resource tiles (high-probability numbers and variety of resources).
+
+### Analysis of Options:
+Here are the available roads and considerations:
+1. **(19, 20)** - Building a road here may indicate expansion toward a specific area or position on the board. Without more context, it's unclear if this helps strategic settlement goals.
+2. **(2, 3)** - This road could be expanding toward a useful area. If (2, 3) opens up opportunities for a new settlement on a triple-resource junction or port, it could be valuable.
+3. **(2, 9)** - Like the above, this may provide access to resources or block an opponent. The value depends on what settlement opportunities or advantage this creates.
+4. **(0, 5)** - This option might secure another area for settlement expansion or block an opponent in the process.
+5. **(20, 22)** - Extending here could help with Longest Road or settlement goals. This depends on current board connectivity.
+6. **(1, 6)** - Similar to the others, this might extend toward expansion or settlement.
+
+### Recommended Action:
+Without a complete game state, the **best action** would be to build a road that significantly improves your ability to expand settlements or achieve Longest Road. Based on general principles, extend toward useful intersections or block opponents from critical spots.
+
+Assuming we need to prioritize expansion for settlements, I recommend:  
+**Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(2, 3))**
+
+If (2, 3) opens up a strong settlement position or blocks an opponent effectively, it aligns well with maximizing VP and achieving strategic goals.
+
+If additional game state information is available (e.g., known player locations, resource tiles, or existing roads), then the recommendation could change. Let me know if you have more details!
+LLM Response: Given the current game state in which the only available action is:
+
+```
+Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None)
+```
+
+The best and only possible move is to **end your turn**.
+
+This action ensures that gameplay continues and passes control to the next player. Since no other actions are presented, there is no additional decision-making to optimize Victory Points (VP) or achieve other strategic goals at this moment.
+
+Action to take:
+```
+Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None)
+```
+LLM Response: Based on the provided information, the best action is:
+
+**Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.ROLL: 'ROLL'>, value=None)**
+
+**Reasoning:**
+- Rolling the dice is necessary to generate resources, which are the foundation for building settlements, roads, cities, and development cards—important for maximizing Victory Points (VP).
+- It is the only available action, so rolling the dice continues the progression in the game and aligns with the strategic goals of resource optimization and subsequent VP generation.
+
+Let me know if you have specific strategy questions or want guidance after rolling the dice!
+LLM Response: Based on the available actions you provided, the only actionable choice is:
+
+**End Turn**  
+Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None)
+
+Since there are no other options presented, the best action is to end the turn and allow the game to progress. By ending your turn, you are following the flow of the game and enabling yourself to reevaluate strategy and options when new moves become available in subsequent turns.
+
+Let me know if more information or updated actions become available, and I can assist with further strategic guidance!
+LLM Response: The game state provided doesn't reveal the specific details of the board, your resources, or strategic position, which are crucial to making the optimal decision. However, based on the available action:
+
+### Action to choose:
+**`Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.ROLL: 'ROLL'>, value=None)`**
+
+### Explanation:
+Since the only option available is to roll the dice, this is the action you must take. Rolling the dice will distribute resources to players based on the number rolled and the placements on the board. After rolling, you'll have a better understanding of the resources available to you and the next possible actions.
+
+Taking this action aligns with advancing the game state toward further strategic opportunities to maximize Victory Points (VP).
+LLM Response: To make the best decision, let's analyze the options:
+
+1. **END_TURN**: This action simply ends the turn without accomplishing anything further. It's usually a fallback if no other actions contribute toward progress.
+
+2. **MARITIME_TRADE Actions**: Trading 4 WHEAT for one resource (SHEEP, WOOD, BRICK, or ORE) has strategic value if the traded resource helps advance Victory Points (VP), such as building roads, settlements, cities, or purchasing development cards. 
+
+### Considerations:
+- **SHEEP** is typically required for building settlements and some development cards.
+- **WOOD and BRICK** are essential for building roads or settlements.
+- **ORE** is vital for upgrading settlements into cities and purchasing development cards (which offer VP and useful benefits like Knights and Progress Cards).
+
+Without a detailed view of your current resources, it's hard to give absolute advice. However, the relative strategic values suggest the following priority:
+
+1. If you can trade for **ORE**, this is the best option for upgrading to a city or purchasing a development card, both of which directly increase VP.
+2. If you are close to building a **road** or **settlement**, prioritize either **WOOD** or **BRICK** to achieve this goal.
+3. If neither scenario applies, consider **SHEEP**, as it can help with settlements or development cards.
+
+Given that ORE is pivotal in almost all advanced gameplay scenarios, my recommendation would be:
+
+### Recommended Action:
+**Maritime Trade for ORE**  
+`Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.MARITIME_TRADE: 'MARITIME_TRADE'>, value=('WHEAT', 'WHEAT', 'WHEAT', 'WHEAT', 'ORE'))`
+
+This maximizes your potential to increase VP through cities or development cards.
+LLM Response: Given the current game state and the list of possible actions (specifically just one action, which is `END_TURN`), we don't have further moves available in this turn. Therefore, the best and only action is to proceed with:
+
+**Action**: `END_TURN`
+
+This will hand over the turn to the next player. Make sure to evaluate your strategy on the upcoming turns based on resource production, trade opportunities, development cards, and settlement or road placement to maximize Victory Points.
+LLM response ambiguous or invalid. Defaulting to first action.
+LLM Response: Based on the provided game state, the only action available is:
+
+**Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.ROLL: 'ROLL'>, value=None)**
+
+Rolling the dice is a mandatory step in Catan and serves to generate resources for yourself and other players depending on the placement of settlements and cities. Since rolling the dice is the only option, you should take this action.
+
+### Best Action:
+**Take the ROLL action:**
+```python
+Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.ROLL: 'ROLL'>, value=None)
+```
+
+### Strategic Considerations After Rolling:
+1. **Resource Distribution**: Identify which resources were generated and determine how they align with your current strategic goals (e.g., building settlements, roads, cities, or purchasing Development Cards).
+2. **Resource Trading**: After the roll and distribution, consider trading with opponents or using ports if needed to achieve specific objectives.
+3. **Next Steps**: Look ahead to maximize your Victory Points (VP). This could include expanding settlements, upgrading to cities, securing Longest Road, or purchasing Development Cards for potential hidden VPs (e.g., Victory Point cards).
+
+Once the dice are rolled, let me know the updated game state to evaluate your next best actions! 🎲
+LLM Response: To determine the best action among the provided options, let's analyze the potential benefits for maximizing Victory Points (VP) and achieving strategic goals.
+
+### Explanation:
+1. **END_TURN**: Ending the turn immediately is typically a low-opportunity action unless there are no other viable actions to make progress. Given that there are options available for maritime trade, ending the turn wouldn't advance your position.
+
+2. **MARITIME_TRADE (WOOD for another resource)**:
+   - You seem to have an abundance of **WOOD** (4 pieces can be traded). Trading it for a different resource has the potential to help you:
+     - Build settlements (requires BRICK, WHEAT, WOOD, SHEEP).
+     - Upgrade to cities (requires WHEAT, ORE).
+     - Build roads (requires WOOD, BRICK).
+     - Buy development cards (requires WHEAT, SHEEP, ORE).
+   
+   Thus, trading WOOD for a resource you're lacking is a strong strategic move. To choose the best trade, consider the game's strategic goals:
+   - **SHEEP, BRICK, WHEAT, ORE** are all candidates, but selecting the right one depends on your current goals and shortages.
+
+3. **Strategic Goals to Maximize VP**:
+   - If you're aiming to expand your settlements, prioritize resources like BRICK (for roads/settlements) or WHEAT (for settlements and cities).
+   - If you're close to upgrading a settlement to a city, prioritize WHEAT or ORE.
+   - If you're pursuing development cards, prioritize SHEEP and ORE.
+
+### Recommendation:
+Since the exact details of your current resource inventory and goals are not provided, the **best general choice** would be to:
+   - Trade 4 WOOD for **BRICK** if you're planning to expand (build roads/settlements).
+   - Trade 4 WOOD for **WHEAT** if you're aiming for a city or need it for settlements.
+
+If you're unsure of your goals or need a balanced choice, **4 WOOD for WHEAT** is often a versatile and strategic option.
+
+Lastly, **DO NOT END TURN** without taking action, as it's better to optimize your resource conversion while you have the opportunity.
+LLM response ambiguous or invalid. Defaulting to first action.
+Playing 3 games...                                           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:00
+AlphaBetaPlayer:RED(depth=2,value_fn=base_fn,prunning=False) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100%        
+FooPlayer:BLUE                                                                                          0%        
+                    Last 3 Games                    
+    ╷          ╷       ╷        ╷         ╷         
+  # │ SEATING  │ TURNS │ RED VP │ BLUE VP │ WINNER  
+╶───┼──────────┼───────┼────────┼─────────┼────────╴
+  1 │ RED,BLUE │   102 │     10 │       5 │ RED     
+  2 │ BLUE,RED │    75 │     10 │       3 │ RED     
+  3 │ RED,BLUE │    62 │     10 │       2 │ RED     
+    ╵          ╵       ╵        ╵         ╵         
+                                                                Player Summary                                                                
+                                                               ╷      ╷        ╷             ╷            ╷          ╷          ╷             
+                                                               │ WINS │ AVG VP │ AVG SETTLES │ AVG CITIES │ AVG ROAD │ AVG ARMY │ AVG DEV VP  
+╶──────────────────────────────────────────────────────────────┼──────┼────────┼─────────────┼────────────┼──────────┼──────────┼────────────╴
+  AlphaBetaPlayer:RED(depth=2,value_fn=base_fn,prunning=False) │    3 │  10.00 │        3.33 │       2.33 │     1.00 │     0.00 │       0.00  
+  FooPlayer:BLUE                                               │    0 │   3.33 │        2.33 │       0.33 │     0.00 │     0.00 │       0.33  
+                                                               ╵      ╵        ╵             ╵            ╵          ╵          ╵             
+              Game Summary              
+            ╷           ╷               
+  AVG TICKS │ AVG TURNS │ AVG DURATION  
+╶───────────┼───────────┼──────────────╴
+     221.00 │     79.67 │ 366.915 secs  
+            ╵           ╵               
+results_file_path:/share/edc/home/nbelle/projects/strategy-game-agents/run_results/game_results_20250522_114934.json

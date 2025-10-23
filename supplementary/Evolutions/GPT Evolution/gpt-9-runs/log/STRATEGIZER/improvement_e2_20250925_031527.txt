@@ -1,0 +1,898 @@
+--- Input for STRATEGIZER at 20250925_031527 ---
+================================ Human Message =================================
+
+- META THOUGHTS:
+  - Analyzer confirmed the root cause: foo_player.py always returns playable_actions[0], i.e., no decision logic or lookahead. This explains 0 wins and 2 VP average.
+  - A principled next step is a 1-ply deterministic lookahead: for each candidate action, copy the game, apply the action deterministically, then evaluate the resulting state with adapters.base_fn for our color and pick the action with highest value. This uses adapters.py functions (copy_game, execute_deterministic, base_fn) rather than ad-hoc heuristics.
+  - Risks/gaps: exact adapters API signatures are not shown; assume names above. If the action set is large, evaluate a capped subset or representative action per action-type to keep runtime reasonable. If no improvement after several evolutions, escalate to deeper search (2-ply) or opponent-modeling/expectimax.
+  - Plan: ask STRATEGIZER to produce a concrete, implementable algorithm (pseudocode), with pruning/sampling rules, tie-breaking, fallbacks and expected performance metrics so CODER can implement it.
+
+- META GOAL:
+  - Obtain a concrete, adapter-based strategy (1-ply deterministic lookahead) that replaces the current "choose-first" policy. The strategy must be algorithmic (search/evaluation), not simple weight heuristics, and produce robust code instructions for CODER to implement and test.
+
+- CHOSEN AGENT: STRATEGIZER
+
+- AGENT OBJECTIVE:
+  Produce a focused, actionable strategy to fix the root flaw (always choosing the first action). Requirements and constraints:
+  1. Core idea: implement a 1-ply deterministic lookahead that uses only functions from adapters.py to evaluate candidate actions. Do NOT propose simple static heuristics.
+  2. Adapters to use (assume these exist and specify how to call them):
+     - copy_game(game): returns an independent deep copy of the current game state.
+     - execute_deterministic(game_copy, action): applies the action to game_copy deterministically and returns the modified game_copy (or modifies in-place). If the action is non-deterministic in the real engine, this helper should apply a deterministic resolution.
+     - base_fn(game_copy, color): returns a numeric evaluation (higher is better) for the player color in the given game state.
+     - If you think additional adapters are needed (e.g., legal_actions(game)), specify them but prefer the three above.
+  3. Algorithm specification: provide clear pseudocode that:
+     - Accepts (game, playable_actions, my_color)
+     - Prunes or samples playable_actions if their count > MAX_ACTIONS_TO_EVAL (recommendation: default MAX=30). Propose a principled pruning/sampling approach (e.g., group by action type and sample top-K from each group, or randomly sample with seeding for reproducibility). Explain why you chose this approach.
+     - For each candidate action: copy game, execute_deterministic, evaluate with base_fn for my_color.
+     - Select the action with highest evaluation. Provide tie-breaker rules (e.g., prefer action that increases visible VP, else prefer action with higher immediate resource delta—only if needed as tie-breaker; keep tie-break logic simple and algorithmic).
+     - Include safe fallbacks: if evaluation fails or returns None/exception, fall back to selecting a random legal action (but still deterministic if possible) or the first playable action.
+  4. Performance safeguards:
+     - Provide complexity estimate (approx time per action eval) and recommendations for MAX_ACTIONS_TO_EVAL to keep run-time similar to current tests.
+     - Suggest logging hooks to detect if most chosen actions are still the default (for debugging).
+  5. Edge cases:
+     - If playable_actions contains only passive actions (e.g., "end_turn"), then return that as usual.
+     - If adapters.execute_deterministic is not available or fails for a particular action type, skip that action (with logging).
+  6. Testing and success criteria:
+     - Recommend running N=30 games vs the same AlphaBeta opponent and compare:
+       - Wins (should increase from 0),
+       - AVG VP (target > 3–4 initially),
+       - AVG cities/roads should be > 0.
+     - If no measurable improvement after this change, propose next steps (2-ply with limited opponent model or Monte Carlo rollouts).
+  7. Deliverables for CODER:
+     - Exact pseudocode for the decide(game, playable_actions) function to drop into foo_player.py.
+     - Concrete parameter defaults (MAX_ACTIONS_TO_EVAL, sampling strategy, tie-break rules).
+     - Any recommended helper function names and signatures to add inside foo_player.py.
+
+Be concise and precise in the plan—CODER must be able to implement this directly against adapters.py. Avoid recommending handcrafted score weights; rely on base_fn for evaluation.
+================================== Ai Message ==================================
+
+STRATEGIZER
+**Proposed Strategy: 1-Ply Deterministic Lookahead with Adapter-Based Evaluation**
+
+### **Core Idea**
+Replace the current "choose-first" policy with a **1-ply deterministic lookahead** that:
+1. Copies the game state for each candidate action.
+2. Executes the action deterministically.
+3. Evaluates the resulting state using `adapters.base_fn`.
+4. Selects the action with the highest evaluation score.
+
+---
+
+### **Algorithm Specification**
+#### **Pseudocode for `decide(game, playable_actions)`**
+```python
+import random
+from .adapters import copy_game, execute_deterministic, base_fn
+
+def decide(self, game, playable_actions):
+    my_color = self.color
+    MAX_ACTIONS_TO_EVAL = 30  # Safeguard for runtime
+
+    # Prune or sample actions if too many
+    if len(playable_actions) > MAX_ACTIONS_TO_EVAL:
+        # Group by action type and sample top-2 from each group
+        action_types = {}
+        for action in playable_actions:
+            action_types.setdefault(action.action_type, []).append(action)
+        sampled_actions = []
+        for action_type, actions in action_types.items():
+            sampled_actions.extend(random.sample(actions, min(2, len(actions))))
+    else:
+        sampled_actions = playable_actions
+
+    # Fallback for empty sampled_actions (edge case)
+    if not sampled_actions:
+        return playable_actions[0]
+
+    # Evaluate each action
+    best_action = None
+    best_score = -float('inf')
+    for action in sampled_actions:
+        try:
+            game_copy = copy_game(game)
+            executed_games = execute_deterministic(game_copy, action)
+            if not executed_games:
+                continue  # Skip if execution fails
+            new_game, _ = executed_games[0]  # Take the deterministic outcome
+            score = base_fn()(new_game, my_color)
+            if score > best_score:
+                best_score = score
+                best_action = action
+        except Exception as e:
+            print(f"Evaluation failed for action {action}: {e}")
+            continue
+
+    # Tie-breaker: prefer actions that increase visible VP or resources
+    if best_action is None:
+        best_action = random.choice(sampled_actions)
+
+    return best_action
+```
+
+---
+
+### **Key Design Choices**
+1. **Pruning/Sampling**:
+   - Group actions by `action_type` and sample **top-2 from each group** to ensure diversity while limiting runtime.
+   - If no improvement is seen, increase `MAX_ACTIONS_TO_EVAL` or switch to random sampling.
+
+2. **Tie-Breaking**:
+   - If scores are tied, randomly select among top-scoring actions (deterministic if seeded).
+
+3. **Fallbacks**:
+   - If evaluation fails for all actions, return a random legal action.
+   - If `playable_actions` is empty or contains only passive actions (e.g., "end_turn"), return the first action.
+
+4. **Performance Safeguards**:
+   - **Complexity**: ~O(N) where N = min(MAX_ACTIONS_TO_EVAL, len(playable_actions)).
+   - **Runtime**: Target <1s per decision (adjust `MAX_ACTIONS_TO_EVAL` if needed).
+   - **Logging**: Add debug logs to track chosen actions and scores.
+
+---
+
+### **Expected Improvements**
+- **Wins**: Increase from 0 to >5% in 30 games.
+- **Avg VP**: Rise from 2.0 to 3–4.
+- **Cities/Roads**: Non-zero values in game summaries.
+
+---
+
+### **Next Steps if No Improvement**
+1. **2-Ply Lookahead**: Evaluate opponent responses using `expand_spectrum`.
+2. **Monte Carlo Rollouts**: Use `execute_spectrum` for probabilistic outcomes.
+3. **Opponent Modeling**: Incorporate `AlphaBetaPlayer` for deeper search.
+
+---
+### **Deliverables for CODER**
+1. Replace `decide` in `foo_player.py` with the pseudocode above.
+2. Add `MAX_ACTIONS_TO_EVAL = 30` as a class variable.
+3. Test with 30 games and report metrics.
+
+END STRATEGIZER
+================================ Human Message =================================
+
+This is the current performance history
+
+{
+  "Evolution 0": {
+    "wins": 0,
+    "avg_score": 2.0,
+    "avg_turns": 72.16666666666667,
+    "full_game_log_path": "game_20250925_030949_fg/game_output.txt",
+    "json_game_results_path": "game_20250925_030949_fg/game_20250925_030949_fg.json",
+    "cur_foo_player_path": "game_20250925_030949_fg/foo_player.py",
+    "cli_run_id": "game_20250925_030949_fg",
+    "timestamp": "2025-09-25 03:10:25"
+  },
+  "Evolution 1": {
+    "wins": 14,
+    "avg_score": 7.833333333333333,
+    "avg_turns": 73.43333333333334,
+    "full_game_log_path": "game_20250925_031330_fg/game_output.txt",
+    "json_game_results_path": "game_20250925_031330_fg/game_20250925_031330_fg.json",
+    "cur_foo_player_path": "game_20250925_031330_fg/foo_player.py",
+    "cli_run_id": "game_20250925_031330_fg",
+    "timestamp": "2025-09-25 03:14:22"
+  }
+}
+================================ Human Message =================================
+
+This is the current foo_player.py file
+
+import random
+import traceback
+from typing import Iterable, List, Optional
+
+# Must import adapters via the provided thin wrapper. Do NOT import catanatron directly.
+from .adapters import (
+    Game,
+    Player,
+    Color,
+    copy_game,
+    execute_deterministic,
+    base_fn,
+)
+
+
+class FooPlayer(Player):
+    """A simple player that uses a 1-ply deterministic lookahead via adapters.
+
+    Strategy summary:
+    - Sample/prune the playable actions if there are too many (to bound runtime).
+    - For each candidate action:
+        - Make a deep copy of the game state (copy_game).
+        - Execute the action deterministically (execute_deterministic).
+        - Evaluate the resulting state with the base value function (base_fn()).
+    - Choose the action with the highest evaluation score. Tie-break deterministically.
+
+    Notes:
+    - All interactions with the engine are done through the adapters surface.
+    - Debug printing is available by setting self.debug = True on the instance.
+    """
+
+    # Tunable class defaults
+    MAX_ACTIONS_TO_EVAL: int = 30
+    SAMPLE_PER_ACTION_TYPE: int = 2
+    RNG_SEED: int = 0
+
+    def __init__(self, name: Optional[str] = None):
+        # Initialize as BLUE by default (preserve original behavior)
+        super().__init__(Color.BLUE, name)
+        # Toggle to True to get per-turn diagnostic prints (keeps test runs quieter by default)
+        self.debug: bool = False
+        # Pre-create the value function from adapters.base_fn factory.
+        # base_fn returns a callable: (game, color) -> float.
+        try:
+            self._value_fn = base_fn()
+        except Exception:
+            # If the factory has a different signature, lazily resolve in evaluation.
+            self._value_fn = None
+
+    # ------------------ Helper methods ------------------
+    def _action_type_key(self, action) -> str:
+        """Return a stable grouping key for an action.
+
+        Prefer action.action_type (present on Action namedtuples), then fall back to
+        class name or string representation. This keeps grouping robust across action
+        shapes.
+        """
+        # Common attribute on actions in this environment
+        k = getattr(action, "action_type", None)
+        if k is not None:
+            return str(k)
+        # Try other possible names
+        for attr in ("type", "name"):
+            k = getattr(action, attr, None)
+            if k is not None:
+                return str(k)
+        # Fall back to class name or string form
+        try:
+            return action.__class__.__name__
+        except Exception:
+            return str(action)
+
+    def _sample_actions(self, playable_actions: Iterable) -> List:
+        """Return a pruned list of candidate actions to evaluate.
+
+        - If the number of actions is below MAX_ACTIONS_TO_EVAL, return them all.
+        - Otherwise group actions by type and take up to SAMPLE_PER_ACTION_TYPE from each
+          group (deterministic sampling using a seeded RNG). If still under the cap,
+          fill the remainder deterministically.
+        """
+        actions = list(playable_actions)
+        n = len(actions)
+        if n <= self.MAX_ACTIONS_TO_EVAL:
+            return actions
+
+        # Group actions
+        groups = {}
+        for a in actions:
+            key = self._action_type_key(a)
+            groups.setdefault(key, []).append(a)
+
+        # Deterministic RNG seeded with a combination of RNG_SEED and player's color
+        color_seed = sum(ord(c) for c in str(self.color))
+        rng = random.Random(self.RNG_SEED + color_seed)
+
+        sampled: List = []
+        # Iterate through groups in a stable order to keep behavior deterministic
+        for key in sorted(groups.keys()):
+            group = list(groups[key])
+            rng.shuffle(group)
+            take = min(self.SAMPLE_PER_ACTION_TYPE, len(group))
+            sampled.extend(group[:take])
+            if len(sampled) >= self.MAX_ACTIONS_TO_EVAL:
+                break
+
+        # If we haven't reached the cap, append remaining actions deterministically
+        if len(sampled) < self.MAX_ACTIONS_TO_EVAL:
+            for a in actions:
+                if a not in sampled:
+                    sampled.append(a)
+                    if len(sampled) >= self.MAX_ACTIONS_TO_EVAL:
+                        break
+
+        if self.debug:
+            print(f"_sample_actions: pruned {n} -> {len(sampled)} actions")
+        return sampled
+
+    def _evaluate_action(self, game: Game, action, my_color: Color) -> Optional[float]:
+        """Evaluate a single action by applying it to a copied game state and scoring it.
+
+        Returns:
+            float score if successful, otherwise None.
+        """
+        # 1) copy the game state
+        try:
+            game_copy = copy_game(game)
+        except Exception as e:
+            if self.debug:
+                print("copy_game failed:", e)
+                traceback.print_exc()
+            return None
+
+        # 2) execute the action deterministically; adapters.execute_deterministic returns
+        #    a list of (game_copy, probability) tuples according to adapters.py docstring.
+        try:
+            outcomes = execute_deterministic(game_copy, action)
+        except Exception as e:
+            if self.debug:
+                print("execute_deterministic failed for action:", repr(action), "error:", e)
+                traceback.print_exc()
+            return None
+
+        # Normalize to a single resulting game state deterministically: pick the first outcome.
+        try:
+            if not outcomes:
+                # Nothing returned => treat as failure
+                if self.debug:
+                    print("execute_deterministic returned empty outcomes for", repr(action))
+                return None
+            # outcomes is expected to be List[Tuple[Game, float]]
+            first = outcomes[0]
+            # If tuple-like, take first element
+            if isinstance(first, (list, tuple)) and len(first) >= 1:
+                resultant_game = first[0]
+            else:
+                # If the adapter returned a Game directly, use it
+                resultant_game = first
+        except Exception:
+            # As a last resort, assume game_copy was mutated in place
+            resultant_game = game_copy
+
+        # 3) evaluate with the base value function
+        try:
+            if self._value_fn is None:
+                # Attempt to create the value function on-demand
+                try:
+                    self._value_fn = base_fn()
+                except Exception as e:
+                    if self.debug:
+                        print("base_fn() factory failed:", e)
+                        traceback.print_exc()
+                    return None
+
+            score = self._value_fn(resultant_game, my_color)
+        except TypeError:
+            # base_fn might have a different calling convention; catch and log
+            if self.debug:
+                print("base_fn evaluation TypeError for action", repr(action))
+                traceback.print_exc()
+            return None
+        except Exception as e:
+            if self.debug:
+                print("base_fn evaluation failed for action", repr(action), "error:", e)
+                traceback.print_exc()
+            return None
+
+        # Ensure numeric result
+        try:
+            return float(score)
+        except Exception:
+            if self.debug:
+                print("Non-numeric score returned for action", repr(action), "score:", score)
+            return None
+
+    # ------------------ Decision method (public) ------------------
+    def decide(self, game: Game, playable_actions: Iterable):
+        """Choose an action from playable_actions using a 1-ply lookahead.
+
+        This method follows the adapter-based strategy specified in META:
+        - Sample/prune actions to keep runtime bounded.
+        - Evaluate each candidate deterministically.
+        - Select the highest-scoring action with a deterministic tie-break.
+        """
+        # Convert to list for stable indexing and reporting
+        actions = list(playable_actions)
+
+        # Defensive: no actions
+        if not actions:
+            if self.debug:
+                print("decide: no playable_actions provided")
+            return None
+
+        # Quick-win: only one legal action
+        if len(actions) == 1:
+            if self.debug:
+                print("decide: single playable action, returning it")
+            return actions[0]
+
+        my_color = self.color
+
+        # Sample/prune to a candidate set
+        candidates = self._sample_actions(actions)
+
+        if self.debug:
+            print(f"decide: evaluating {len(candidates)} candidate(s) out of {len(actions)} playable action(s)")
+
+        best_action = None
+        best_score = -float("inf")
+        best_tie_repr = None
+
+        # Evaluate candidates
+        evaluated = 0
+        for action in candidates:
+            score = self._evaluate_action(game, action, my_color)
+            evaluated += 1
+            if self.debug:
+                print(f"Evaluated action [{evaluated}/{len(candidates)}]: {repr(action)} -> {score}")
+
+            if score is None:
+                continue
+
+            tie_repr = repr(action)
+            # Deterministic tie-break: prefer numerically higher score; if equal, choose the
+            # action with lexicographically smaller repr(action) to keep behavior stable.
+            if (
+                best_action is None
+                or score > best_score
+                or (score == best_score and (best_tie_repr is None or tie_repr < best_tie_repr))
+            ):
+                best_action = action
+                best_score = score
+                best_tie_repr = tie_repr
+
+        # Fallbacks if evaluation failed for all candidates
+        if best_action is None:
+            if self.debug:
+                print("decide: no candidate produced a valid evaluation; falling back to first playable action")
+            # Preserve original deterministic behavior as a safe fallback
+            return actions[0]
+
+        if self.debug:
+            print("decide: chosen action:", repr(best_action), "score:", best_score)
+
+        return best_action
+
+================================ Human Message =================================
+
+This is the current adapters.py file
+
+"""Unified adapter for Catanatron agents.
+
+Expose a small, stable surface for multi-agent systems to:
+- Inspect game state
+- Enumerate legal actions
+- Execute hypothetical moves (with/without validation)
+- Expand chance outcomes (dice, dev cards, robber)
+- Use pruning helpers
+- Build/evaluate heuristics
+
+Everything here is a thin re-export or trivial wrapper from catanatron & friends.
+"""
+
+from typing import Callable, List, Optional, Tuple, Dict, Any
+
+# CORE RE-EXPORTS
+from catanatron.game import Game  # Game instance with .state, .copy(), .execute(action), .winning_color()
+from catanatron.models.player import Player, Color  # Player and Color types
+from catanatron.models.enums import Action, ActionType  # Action = namedtuple("Action", ["color", "action_type", "value"]) 
+
+# Player and debug node classes (re-exported so consumers can import them from adapters)
+from catanatron_experimental.machine_learning.players.minimax import (
+    AlphaBetaPlayer,  # Player that executes an AlphaBeta search with expected value calculation
+    SameTurnAlphaBetaPlayer,  # AlphaBeta constrained to the same turn
+    DebugStateNode,  # Node for debugging the AlphaBeta search tree
+    DebugActionNode,  # Node representing an action in the AlphaBeta search tree
+)
+from catanatron_experimental.machine_learning.players.value import (
+    ValueFunctionPlayer,  # Player using heuristic value functions
+    DEFAULT_WEIGHTS,  # Default weight set for value functions
+)
+
+# Underlying implementation imports (underscore aliases to avoid recursion)
+from catanatron_experimental.machine_learning.players.tree_search_utils import (
+    execute_deterministic as _execute_deterministic,
+    execute_spectrum as _execute_spectrum,
+    expand_spectrum as _expand_spectrum,
+    list_prunned_actions as _list_prunned_actions,  # spelling verified in source
+    prune_robber_actions as _prune_robber_actions,
+)
+from catanatron_experimental.machine_learning.players.minimax import render_debug_tree as _render_debug_tree
+
+from catanatron_experimental.machine_learning.players.value import (
+    base_fn as _base_fn,
+    contender_fn as _contender_fn,
+    value_production as _value_production,
+    get_value_fn as _get_value_fn,
+)
+
+# Public API
+__all__ = [
+    "Game",
+    "Player",
+    "Color",
+    "Action",
+    "ActionType",
+    "AlphaBetaPlayer",
+    "SameTurnAlphaBetaPlayer",
+    "ValueFunctionPlayer",
+    "DebugStateNode",
+    "DebugActionNode",
+    "copy_game",
+    "execute_deterministic",
+    "execute_spectrum",
+    "expand_spectrum",
+    "list_prunned_actions",
+    "prune_robber_actions",
+    "render_debug_tree",
+    "base_fn",
+    "contender_fn",
+    "value_production",
+    "get_value_fn",
+]
+
+# THIN CONVENIENCE WRAPPERS
+def copy_game(game: Game) -> Game:
+    '''Create a deep copy of the game state.'''
+    return game.copy()
+
+def execute_deterministic(game: Game, action: Action) -> List[Tuple[Game, float]]:
+    '''Execute a deterministic action and return the resulting game state with probability 1.'''
+    return _execute_deterministic(game, action)
+
+def execute_spectrum(game: Game, action: Action) -> List[Tuple[Game, float]]:
+    '''Return a list of (game_copy, probability) tuples for all possible outcomes of an action.'''
+    return _execute_spectrum(game, action)
+
+def expand_spectrum(game: Game, actions: List[Action]) -> Dict[Action, List[Tuple[Game, float]]]:
+    '''Expand a game state into all possible outcomes for a list of actions.'''
+    return _expand_spectrum(game, actions)
+
+def list_prunned_actions(game: Game) -> List[Action]:
+    '''Returns a pruned list of actions to reduce the search space.'''
+    return _list_prunned_actions(game)
+
+def prune_robber_actions(current_color: Color, game: Game, actions: List[Action]) -> List[Action]:
+    '''Prunes robber actions to keep only the most impactful ones.'''
+    return _prune_robber_actions(current_color, game, actions)
+
+def render_debug_tree(node: DebugStateNode) -> str:
+    '''Renders the AlphaBeta search tree using Graphviz.'''
+    return _render_debug_tree(node)
+
+# HEURISTIC BUILDERS
+def base_fn(params=DEFAULT_WEIGHTS) -> Callable[[Game, Color], float]:
+    '''Base value function factory for evaluating game states.'''
+    return _base_fn(params)
+
+def contender_fn(params) -> Callable[[Game, Color], float]:
+    '''Alternative value function factory with tuned weights.'''
+    return _contender_fn(params)
+
+def value_production(sample, player_name: str = "P0", include_variety: bool = True) -> float:
+    '''Compute the production value of a player's state.'''
+    return _value_production(sample, player_name, include_variety)
+
+def get_value_fn(name: str, params, value_function=None) -> Callable[[Game, Color], float]:
+    '''Factory that returns a value function by name and parameters.'''
+    return _get_value_fn(name, params, value_function)
+
+================================ Human Message =================================
+
+- META THOUGHTS:
+  - Analyzer shows clear progress: the 1-ply lookahead made FooPlayer competitive (14/30 wins, avg VP 7.83 vs 8.0). Remaining gap is small but systematic. Primary weaknesses: aggressive pruning (may cut critical actions), poor handling of robber/chance, and naive tie-breaks/lack of phase-awareness.
+  - Next evolution should keep the 1-ply core but refine sampling, add small expectimax for robber/chance actions, improve deterministic tie-breaking using actual VP deltas, and make sampling phase-aware (early expansion vs. late VP-grab).
+  - Plan: produce a focused, implementable strategy for CODER that (1) increases and adapts sampling budget, (2) prioritizes evaluating actions that change VP or are build/upgrade in late game, (3) for robber/chance actions compute an expected value via execute_spectrum/expand_spectrum when available, (4) use VP delta + base_fn as deterministic tie-breaker. If signatures for execute_spectrum/expand_spectrum differ, CODER should gracefully fall back to current 1-ply.
+
+- META GOAL:
+  - Provide CODER with a precise, adapter-driven strategy to (a) reduce pruning mistakes, (b) handle robber/chance via expected-value evaluation, and (c) adopt phase-aware sampling and robust deterministic tie-breaks — all without introducing handcrafted weight heuristics.
+
+- CHOSEN AGENT: STRATEGIZER
+
+- AGENT OBJECTIVE:
+Produce a precise, implementable strategy (pseudocode + parameter defaults) to refine the existing 1-ply lookahead. The implementation must rely on adapters functions (only) and avoid ad-hoc score heuristics. Deliver the following items so CODER can implement them directly:
+
+1) Adapter functions to use (specify usage patterns)
+   - copy_game(game): deep-copy current game state.
+   - execute_deterministic(game_copy, action): apply action deterministically; normalize return as a Game object (or list whose first entry contains the game).
+   - base_fn(game, color) OR base_fn()(game, color): value function returning numeric evaluation for color.
+   - execute_spectrum(game_copy, action) OR expand_spectrum(game_copy, action): (optional) returns a list of (game_outcome, probability) to compute expected value for chance-like actions (robber, dev-card draws). If unavailable, fall back to execute_deterministic.
+
+2) High-level algorithm summary
+   - Stage A: Candidate generation (sample/prune) with phase-awareness.
+   - Stage B: Fast 1-ply deterministic evaluation for all candidates using copy_game + execute_deterministic + base_fn to get score and VP delta.
+   - Stage C: For candidate actions that are chance/robber-like, compute expected value using execute_spectrum/expand_spectrum (small sample) and use that expected score in place of deterministic score.
+   - Stage D: Select best action by comparing (score, vp_delta, deterministic tie-break repr) with deterministic tie-breaking.
+
+3) Pseudocode (concise, exact; CODER should drop into foo_player.py)
+
+- New parameters (defaults)
+  - MAX_ACTIONS_TO_EVAL = 60
+  - SAMPLE_PER_ACTION_TYPE = 3
+  - TOP_K_DEEP = 6  # After 1-ply, do deeper expectimax/opp-model for top K only
+  - EARLY_TURN_THRESHOLD = 30  # consider this "early game"
+  - RNG_SEED = 0
+  - SPECTRUM_MAX_OUTCOMES = 8  # cap for execute_spectrum sampling
+
+- Helper predicates
+  - is_build_or_upgrade(action): detect build_settlement, build_city, build_road, upgrade actions via action_type or class name.
+  - is_robber_or_chance(action): detect robber placement, play_dev_card, draw_dev_card, etc.
+
+- sample_actions(playable_actions, game)
+  1. If len(playable_actions) <= MAX_ACTIONS_TO_EVAL: return all.
+  2. Group by _action_type_key(action) as before.
+  3. Determine phase:
+     - current_turn = game.current_turn or use game.tick
+     - early_game = (current_turn <= EARLY_TURN_THRESHOLD)
+  4. Sampling policy per group:
+     - If early_game: bias sample_count = min(SAMPLE_PER_ACTION_TYPE+1, len(group)) for groups where is_build_or_upgrade(group actions).
+     - If late_game (not early): bias sample_count = min(SAMPLE_PER_ACTION_TYPE+1, len(group)) for groups where action increases visible VP (e.g., build_city/build_settlement/collect_vp actions).
+     - Use deterministic RNG = random.Random(RNG_SEED + hash(self.color)) to shuffle group and pick sample_count.
+  5. If after group sampling total < MAX_ACTIONS_TO_EVAL, fill deterministically by iterating remaining actions.
+
+- evaluate_action(game, action)
+  1. Try copy_game(game) -> game_copy.
+  2. If is_robber_or_chance(action) AND adapters.execute_spectrum/expand_spectrum exists:
+     - Use spectrum = expand_spectrum(game_copy, action) OR execute_spectrum(game_copy, action)
+     - For each (outcome_game, prob) in spectrum (limit to SPECTRUM_MAX_OUTCOMES):
+         - score_i = base_fn(outcome_game, my_color)
+         - accumulate weighted_score += prob * score_i
+     - expected_score = weighted_score
+     - vp_delta = average visible VP gain across outcomes (or compute from original game)
+     - Return (expected_score, vp_delta)
+  3. Else (deterministic):
+     - res = execute_deterministic(game_copy, action)
+     - Normalize to new_game (take first outcome or fallback to mutated game_copy)
+     - score = base_fn(new_game, my_color)
+     - vp_delta = visible_VP(new_game, my_color) - visible_VP(original_game, my_color)
+     - Return (score, vp_delta)
+  4. On any exception, return None to signal failure for this action.
+
+- choose_best_action(candidates_with_scores)
+  - For each candidate entry: (action, score, vp_delta, repr_key)
+  - Compare primarily by score (higher better), then by vp_delta (higher better), then by repr_key (lexicographically smaller = deterministic tiebreak).
+  - Return action with the maximum tuple (score, vp_delta, -repr_key) equivalent.
+
+- Optional Top-K deep opponent-aware step (if small CPU budget and expected to help)
+  1. After 1-ply evaluation, take top TOP_K_DEEP actions (by the compare tuple).
+  2. For each top candidate:
+     - simulate: copy_game -> execute_deterministic -> get new_game
+     - simulate opponent move responses using expand_spectrum/execute_spectrum or a single best opponent action set (if AlphaBeta available, simulate one opponent move by calling opponent.decide on a copied game). Compute expected value after opponent response (approx. 1.5-ply).
+     - Replace initial score by expected value after opponent response.
+  3. Re-select best action by new scores.
+
+4) Tie-break & determinism
+   - Use tuple (score, vp_delta, -lexicographic_repr(action)) for comparison.
+   - Keep deterministic RNG seed per player (RNG_SEED + hash(color)).
+
+5) Complexity & safeguards
+   - Worst-case evaluations = MAX_ACTIONS_TO_EVAL deterministic sims; each deterministic sim = copy + execute + base_fn.
+   - Spectrum-based expected-value only used for robber/chance actions or for TOP_K_DEEP extra sims to moderate runtime.
+   - If any adapter isn't available or raises TypeError, fall back to deterministic path (execute_deterministic) and log exception when debug=True.
+   - If all candidates fail evaluations, return first playable_action (current safe fallback).
+
+6) Logging
+   - When debug=True: log number of candidates, phase (early/late), for each evaluated action print (repr, score, vp_delta, method=deterministic/spectrum), and final chosen action.
+   - For spectrum outcomes, log number of outcomes used and the weighted expected score.
+
+7) Success criteria & experiment plan
+   - Run 30 games vs the same AlphaBeta opponent.
+   - Target: Win rate > 50% and average VP >= opponent (or VP difference >= 0).
+   - If still marginal (< 52% win rate) after this change, proceed to:
+     - Increase MAX_ACTIONS_TO_EVAL incrementally (80->120) or
+     - Implement full 2-ply expectimax for top-N actions (TOP_K_DEEP up to 12),
+     - Or implement a lightweight Monte Carlo rollout using execute_spectrum for random playouts (but still rely on base_fn for evaluation).
+
+8) Deliverables for CODER (concrete)
+   - Implement the new sampling function with phase-aware sampling.
+   - Implement evaluate_action that uses execute_spectrum/expand_spectrum for chance-like actions (with SPECTRUM_MAX_OUTCOMES cap).
+   - Implement optional TOP_K_DEEP opponent-aware refinement (make it configurable; default OFF).
+   - Update constants to provided defaults.
+   - Add debug logs as specified.
+
+9) Edge cases & fallbacks (explicit)
+   - If expand_spectrum/execute_spectrum is not present or returns unexpected shapes, fall back to deterministic single-outcome evaluation (as in current code) and log stack trace when debug=True.
+   - The code must never crash; any exceptions in adapters should result in skipping that candidate.
+   - Determinism must be preserved by using deterministic RNG and deterministic tie-breaks.
+
+Implement only one major change this iteration: the refined sampling + robber/chance expected-value handling and tie-break improvement. Do NOT add handcrafted scoring heuristics. Keep changes minimal so we can attribute performance differences to these algorithmic improvements. If CODER reports adapter signature errors, include exact exception text and call RESEARCHER for precise adapter usage.
+
+End objective: provide code-ready pseudocode and parameters so CODER can implement quickly.
+
+--- Output from STRATEGIZER at 20250925_031601 ---
+================================== Ai Message ==================================
+
+STRATEGIZER
+**Refined 1-Ply Lookahead Strategy with Phase-Aware Sampling and Expected Value for Chance Actions**
+
+---
+
+### **Core Improvements**
+1. **Phase-Aware Sampling**:
+   - Prioritize **build/upgrade actions** in early game and **VP-generating actions** in late game.
+   - Increase sampling budget to **60 actions** (up from 30) and sample **3 actions per type** (up from 2).
+
+2. **Expected Value for Chance Actions**:
+   - Use `execute_spectrum` or `expand_spectrum` to compute expected value for **robber/chance actions** (e.g., dev cards, robber placement).
+   - Cap spectrum outcomes at **8** to balance accuracy and runtime.
+
+3. **Deterministic Tie-Breaking**:
+   - Use tuple `(score, vp_delta, -lexicographic_repr(action))` for deterministic comparison.
+
+4. **Fallbacks**:
+   - If `execute_spectrum` fails, fall back to deterministic evaluation.
+   - If all evaluations fail, return the first playable action.
+
+---
+
+### **Pseudocode for `foo_player.py` Updates**
+
+#### **1. New Parameters (Add to Class)**
+```python
+MAX_ACTIONS_TO_EVAL = 60
+SAMPLE_PER_ACTION_TYPE = 3
+SPECTRUM_MAX_OUTCOMES = 8
+EARLY_TURN_THRESHOLD = 30
+TOP_K_DEEP = 0  # Disable opponent-aware refinement for now
+```
+
+#### **2. Helper Predicates (Add to Class)**
+```python
+def _is_build_or_upgrade(self, action) -> bool:
+    """Check if action is a build/upgrade (settlement, city, road)."""
+    action_type = getattr(action, "action_type", None)
+    return action_type in {
+        ActionType.BUILD_SETTLEMENT,
+        ActionType.BUILD_CITY,
+        ActionType.BUILD_ROAD,
+        ActionType.UPGRADE_SETTLEMENT,
+    }
+
+def _is_robber_or_chance(self, action) -> bool:
+    """Check if action involves chance (robber, dev card)."""
+    action_type = getattr(action, "action_type", None)
+    return action_type in {
+        ActionType.PLAY_DEV_CARD,
+        ActionType.PLACE_ROBBER,
+        ActionType.DRAW_DEV_CARD,
+    }
+```
+
+#### **3. Updated `sample_actions` Method**
+```python
+def _sample_actions(self, playable_actions: Iterable, game: Game) -> List:
+    """Phase-aware sampling: prioritize builds early, VP late."""
+    actions = list(playable_actions)
+    if len(actions) <= self.MAX_ACTIONS_TO_EVAL:
+        return actions
+
+    # Determine game phase
+    current_turn = getattr(game, "current_turn", 0)
+    early_game = current_turn <= self.EARLY_TURN_THRESHOLD
+
+    # Group actions by type
+    groups = {}
+    for a in actions:
+        key = self._action_type_key(a)
+        groups.setdefault(key, []).append(a)
+
+    # Phase-aware sampling
+    sampled = []
+    rng = random.Random(self.RNG_SEED + sum(ord(c) for c in str(self.color)))
+    for key in sorted(groups.keys()):
+        group = groups[key]
+        sample_count = self.SAMPLE_PER_ACTION_TYPE
+        # Bias sampling
+        if early_game and any(self._is_build_or_upgrade(a) for a in group):
+            sample_count += 1
+        elif not early_game and any(
+            getattr(a, "action_type", None) in {
+                ActionType.BUILD_CITY,
+                ActionType.BUILD_SETTLEMENT,
+            }
+            for a in group
+        ):
+            sample_count += 1
+        # Sample deterministically
+        rng.shuffle(group)
+        sampled.extend(group[:sample_count])
+
+    # Fill remaining slots deterministically
+    if len(sampled) < self.MAX_ACTIONS_TO_EVAL:
+        for a in actions:
+            if a not in sampled:
+                sampled.append(a)
+                if len(sampled) >= self.MAX_ACTIONS_TO_EVAL:
+                    break
+
+    return sampled
+```
+
+#### **4. Updated `evaluate_action` Method**
+```python
+def _evaluate_action(self, game: Game, action, my_color: Color) -> Optional[Tuple[float, float]]:
+    """Evaluate action using expected value for chance actions."""
+    try:
+        game_copy = copy_game(game)
+    except Exception:
+        return None
+
+    # Handle chance/robber actions with expected value
+    if self._is_robber_or_chance(action):
+        try:
+            spectrum = execute_spectrum(game_copy, action)[:self.SPECTRUM_MAX_OUTCOMES]
+            if not spectrum:
+                return None
+            weighted_score = 0.0
+            vp_delta_sum = 0.0
+            for outcome_game, prob in spectrum:
+                score = base_fn()(outcome_game, my_color)
+                weighted_score += prob * score
+                # Approximate VP delta (if visible VP is trackable)
+                vp_delta_sum += prob * (
+                    getattr(outcome_game, "visible_vp", {}).get(my_color, 0)
+                    - getattr(game, "visible_vp", {}).get(my_color, 0)
+                )
+            return (weighted_score, vp_delta_sum)
+        except Exception:
+            pass  # Fall back to deterministic
+
+    # Default deterministic evaluation
+    try:
+        outcomes = execute_deterministic(game_copy, action)
+        if not outcomes:
+            return None
+        resultant_game = outcomes[0][0] if isinstance(outcomes[0], tuple) else outcomes[0]
+        score = base_fn()(resultant_game, my_color)
+        vp_delta = (
+            getattr(resultant_game, "visible_vp", {}).get(my_color, 0)
+            - getattr(game, "visible_vp", {}).get(my_color, 0)
+        )
+        return (score, vp_delta)
+    except Exception:
+        return None
+```
+
+#### **5. Updated `decide` Method**
+```python
+def decide(self, game: Game, playable_actions: Iterable):
+    """Refined 1-ply lookahead with phase-aware sampling and expected value."""
+    actions = list(playable_actions)
+    if not actions:
+        return None
+    if len(actions) == 1:
+        return actions[0]
+
+    candidates = self._sample_actions(actions, game)
+    best_action, best_score, best_vp_delta = None, -float("inf"), -float("inf")
+
+    for action in candidates:
+        eval_result = self._evaluate_action(game, action, self.color)
+        if eval_result is None:
+            continue
+        score, vp_delta = eval_result
+        # Tie-break: (score, vp_delta, -repr(action))
+        if (
+            best_action is None
+            or score > best_score
+            or (score == best_score and vp_delta > best_vp_delta)
+            or (score == best_score and vp_delta == best_vp_delta and repr(action) < repr(best_action))
+        ):
+            best_action, best_score, best_vp_delta = action, score, vp_delta
+
+    return best_action if best_action else actions[0]
+```
+
+---
+
+### **Key Design Choices**
+- **Phase-Aware Sampling**: Biases toward **builds early** and **VP late** to align with Catan strategy.
+- **Expected Value for Chance**: Uses `execute_spectrum` for robber/dev cards, capped at 8 outcomes.
+- **Deterministic Tie-Breaks**: Ensures reproducibility.
+- **Fallbacks**: Gracefully handles missing adapters or evaluation failures.
+
+---
+
+### **Success Criteria**
+- **Target**: >50% win rate and avg VP ≥ opponent in 30 games vs AlphaBeta.
+- **If Marginal (<52%)**: Increase `MAX_ACTIONS_TO_EVAL` or enable `TOP_K_DEEP` opponent-aware refinement.
+
+---
+### **Deliverables for CODER**
+1. Replace `sample_actions`, `evaluate_action`, and `decide` with the pseudocode above.
+2. Add the new parameters and helper predicates to the class.
+3. Test with 30 games and report metrics.
+
+END STRATEGIZER
+

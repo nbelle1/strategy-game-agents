@@ -1,0 +1,37 @@
+Playing 3 games...                                                                                      0% -:--:--
+AlphaBetaPlayer:RED(depth=2,value_fn=base_fn,prunning=False)                                            0%        
+FooPlayer:BLUE                                                                                          0%        
+Traceback (most recent call last):
+  File "/share/edc/home/nbelle/miniconda3/envs/catan/bin/catanatron-play", line 33, in <module>
+    sys.exit(load_entry_point('catanatron-experimental', 'console_scripts', 'catanatron-play')())
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/share/edc/home/nbelle/miniconda3/envs/catan/lib/python3.11/site-packages/click/core.py", line 1130, in __call__
+    return self.main(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/share/edc/home/nbelle/miniconda3/envs/catan/lib/python3.11/site-packages/click/core.py", line 1055, in main
+    rv = self.invoke(ctx)
+         ^^^^^^^^^^^^^^^^
+  File "/share/edc/home/nbelle/miniconda3/envs/catan/lib/python3.11/site-packages/click/core.py", line 1404, in invoke
+    return ctx.invoke(self.callback, **ctx.params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/share/edc/home/nbelle/miniconda3/envs/catan/lib/python3.11/site-packages/click/core.py", line 760, in invoke
+    return __callback(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/share/edc/home/nbelle/projects/strategy-game-agents/catanatron/catanatron_experimental/catanatron_experimental/play.py", line 186, in simulate
+    play_batch(
+  File "/share/edc/home/nbelle/projects/strategy-game-agents/catanatron/catanatron_experimental/catanatron_experimental/play.py", line 316, in play_batch
+    for i, game in enumerate(
+  File "/share/edc/home/nbelle/projects/strategy-game-agents/catanatron/catanatron_experimental/catanatron_experimental/play.py", line 247, in play_batch_core
+    game.play(accumulators)
+  File "/share/edc/home/nbelle/projects/strategy-game-agents/catanatron/catanatron_core/catanatron/game.py", line 132, in play
+    self.play_tick(decide_fn=decide_fn, accumulators=accumulators)
+  File "/share/edc/home/nbelle/projects/strategy-game-agents/catanatron/catanatron_core/catanatron/game.py", line 153, in play_tick
+    else player.decide(self, actions)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/share/edc/home/nbelle/projects/strategy-game-agents/agents/fromScratchLLMStructured_player_v5_M/foo_player.py", line 28, in decide
+    prompt = self._build_prompt(game, playable_actions)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/share/edc/home/nbelle/projects/strategy-game-agents/agents/fromScratchLLMStructured_player_v5_M/foo_player.py", line 84, in _build_prompt
+    resources=str(game.get_player_resources(Color.BLUE)),  # Example method to get resources
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'Game' object has no attribute 'get_player_resources'

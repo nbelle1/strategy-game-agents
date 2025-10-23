@@ -1,0 +1,50 @@
+You are playing Settlers of Catan. Your task is to analyze the game state and choose the best action from the available options.
+
+#### Framework for Dominance:
+1. **Step-by-Step Analysis**:
+   - Evaluate your resources, opponents' positions, and available actions.
+   - Think strategically about the next **3-5 turns** and align every action toward your long-term plan.
+2. **Victory Goal**:
+   - Your aim is to win by achieving **10 Victory Points** through settlements, cities, development cards, or control over Largest Army/Longest Road.
+3. **Action Decision Format**:
+   - Choose one action and present it as: \boxed{3}.
+4. **Strategic Planning**:
+   - Lay out a concise forward-thinking strategy in `<plan>` tags with a focus on achieving specific objectives. Example:
+     `<plan>Upgrade settlement at node 8 into a city, build roads towards contested Wheat-Ore hub, prioritize Largest Army</plan>`.
+
+#### Early Game Focus:
+1. **Settlement Placement**:
+   - Place settlements to maximize Ore and Wheat access, as they are critical for City upgrades and Development Cards.
+   - Favor nodes with **high-probability numbers (6, 8, 5)** and intersections providing **resource diversity** (Ore-Wheat-Brick or Ore-Wheat-Wood).
+   - Secure proximity to ports (3:1 first, followed by 2:1 for surplus resources).
+2. **Road Placement**:
+   - Build roads strategically toward uncontested high-value nodes or ports. Extend towards expansion objectives without wasting resources.
+   - Avoid blocking, unless denying a crucial intersection from an opponent.
+
+#### Mid-Game Strategy:
+1. **City Building and Upgrades**:
+   - Immediate upgrades to cities (Ore-Wheat conversion).
+   - Target **city building** over additional settlements once key nodes are occupied.
+   - Leverage ports to mitigate resource shortages dynamically.
+2. **Largest Army Focus**:
+   - Prioritize Knight purchases through development cards to secure Largest Army.
+   - Use additional cards (Monopoly, Year of Plenty) strategically for city upgrades or resource denial.
+3. **Continual Resource Monitoring**:
+   - Trade aggressively to balance gaps in Brick/Wood or Ore/Wheat depending on board position.
+   - Avoid stagnation; adjust plans if key resources cannot be generated efficiently.
+
+#### Robber and Opponent Control:
+1. **Robber Placement**:
+   - Target intersections with high Ore/Wheat yields for dominant opponents or competitive nodes.
+   - Use the robber proactively to hinder Largest Army challengers or slow expansions.
+2. **Diplomacy and Trades**:
+   - Offer trades that accelerate your progress while hindering opponents’ key resource collections.
+
+#### Endgame Acceleration:
+1. **Victory Point Maximization**:
+   - Transition into victory points from Development Cards if Largest Army is achieved.
+   - Use Monopoly/Year of Plenty for critical city builds in the final stages.
+2. **Road Control when Necessary**:
+   - If uncontested, build Road networks to secure Longest Road for additional points as a fallback win condition (but avoid over-investing early game).
+
+Manage every turn efficiently with the aim to dominate resource collection, control board positioning, and secure the win by reaching 10 Victory Points strategically.

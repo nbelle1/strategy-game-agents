@@ -26,23 +26,14 @@ from catanatron_experimental.machine_learning.players.playouts import (
     GreedyPlayoutsPlayer,
 )
 
-from agents.llm_player.llm_player import LLMPlayer
-from agents.vanillaLLM_player.vanillaLLM_player import VanillaLLMPlayer
-from agents.basicLang_player.basicLang_player import BasicLangPlayer
-from agents.toolCallLLM_player.toolCallLLM_player import ToolCallLLMPlayer
-from agents.promptRefiningLLM_player.promptRefiningLLM_player import PromptRefiningLLMPlayer
-from agents.codeRefiningLLM_player.codeRefiningLLM_player import CodeRefiningLLMPlayer
+from agents.structuredAgent.llm_player import StructuredAgentPlayer
+from agents.baseAgent.baseAgentPlayer import BaseAgentPlayer
+from agents.promptEvolver.promptEvolverPlayer import PromptEvolverPlayer
+from agents.agentEvolver.foo_player import FooPlayer as AgentEvolverFooPlayer
+from agents.llmAgentEvolver.foo_player import FooPlayer as LLMAgentEvolverFooPlayer
+from agents.agentEvolver_v2.foo_player import FooPlayer as AgentEvolverFooPlayerV2
+from agents.best_player.foo_player import FooPlayer as BestPlayer
 
-from agents.fromScratch_player.foo_player import FooPlayer as FooScratchPlayer
-
-from agents.fromScratchLLM_player.foo_player import FooPlayer as FooLLMPlayer
-from agents.fromScratchLLM_player_v2.foo_player import FooPlayer as FooLLMPlayerV2
-
-from agents.fromScratchLLMStructured_player.foo_player import FooPlayer as FooLLMStructuredPlayer
-from agents.fromScratchLLMStructured_player_v2.foo_player import FooPlayer as FooLLMStructuredPlayerV2
-from agents.fromScratchLLMStructured_player_v3.foo_player import FooPlayer as FooLLMStructuredPlayerV3
-from agents.fromScratchLLMStructured_player_v4.foo_player import FooPlayer as FooLLMStructuredPlayerV4
-from agents.fromScratchLLMStructured_player_v5_M.foo_player import FooPlayer as FooLLMStructuredPlayerV5M
 # from agents.fromScratchLLM_player_v2.runs.creator_20250508_112135_hitl.foo_player import FooPlayer as FooLLMPlayerV2_1
 # from catanatron_experimental.machine_learning.players.online_mcts_dqn import (
 #     OnlineMCTSDQNPlayer,
@@ -113,97 +104,48 @@ CLI_PLAYERS = [
         "AlphaBeta but searches only within turn",
         SameTurnAlphaBetaPlayer,
     ),
+    # NEW PLAYERS BELOW
     CliPlayer(
-        "VLLM",
-        "VanillaLLMPlayer",
-        "Initial Vanilla LLM Player with no additions",
-        VanillaLLMPlayer,
+        "BA",
+        "BaseAgentPlayer",
+        "Initial Base Player utilizing LLM with no special prompt",
+        BaseAgentPlayer,
     ),
     CliPlayer(
-        "LLM",
-        "LLMPlayer",
+        "SA",
+        "StructuredAgentPlayer",
         "LLM with adjusted prompt and code to fix bugs with vanilla llm",
-        LLMPlayer,
+        StructuredAgentPlayer,
     ),
     CliPlayer(
-        "BL",
-        "BasicLangPlayer",
-        "First iteration of migration to using Lang Chain instead of custom base_llm class. "
-        + "Has inneficient memory that is saves number of messages which is set to a variable ",
-        BasicLangPlayer,
+        "PE",
+        "PromptEvolverPlayer",
+        "Multi-agent system with prompt evolvers that improve the prompt of the Player PE",
+        PromptEvolverPlayer,
     ),
     CliPlayer(
-        "TC",
-        "ToolCallLLMPlayer",
-        "LLM Player with tool call capabilities. Uses LangChain to call tools."
-        + " Has access to web search, ...",
-        ToolCallLLMPlayer,
+        "AE",
+        "AgentEvolverFooPlayer",
+        "Multi-agent system with agent evolvers that improve the player code of the Player AE",
+        AgentEvolverFooPlayer,
     ),
     CliPlayer(
-        "FOO_S",
-        "FooPlayer_Scratch",
-        "Player being created by creator agent",
-        FooScratchPlayer
+        "AE2",
+        "AgentEvolverFooPlayerV2",
+        "Multi-agent system with agent evolvers that improve the player code of the Player AE2",
+        AgentEvolverFooPlayerV2,
     ),
     CliPlayer(
-        "FOO_LLM",
-        "FooPlayer_LLM",
-        "Player being created by creator agent. FooPlayer has access to query the LLM",
-        FooLLMPlayer
+        "LAE",
+        "LLMAgentEvolverFooPlayer",
+        "Multi-agent system with agent evolvers that improve the LLM player code of the Player LAE",
+        LLMAgentEvolverFooPlayer,
     ),
-    CliPlayer(
-        "FOO_LLM_V2",
-        "FooPlayer_LLM_V2",
-        "Player being created by creator agent that has more tools to edit FooPlayer's code. FooPlayer has access to query the LLM",
-        FooLLMPlayerV2
-    ),
-    CliPlayer(
-        "PR_LLM",
-        "PromptRefiningLLMPlayer",
-        "LLM Player That has had the prompt refined by the creator agent",
-        PromptRefiningLLMPlayer,
-    ),
-    CliPlayer(
-        "CR_LLM",
-        "CodeRefiningLLMPlayer",
-        "LLM Player That has had the code refined by the creator agent",
-        CodeRefiningLLMPlayer,
-    ),
-    # CliPlayer(
-    #     "FOO_LLM_V2_1",
-    #     "FooPlayer_LLM_V2_1",
-    #     "Player being created by creator agent that has more tools to edit FooPlayer's code. FooPlayer has access to query the LLM",
-    #     FooLLMPlayerV2_1
-    # ),
-    CliPlayer(
-        "FOO_LLM_S",
-        "FooPlayer_LLM_Structured",
-        "Player being created by creator agent. FooPlayer has access to query the LLM",
-        FooLLMStructuredPlayer
-    ),
-    CliPlayer(
-        "FOO_LLM_S2",
-        "FooPlayer_LLM_Structured_V2",
-        "Player being created by creator agent that has more tools to edit FooPlayer's code. FooPlayer has access to query the LLM",
-        FooLLMStructuredPlayerV2
-    ),
-    CliPlayer(
-        "FOO_LLM_S3",
-        "FooPlayer_LLM_Structured_V3",
-        "Player being created by creator agent that has more tools to edit FooPlayer's code. FooPlayer has access to query the LLM",
-        FooLLMStructuredPlayerV3
-    ),
-    CliPlayer(
-        "FOO_LLM_S4",
-        "FooPlayer_LLM_Structured_V4",
-        "Player being created by creator agent that has more tools to edit FooPlayer's code. FooPlayer has access to query the LLM",
-        FooLLMStructuredPlayerV4
-    ),
-    CliPlayer(
-        "FOO_LLM_S5_M",
-        "FooPlayer_LLM_Structured_V5_M",
-        "Player being created by creator agent that has more tools to edit FooPlayer's code. FooPlayer has access to query the LLM",
-        FooLLMStructuredPlayerV5M
+        CliPlayer(
+        "BP",
+        "BestPlayer",
+        "Multi-agent system with agent evolvers that improve the LLM player code of the Player LAE",
+        BestPlayer,
     ),
 ]
 

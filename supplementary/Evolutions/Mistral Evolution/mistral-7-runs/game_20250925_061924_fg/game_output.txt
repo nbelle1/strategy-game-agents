@@ -1,0 +1,154 @@
+, 1), <Color.RED: 'RED'>, None)) => expected value 1200000001657542.0
+FooPlayer: Depth 5 Top-level Action #9 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.MOVE_ROBBER: 'MOVE_ROBBER'>, value=((0, -2, 2), <Color.RED: 'RED'>, None)) => expected value 1200000003457112.5
+FooPlayer: Depth 5 Top-level Action #10 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.MOVE_ROBBER: 'MOVE_ROBBER'>, value=((-1, -1, 2), None, None)) => expected value 1199999988863428.2
+FooPlayer: Depth 5 Top-level Action #11 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.MOVE_ROBBER: 'MOVE_ROBBER'>, value=((-2, 0, 2), None, None)) => expected value 1200000034288135.8
+FooPlayer: Depth 5 Top-level Action #12 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.MOVE_ROBBER: 'MOVE_ROBBER'>, value=((-2, 1, 1), None, None)) => expected value 1200000000223331.8
+FooPlayer: Depth 5 Top-level Action #13 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.MOVE_ROBBER: 'MOVE_ROBBER'>, value=((-1, 2, -1), <Color.RED: 'RED'>, None)) => expected value 1199999998517508.2
+FooPlayer: Depth 5 Top-level Action #14 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.MOVE_ROBBER: 'MOVE_ROBBER'>, value=((0, 2, -2), <Color.RED: 'RED'>, None)) => expected value 1199999989640723.0
+FooPlayer: Depth 5 Top-level Action #15 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.MOVE_ROBBER: 'MOVE_ROBBER'>, value=((1, 1, -2), None, None)) => expected value 1199999974303177.5
+FooPlayer: Depth 5 Top-level Action #16 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.MOVE_ROBBER: 'MOVE_ROBBER'>, value=((2, 0, -2), None, None)) => expected value 1200000003281694.8
+FooPlayer: Depth 5 Top-level Action #17 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.MOVE_ROBBER: 'MOVE_ROBBER'>, value=((2, -1, -1), <Color.RED: 'RED'>, None)) => expected value 1199999993787781.0
+FooPlayer: Chosen action = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.MOVE_ROBBER: 'MOVE_ROBBER'>, value=((-1, -1, 2), None, None)) with value 1200000088909241.5 (depth reached 5, nodes 5589, time 0.842s)
+FooPlayer.decide: starting iterative deepening (phase=early, max_depth=5, node_budget=15000)
+FooPlayer.decide: Iterative deepening at depth 1
+FooPlayer: Depth 1 Top-level Action #0 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None) => expected value 1199999961131450.5
+FooPlayer.decide: Iterative deepening at depth 2
+FooPlayer: Depth 2 Top-level Action #0 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None) => expected value 1199999961131462.5
+FooPlayer.decide: Iterative deepening at depth 3
+FooPlayer: Depth 3 Top-level Action #0 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None) => expected value 1199999973708469.5
+FooPlayer.decide: Iterative deepening at depth 4
+FooPlayer: Depth 4 Top-level Action #0 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None) => expected value 1199999953304258.8
+FooPlayer.decide: Iterative deepening at depth 5
+FooPlayer: Depth 5 Top-level Action #0 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None) => expected value 1199999950177407.8
+FooPlayer: Chosen action = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None) with value 1199999973708469.5 (depth reached 5, nodes 1721, time 0.209s)
+FooPlayer.decide: starting iterative deepening (phase=early, max_depth=5, node_budget=15000)
+FooPlayer.decide: Iterative deepening at depth 1
+FooPlayer: Depth 1 Top-level Action #0 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.ROLL: 'ROLL'>, value=None) => expected value 1199999930575906.8
+FooPlayer.decide: Iterative deepening at depth 2
+FooPlayer: Depth 2 Top-level Action #0 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.ROLL: 'ROLL'>, value=None) => expected value 1199999941440108.0
+FooPlayer.decide: Iterative deepening at depth 3
+FooPlayer: Depth 3 Top-level Action #0 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.ROLL: 'ROLL'>, value=None) => expected value 1199999943613237.0
+FooPlayer.decide: Iterative deepening at depth 4
+FooPlayer: Depth 4 Top-level Action #0 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.ROLL: 'ROLL'>, value=None) => expected value 1199999942197952.5
+FooPlayer.decide: Iterative deepening at depth 5
+FooPlayer: Depth 5 Top-level Action #0 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.ROLL: 'ROLL'>, value=None) => expected value 1199999937129164.8
+FooPlayer: Chosen action = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.ROLL: 'ROLL'>, value=None) with value 1199999943613237.0 (depth reached 5, nodes 1989, time 0.319s)
+FooPlayer.decide: starting iterative deepening (phase=early, max_depth=5, node_budget=15000)
+FooPlayer.decide: Iterative deepening at depth 1
+FooPlayer: Depth 1 Top-level Action #0 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None) => expected value 1199999930575918.2
+FooPlayer.decide: Iterative deepening at depth 2
+FooPlayer: Depth 2 Top-level Action #0 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None) => expected value 1199999930575927.0
+FooPlayer.decide: Iterative deepening at depth 3
+FooPlayer: Depth 3 Top-level Action #0 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None) => expected value 1199999941686881.5
+FooPlayer.decide: Iterative deepening at depth 4
+FooPlayer: Depth 4 Top-level Action #0 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None) => expected value 1199999921960952.2
+FooPlayer.decide: Iterative deepening at depth 5
+FooPlayer: Depth 5 Top-level Action #0 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None) => expected value 1199999925066359.2
+FooPlayer: Chosen action = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None) with value 1199999941686881.5 (depth reached 5, nodes 2102, time 0.312s)
+FooPlayer.decide: starting iterative deepening (phase=early, max_depth=5, node_budget=15000)
+FooPlayer.decide: Iterative deepening at depth 1
+FooPlayer: Depth 1 Top-level Action #0 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.ROLL: 'ROLL'>, value=None) => expected value 1199999930575952.0
+FooPlayer.decide: Iterative deepening at depth 2
+FooPlayer: Depth 2 Top-level Action #0 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.ROLL: 'ROLL'>, value=None) => expected value 1199999940207257.8
+FooPlayer.decide: Iterative deepening at depth 3
+FooPlayer: Depth 3 Top-level Action #0 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.ROLL: 'ROLL'>, value=None) => expected value 1199999952997721.8
+FooPlayer.decide: Iterative deepening at depth 4
+FooPlayer: Depth 4 Top-level Action #0 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.ROLL: 'ROLL'>, value=None) => expected value 1199999940949520.2
+FooPlayer.decide: Iterative deepening at depth 5
+FooPlayer: Depth 5 Top-level Action #0 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.ROLL: 'ROLL'>, value=None) => expected value 1199999933708129.2
+FooPlayer: Chosen action = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.ROLL: 'ROLL'>, value=None) with value 1199999952997721.8 (depth reached 5, nodes 7555, time 1.105s)
+FooPlayer.decide: starting iterative deepening (phase=early, max_depth=5, node_budget=15000)
+FooPlayer.decide: Iterative deepening at depth 1
+FooPlayer: Depth 1 Top-level Action #0 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None) => expected value 1199999930575947.2
+FooPlayer: Depth 1 Top-level Action #1 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(23, 52)) => expected value 1199999930578569.8
+FooPlayer: Depth 1 Top-level Action #2 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(15, 17)) => expected value 1199999930578570.0
+FooPlayer: Depth 1 Top-level Action #3 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(22, 49)) => expected value 1199999930577877.2
+FooPlayer: Depth 1 Top-level Action #4 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(6, 23)) => expected value 1199999930575932.8
+FooPlayer: Depth 1 Top-level Action #5 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(11, 12)) => expected value 1199999930577331.8
+FooPlayer: Depth 1 Top-level Action #6 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(4, 15)) => expected value 1199999930576903.2
+FooPlayer: Depth 1 Top-level Action #7 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(20, 22)) => expected value 1199999930575932.8
+FooPlayer: Depth 1 Top-level Action #8 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(14, 37)) => expected value 1199999930578155.0
+FooPlayer: Depth 1 Top-level Action #9 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(13, 34)) => expected value 1199999930578569.8
+FooPlayer: Depth 1 Top-level Action #10 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(3, 12)) => expected value 1199999930575942.8
+FooPlayer.decide: Iterative deepening at depth 2
+FooPlayer: Depth 2 Top-level Action #0 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None) => expected value 1199999930576110.5
+FooPlayer: Depth 2 Top-level Action #1 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(23, 52)) => expected value 1199999930575947.2
+FooPlayer: Depth 2 Top-level Action #2 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(15, 17)) => expected value 1199999930578570.0
+FooPlayer: Depth 2 Top-level Action #3 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(22, 49)) => expected value 1199999930577877.2
+FooPlayer: Depth 2 Top-level Action #4 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(6, 23)) => expected value 1199999930575947.2
+FooPlayer: Depth 2 Top-level Action #5 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(11, 12)) => expected value 1199999930578570.0
+FooPlayer: Depth 2 Top-level Action #6 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(4, 15)) => expected value 1199999930577877.2
+FooPlayer: Depth 2 Top-level Action #7 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(20, 22)) => expected value 1199999930575947.2
+FooPlayer: Depth 2 Top-level Action #8 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(14, 37)) => expected value 1199999930578570.0
+FooPlayer: Depth 2 Top-level Action #9 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(13, 34)) => expected value 1199999930575947.2
+FooPlayer: Depth 2 Top-level Action #10 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(3, 12)) => expected value 1199999930575942.8
+FooPlayer.decide: Iterative deepening at depth 3
+FooPlayer: Depth 3 Top-level Action #0 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None) => expected value 1199999928968167.0
+FooPlayer: Depth 3 Top-level Action #1 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(23, 52)) => expected value 1199999930578431.2
+FooPlayer: Depth 3 Top-level Action #2 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(15, 17)) => expected value 1199999930577922.5
+FooPlayer: Depth 3 Top-level Action #3 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(22, 49)) => expected value 1199999930577877.2
+FooPlayer: Depth 3 Top-level Action #4 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(6, 23)) => expected value 1199999930575939.8
+FooPlayer: Depth 3 Top-level Action #5 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(11, 12)) => expected value 1199999928968167.0
+FooPlayer: Depth 3 Top-level Action #6 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(4, 15)) => expected value 1199999930577877.2
+FooPlayer: Depth 3 Top-level Action #7 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(20, 22)) => expected value 1199999930575939.8
+FooPlayer: Depth 3 Top-level Action #8 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(14, 37)) => expected value 1199999928968167.0
+FooPlayer: Depth 3 Top-level Action #9 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(13, 34)) => expected value 1199999930577877.2
+FooPlayer: Depth 3 Top-level Action #10 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(3, 12)) => expected value 1199999930575939.8
+FooPlayer.decide: Iterative deepening at depth 4
+FooPlayer: Depth 4 Top-level Action #0 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None) => expected value 1199999914356350.8
+FooPlayer: Depth 4 Top-level Action #1 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(23, 52)) => expected value 1199999928968167.0
+FooPlayer: Depth 4 Top-level Action #2 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(15, 17)) => expected value 1199999926332684.5
+FooPlayer: Depth 4 Top-level Action #3 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(22, 49)) => expected value 1199999914356350.8
+FooPlayer: Depth 4 Top-level Action #4 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(6, 23)) => expected value 1199999922243050.0
+FooPlayer: Depth 4 Top-level Action #5 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(11, 12)) => expected value 1199999926332684.5
+FooPlayer: Depth 4 Top-level Action #6 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(4, 15)) => expected value 1199999928968167.0
+FooPlayer: Depth 4 Top-level Action #7 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(20, 22)) => expected value 1199999922243050.0
+FooPlayer: Depth 4 Top-level Action #8 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(14, 37)) => expected value 1199999914356350.8
+FooPlayer: Depth 4 Top-level Action #9 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(13, 34)) => expected value 1199999928968167.0
+FooPlayer: Depth 4 Top-level Action #10 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(3, 12)) => expected value 1199999922243050.0
+FooPlayer.decide: Iterative deepening at depth 5
+FooPlayer: Depth 5 Top-level Action #0 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None) => expected value 1199999910977183.2
+FooPlayer: Chosen action = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.BUILD_ROAD: 'BUILD_ROAD'>, value=(15, 17)) with value 1199999930578570.0 (depth reached 5, nodes 15005, time 3.305s)
+FooPlayer.decide: starting iterative deepening (phase=early, max_depth=5, node_budget=15000)
+FooPlayer.decide: Iterative deepening at depth 1
+FooPlayer: Depth 1 Top-level Action #0 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None) => expected value 1199999930578570.0
+FooPlayer.decide: Iterative deepening at depth 2
+FooPlayer: Depth 2 Top-level Action #0 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None) => expected value 1199999930578576.8
+FooPlayer.decide: Iterative deepening at depth 3
+FooPlayer: Depth 3 Top-level Action #0 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None) => expected value 1199999924327789.8
+FooPlayer.decide: Iterative deepening at depth 4
+FooPlayer: Depth 4 Top-level Action #0 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None) => expected value 1199999904324695.5
+FooPlayer.decide: Iterative deepening at depth 5
+FooPlayer: Depth 5 Top-level Action #0 = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None) => expected value 1199999907671087.8
+FooPlayer: Chosen action = Action(color=<Color.BLUE: 'BLUE'>, action_type=<ActionType.END_TURN: 'END_TURN'>, value=None) with value 1199999930578576.8 (depth reached 5, nodes 14992, time 2.814s)
+Playing 30 games...                                          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:00
+AlphaBetaPlayer:RED(depth=2,value_fn=base_fn,prunning=False) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╸           77%        
+FooPlayer:BLUE                                               ━━━━━━━━━                                 23%        
+                    Last 10 Games                    
+     ╷          ╷       ╷        ╷         ╷         
+   # │ SEATING  │ TURNS │ RED VP │ BLUE VP │ WINNER  
+╶────┼──────────┼───────┼────────┼─────────┼────────╴
+  21 │ RED,BLUE │    73 │      3 │      11 │ BLUE    
+  22 │ BLUE,RED │    81 │     10 │       4 │ RED     
+  23 │ RED,BLUE │    74 │     10 │       4 │ RED     
+  24 │ BLUE,RED │    85 │     10 │       6 │ RED     
+  25 │ RED,BLUE │    40 │     10 │       3 │ RED     
+  26 │ BLUE,RED │    95 │     10 │       7 │ RED     
+  27 │ RED,BLUE │    94 │     10 │       8 │ RED     
+  28 │ RED,BLUE │    70 │     10 │       6 │ RED     
+  29 │ RED,BLUE │    89 │      7 │      10 │ BLUE    
+  30 │ RED,BLUE │    46 │     10 │       4 │ RED     
+     ╵          ╵       ╵        ╵         ╵         
+                                                                Player Summary                                                                
+                                                               ╷      ╷        ╷             ╷            ╷          ╷          ╷             
+                                                               │ WINS │ AVG VP │ AVG SETTLES │ AVG CITIES │ AVG ROAD │ AVG ARMY │ AVG DEV VP  
+╶──────────────────────────────────────────────────────────────┼──────┼────────┼─────────────┼────────────┼──────────┼──────────┼────────────╴
+  AlphaBetaPlayer:RED(depth=2,value_fn=base_fn,prunning=False) │   23 │   8.97 │        2.83 │       2.23 │     0.83 │     0.00 │       0.00  
+  FooPlayer:BLUE                                               │    7 │   6.23 │        2.13 │       1.57 │     0.17 │     0.17 │       0.30  
+                                                               ╵      ╵        ╵             ╵            ╵          ╵          ╵             
+              Game Summary              
+            ╷           ╷               
+  AVG TICKS │ AVG TURNS │ AVG DURATION  
+╶───────────┼───────────┼──────────────╴
+     206.00 │     70.53 │  66.497 secs  
+            ╵           ╵
